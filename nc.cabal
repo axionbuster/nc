@@ -18,18 +18,20 @@ common warnings
 
 common lang
     default-extensions:     BlockArguments, ViewPatterns, LambdaCase,
-                            TypeFamilies, UndecidableInstances
+                            TypeFamilies, UndecidableInstances,
+                            TemplateHaskell
 
 common optim
     ghc-options:            -O2 -fllvm
 
 library
     import:             warnings, lang, optim
-    exposed-modules:    Language.NC, Language.NC.Syn, Language.NC.Parse
+    exposed-modules:    Language.NC, Language.NC.Syn, Language.NC.Parse,
+                        Language.NC.ParseSyn
     other-modules:      Language.NC.Prelude
     other-extensions:   NoImplicitPrelude
     build-depends:      base, vector, flatparse, containers, transformers,
-                        bytestring, text
+                        bytestring, text, parser-combinators
     hs-source-dirs:   src
     default-language: GHC2024
 
