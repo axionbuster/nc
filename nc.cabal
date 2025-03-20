@@ -18,7 +18,7 @@ common warnings
 
 common lang
     default-extensions:     BlockArguments, ViewPatterns, LambdaCase,
-                            TypeFamilies
+                            TypeFamilies, UndecidableInstances
 
 common optim
     ghc-options:            -O2 -fllvm
