@@ -10,7 +10,8 @@ type Tag a = Text
 
 type Name a = Text
 
-data Expr a
+-- | Placeholder for expression
+data Expr a = Expr a
 
 -- | Fields for structs, unions, and union struct cases.
 data Field a
