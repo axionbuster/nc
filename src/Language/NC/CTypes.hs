@@ -1,6 +1,6 @@
-module Language.NC.Syn where
+module Language.NC.CTypes where
 
-import Language.NC.Prelude hiding (Char, Double, Enum, Float, Int, const)
+import Language.NC.Prelude hiding (Bool, Char, Double, Enum, Float, Int, const)
 import Language.NC.Prelude qualified as Pr
 
 -- for extensibility, i'm using the Trees That Grow approach
@@ -48,7 +48,7 @@ data Type a
     -- of arguments is allowed, and this is especially relevant
     -- for declaration of a function pointer. See this example:
     --
-    -- @int f(int (*)(), double (*)[3]);@
+    -- @int f(int (\*)(), double (\*)[3]);@
     --
     -- Here the first argument may take any number of arguments.
     -- However, the return type must always be specified.
@@ -63,52 +63,55 @@ data Case a = Case (CaseX a) (Name a) [Field a]
 
 deriving instance (PhaseEqShow a) => Show (Case a)
 
--- | A declaration. I'm not including attributes, yet.
-data Dec a = Dec (DecX a) Linkage StorageClass (QualifiedType a) (Name a)
-
-deriving instance (PhaseEqShow a) => Show (Dec a)
-
 -- | Non-derived, primitive types
 data PrimType
-  = -- | non-character integral types
+  = -- | @_Bool@
+    Bool
+  | -- | Non-character integral types, but not @char@ or @_Bool@
     Int Signed IntLen
-  | -- | character types
+  | -- | Character types
     Char (Maybe Signed)
-  | -- | real or complex floating point
+  | -- | Real or complex floating point
     Float FloatType
-  | -- | the @void@ type
+  | -- | The @void@ type
     Void
   deriving (Eq, Show)
 
-data Completeness = Complete | Incomplete
-  deriving (Eq, Show)
+-- | Some convenience patterns for 'PrimType'
+pattern Int_, Char_ :: PrimType
+pattern Int_ = Int Signed IntLen
+pattern Char_ = Char Nothing
 
+-- | Signed?
 data Signed = Signed | Unsigned
   deriving (Eq, Show)
 
+-- | @int@, @short@, @long@, or @long long@
 data IntLen = IntLen | Short | Long | LongLong
   deriving (Eq, Show)
 
+-- | Real or complex and what type?
 data FloatType = Real RealFloatType | Complex RealFloatType
   deriving (Eq, Show)
 
+-- | @float@, @double@, or @long double@?
 data RealFloatType = RFFloat | RFDouble | RFLongDouble
   deriving (Eq, Show)
 
+-- | Pointers need qualifiers
 data QualifiedType a = Qualified (QualX a) Qualifier (Type a)
 
 deriving instance (PhaseEqShow x) => Show (QualifiedType x)
 
+-- | Type qualifiers (@const@, @volatile@, and, for referrents, @restrict@)
+--
+-- See also: 'qualzero'
 data Qualifier = Qualifier
-  {const :: Bool, volatile :: Bool, restrict :: Bool}
+  {const :: Pr.Bool, volatile :: Pr.Bool, restrict :: Pr.Bool}
   deriving (Eq, Show)
 
 -- | Storage class and linkage specifiers
 data StorageClass = Static | Extern | Register | Auto | ThreadLocal | NoStorage
-  deriving (Eq, Show)
-
--- | Separate linkage type if needed
-data Linkage = Internal | External | NoLinkage
   deriving (Eq, Show)
 
 -- | Constraints for all phase annotations, requiring Eq and Show
@@ -127,8 +130,6 @@ class
     Show (FunX a),
     Eq (PtrX a),
     Show (PtrX a),
-    Eq (DecX a),
-    Show (DecX a),
     Eq (CaseX a),
     Show (CaseX a),
     Eq (FldX a),
@@ -152,8 +153,6 @@ type family FunX a
 
 type family PtrX a
 
-type family DecX a
-
 type family CaseX a
 
 type family FldX a
@@ -172,12 +171,11 @@ type instance FunX () = ()
 
 type instance PtrX () = ()
 
-type instance DecX () = ()
-
 type instance CaseX () = ()
 
 type instance FldX () = ()
 
+-- | The null qualifier
 qualzero :: Qualifier
 qualzero = Qualifier False False False
 
