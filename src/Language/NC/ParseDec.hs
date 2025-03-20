@@ -9,18 +9,6 @@ import Language.NC.THLex
 
 -- * Lexing
 
-(<:>) :: Char -> Builder -> Builder
-(<:>) = \c -> (BB.char8 c <>)
-
-bstakewhile :: Parser Char -> Parser ByteString
-bstakewhile p = byteStringOf $ skipMany $ p
-
-bstakewhile1 :: Parser Char -> Parser ByteString
-bstakewhile1 p = byteStringOf $ skipSome $ p
-
-butnot :: Parser a -> Parser b -> Parser a
-butnot p q = withSpan p \x sp -> (inSpan sp q `fails`) $> x
-
 -- honestly, doing this for ByteString parsing is kind of tedious.
 -- there has to be a better way ... for less-hot places, probably
 -- ok to use regular strings which are much nicer to work with.

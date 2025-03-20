@@ -1,10 +1,10 @@
 module Language.NC.Prelude
   ( module Control.Monad,
     module Control.Monad.Fix,
-    module Prelude,
-    module Language.NC.Parse,
     module FlatParse.Stateful,
+    module Prelude,
     module Data.Char,
+    module Data.Data,
     module Data.Dynamic,
     module Data.Function,
     module Data.Functor,
@@ -12,21 +12,20 @@ module Language.NC.Prelude
     module Data.Word,
     module GHC.Float,
     module GHC.Generics,
+    module Language.NC.Parse,
+    module Language.NC.ParseUtil,
     Builder,
     ByteString,
     Text,
-    builder2bs,
-    fromStrict,
-    toStrict,
   )
 where
 
 import Control.Monad
 import Control.Monad.Fix
-import Data.ByteString (ByteString, fromStrict, toStrict)
+import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
-import Data.ByteString.Builder qualified as BB
 import Data.Char hiding (isDigit)
+import Data.Data hiding (Fixity, Infix, Prefix)
 import Data.Dynamic
 import Data.Function
 import Data.Functor
@@ -37,7 +36,5 @@ import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics
 import Language.NC.Parse
+import Language.NC.ParseUtil
 import Prelude hiding (take, unzip)
-
-builder2bs :: Builder -> ByteString
-builder2bs = toStrict . BB.toLazyByteString

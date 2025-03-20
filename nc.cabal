@@ -29,7 +29,8 @@ library
     import:             warnings, lang, optim
     exposed-modules:    Language.NC, Language.NC.CTypes, Language.NC.Parse,
                         Language.NC.ParseDec, Language.NC.Dec
-    other-modules:      Language.NC.Prelude, Language.NC.THLex
+    other-modules:      Language.NC.Prelude, Language.NC.THLex,
+                        Language.NC.ParseUtil
     default-extensions: NoImplicitPrelude
     build-depends:      base, vector, flatparse, containers, transformers,
                         bytestring, text, parser-combinators
