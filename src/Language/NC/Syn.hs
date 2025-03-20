@@ -12,7 +12,11 @@ type Name a = Text
 
 data Expr a
 
+-- | Fields for structs, unions, and union struct cases.
 data Field a
+  = Field (FldX a) (Type a) (Name a)
+  | -- | Bit fields are highly restricted.
+    BitField (FldX a) (Type a) (Name a)
 
 -- Struct/Union/UnionStruct symbols live in a different namespace than
 -- terms, but Struct/Union/UnionStruct symbols share the same namespace.
@@ -23,12 +27,12 @@ data Type a
   = Primitive (PrimX a) PrimType
   | -- | Array, known dimensions, dependent dimensions
     Array (ArrX a) (Type a) [Pr.Int] [Expr a]
-  | Struct (StrX a) [Field a]
-  | Union (UniX a) [Field a]
+  | Struct (StrX a) (Name a) [Field a]
+  | Union (UniX a) (Name a) [Field a]
   | -- | The \'union struct\' is a new concept in this modification of C.
     -- It implements a true algebraic data type with a runtime tag
     -- to distinguish different cases.
-    UnionStruct (UnsX a) [Field a]
+    UnionStruct (UnsX a) (Name a) [Field a]
   | -- | Potentially variadic function.
     --
     -- In C declaring a function prototype with an unknown number
@@ -67,6 +71,8 @@ type family DecX a
 
 type family CaseX a
 
+type family FldX a
+
 type instance PrimX () = ()
 
 type instance ArrX () = ()
@@ -84,6 +90,8 @@ type instance PtrX () = ()
 type instance DecX () = ()
 
 type instance CaseX () = ()
+
+type instance FldX () = ()
 
 -- | Non-derived, primitive types
 data PrimType
