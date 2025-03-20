@@ -17,7 +17,8 @@ common warnings
     ghc-options: -Wall
 
 common lang
-    default-extensions:     BlockArguments, ViewPatterns, LambdaCase
+    default-extensions:     BlockArguments, ViewPatterns, LambdaCase,
+                            TypeFamilies
 
 common optim
     ghc-options:            -O2 -fllvm
