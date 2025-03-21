@@ -55,6 +55,20 @@ ptlist1 =
     PT "long double _Complex" (Right CT.ComplexLongDouble_)
   ]
 
+ptlist2 :: [PT]
+ptlist2 =
+  [ PT "signed long double" (Left (PrimTypeBadError BecauseSignInLongDouble)),
+    PT "unsigned long double" (Left (PrimTypeBadError BecauseSignInLongDouble)),
+    PT "signed float" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "unsigned float" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "signed double" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "unsigned double" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "signed _Bool" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "unsigned _Bool" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "signed void" (Left (PrimTypeBadError BecauseSignNotMeaningful)),
+    PT "unsigned void" (Left (PrimTypeBadError BecauseSignNotMeaningful))
+  ]
+
 runpttests :: [PT] -> [TestTree]
 runpttests = map (\p@(PT n _) -> testCase n (checkpt p))
 
@@ -74,4 +88,10 @@ unittests :: TestTree
 unittests =
   testGroup
     "Unit Tests"
-    (runpttests ptlist1)
+    [ testGroup
+        "Primitive, non-derived type parsing, must parse"
+        (runpttests ptlist1),
+      testGroup
+        "Primitive, non-derived type parsing, must not parse"
+        (runpttests ptlist2)
+    ]
