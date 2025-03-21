@@ -230,7 +230,7 @@ _primtype =
                "double" ->
                  if intonly
                    then err (PrimTypeBadError BecauseSignInLongDouble)
-                   else double >>= mklongdouble
+                   else ws >> double >>= mklongdouble
                _ -> optional_ $(string "int") $> C.Int C.Signed C.Long
              |]
        )
