@@ -6,24 +6,27 @@ module Language.NC.Parse
     ParserState (..),
     WithSpan (..),
     pwithspan,
+    cut,
   )
 where
 
 import Control.Exception
 import Data.String
-import FlatParse.Stateful hiding (Parser)
+import FlatParse.Stateful hiding (cut, Parser)
 import Prelude
 
 -- | An error, warning, or message of any kind.
 --
 -- Not all \"errors\" may be errors.
 data Error
-  = -- | Composite error
+  = -- | Composite error (reverse list)
     CompositeError [Error]
   | -- | Miscellaneous programming error
     BasicError String
   | -- | Bad primitive type
     PrimTypeBadError PrimTypeBadWhy
+  | -- | Unexpected end of file
+    UnexpectedEOFError
   | -- | Internal error
     InternalError String
   deriving (Eq, Show)
@@ -50,6 +53,13 @@ type Parser = ParserIO ParserState Error
 -- | Data with span
 data WithSpan a = WithSpan Span a
   deriving (Eq, Show)
+
+-- | Redefinition of 'FlatParse.Stateful.cut' that intelligently
+-- merges errors.
+cut :: Parser a -> Error -> Parser a
+cut p e = cutting p e \case
+  (CompositeError l) -> \g -> CompositeError (g : l)
+  f -> \g -> CompositeError [g, f]
 
 -- | Pure \"parser\" to return a 'WithSpan'.
 --

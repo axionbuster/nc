@@ -6,6 +6,7 @@ import Language.NC.ParseDec
 import Language.NC.Prelude
 import Test.Tasty
 import Test.Tasty.HUnit
+import Text.Printf
 
 main :: IO ()
 main = defaultMain tests
@@ -74,15 +75,20 @@ runpttests = map (\p@(PT n _) -> testCase n (checkpt p))
 
 checkpt :: PT -> IO ()
 checkpt (PT s e) = do
-  r <- test_runparser0 primtype s
+  r <- test_runparser0 (primtype <* cut eof UnexpectedEOFError) s
   case r of
     OK (WithSpan _ a) _ _ -> case e of
-      Right k -> unless (a == k) $ assertFailure "checkpt OK/Right/NEQ"
-      _ -> assertFailure "checkpt OK/Left (errored where success expected)"
+      Right k -> unless (a == k) $ assertFailure $ printf 
+        "checkpt OK/Right/NEQ: got %s instead of %s" (show a) (show k)
+      _ -> assertFailure $ printf 
+        "checkpt OK/Left: errored where success expected for %s" (show s)
     Err f -> case e of
-      Left g -> unless (f == g) $ assertFailure "checkpt Err/Left/NEQ"
-      _ -> assertFailure "checkpt Err/Right (succeeded where error expected)"
-    Fail -> assertFailure "checkpt Fail (gave uninformative error)"
+      Left g -> unless (f == g) $ assertFailure $ printf
+        "checkpt Err/Left/NEQ: got %s instead of %s" (show f) (show g)
+      _ -> assertFailure $ printf
+        "checkpt Err/Right: succeeded where error expected for %s" (show s)
+    Fail -> assertFailure $ printf
+        "checkpt Fail: gave uninformative error for %s" (show s)
 
 unittests :: TestTree
 unittests =

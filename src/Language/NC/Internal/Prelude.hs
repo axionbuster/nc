@@ -43,7 +43,7 @@ import Data.Functor
 import Data.Int
 import Data.Text (Text)
 import Data.Word
-import FlatParse.Stateful hiding (Parser)
+import FlatParse.Stateful hiding (Parser, cut)
 import GHC.Float
 import GHC.Generics
 import Language.NC.Parse

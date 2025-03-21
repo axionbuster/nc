@@ -1,3 +1,7 @@
+-- | Users should use this import rather than importing
+-- individual modules or "FlatParse" modules directly.
+--
+-- For one thing, it redefines 'cut' from FlatParse.
 module Language.NC.Prelude
   ( Parser,
     Error (..),
@@ -10,11 +14,13 @@ module Language.NC.Prelude
     Span (..),
     WithSpan (..),
     module Control.Monad,
+    module FlatParse.Stateful,
     test_runparser0,
   )
 where
 
 import Control.Monad
+import FlatParse.Stateful hiding (Parser)
 import Language.NC.Internal.Prelude
 
 -- temporary test helpers, which is why they're defined directly here.
