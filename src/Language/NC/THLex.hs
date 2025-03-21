@@ -118,6 +118,7 @@ ws =
            " " -> ws
            "\t" -> ws
            "\n" -> ws
+           "\r" -> ws
            "//" -> consumeline
            "/*" -> findendcomment
            _ -> pure ()
@@ -131,10 +132,19 @@ hspace = $(switch [|case _ of " " -> hspace; "\t" -> hspace; _ -> pure ()|])
 consumeline, findendcomment :: Parser ()
 
 -- | Consume line
-consumeline = $(switch [|case _ of "\n" -> pure (); _ -> consumeline|])
+consumeline =
+  $( switch
+       [|
+         case _ of
+           "\r" -> ws
+           "\r\n" -> ws
+           "\n" -> ws
+           _ -> consumeline
+         |]
+   )
 
 -- | Find end of block comment (@*\/@)
-findendcomment = $(switch [|case _ of "*/" -> pure (); _ -> findendcomment|])
+findendcomment = $(switch [|case _ of "*/" -> ws; _ -> findendcomment|])
 
 doubleslash, startcomment, endcomment :: Parser ()
 doubleslash = $(string "//")
@@ -214,7 +224,10 @@ _primtype =
              case _ of
                "char" -> pure C.Char_
                "int" -> pure C.Int_
-               "short" -> pure (C.Int C.Signed C.Short)
+               "short" ->
+                 ws
+                   >> optional_ $(string "int")
+                   $> C.Int C.Signed C.Short
                "long" -> ws >> long intonly
                _ ->
                  if intonly
@@ -226,7 +239,10 @@ _primtype =
       $( switch
            [|
              case _ of
-               "long" -> pure (C.Int C.Signed C.LongLong)
+               "long" ->
+                 ws
+                   >> optional_ $(string "int")
+                   $> C.Int C.Signed C.LongLong
                "double" ->
                  if intonly
                    then err (PrimTypeBadError BecauseSignInLongDouble)
