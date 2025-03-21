@@ -8,6 +8,19 @@ module Language.NC.CTypes
     PrimType (..),
     pattern Int_,
     pattern Char_,
+    pattern Float_,
+    pattern Double_,
+    pattern LongDouble_,
+    pattern ComplexFloat_,
+    pattern ComplexDouble_,
+    pattern ComplexLongDouble_,
+    pattern Short_,
+    pattern Long_,
+    pattern LongLong_,
+    pattern UInt_,
+    pattern UShort_,
+    pattern ULong_,
+    pattern ULongLong_,
     Signed (..),
     IntLen (..),
     FloatType (..),
@@ -111,6 +124,27 @@ data PrimType
 pattern Int_, Char_ :: PrimType
 pattern Int_ = Int Signed IntLen
 pattern Char_ = Char Nothing
+
+pattern Float_, Double_, LongDouble_ :: PrimType
+pattern Float_ = Float (Real RFFloat)
+pattern Double_ = Float (Real RFDouble)
+pattern LongDouble_ = Float (Real RFLongDouble)
+
+pattern ComplexFloat_, ComplexDouble_, ComplexLongDouble_ :: PrimType
+pattern ComplexFloat_ = Float (Complex RFFloat)
+pattern ComplexDouble_ = Float (Complex RFDouble)
+pattern ComplexLongDouble_ = Float (Complex RFLongDouble)
+
+pattern Short_, Long_, LongLong_ :: PrimType
+pattern Short_ = Int Signed Short
+pattern Long_ = Int Signed Long
+pattern LongLong_ = Int Signed LongLong
+
+pattern UInt_, UShort_, ULong_, ULongLong_ :: PrimType
+pattern UInt_ = Int Unsigned IntLen
+pattern UShort_ = Int Unsigned Short
+pattern ULong_ = Int Unsigned Long
+pattern ULongLong_ = Int Unsigned LongLong
 
 -- | Signed?
 data Signed = Signed | Unsigned
