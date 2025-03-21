@@ -160,8 +160,8 @@ _storageclass =
 --   - @static@
 --   - @auto@
 --   - @register@
-storageclass :: Parser ByteString
-storageclass = byteStringOf _storageclass
+storageclass :: Parser Span
+storageclass = spanOf _storageclass
 
 _primtypespec_word :: Parser ()
 _primtypespec_word =
@@ -184,8 +184,8 @@ _primtypespec_word =
    )
 
 -- | A single keyword that constitutes part of a primitive type specifier
-primtypespec_word :: Parser ByteString
-primtypespec_word = byteStringOf _primtypespec_word
+primtypespec_word :: Parser Span
+primtypespec_word = spanOf _primtypespec_word
 
 struct, union, unionstruct, enum :: Parser ()
 struct = $(string "struct")

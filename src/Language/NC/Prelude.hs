@@ -8,6 +8,7 @@ module Language.NC.Prelude
     ByteString,
     Text,
     Span (..),
+    WithSpan (..),
     test_runparser0,
   )
 where

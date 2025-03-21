@@ -1,6 +1,6 @@
 module Language.NC.CTypes
   ( Tag,
-    Name,
+    Name (..),
     Expr (..),
     Field (..),
     Type (..),
@@ -37,21 +37,43 @@ module Language.NC.CTypes
     PtrX,
     CaseX,
     FldX,
+    NameX,
     qualzero,
   )
 where
 
-import Language.NC.Internal.Prelude hiding (Bool, Char, Double, Enum, Float, Int, const)
+import Language.NC.Internal.Prelude hiding
+  ( Bool,
+    Char,
+    Double,
+    Enum,
+    Float,
+    Int,
+    const,
+  )
 import Language.NC.Internal.Prelude qualified as Pr
 
 -- for extensibility, i'm using the Trees That Grow approach
 -- for phase-dependent inline metadata.
 
--- | Occurrence name (not mangled; tag for a struct, union, etc.)
-type Tag a = ByteString
+-- | For structs, unions, enums, and union structs.
+type Tag = Name
 
--- | Occurrence name (not mangled)
-type Name a = ByteString
+-- | Name with source location and optional phase-specific metadata
+data Name a = Name
+  { -- | Source location
+    span :: Span,
+    -- | Phase-specific metadata (such as name mangling info)
+    ext :: NameX a
+  }
+
+deriving instance (Eq (NameX a)) => Eq (Name a)
+
+deriving instance (Show (NameX a)) => Show (Name a)
+
+type family NameX a
+
+type instance NameX () = ()
 
 -- | Placeholder for expression
 data Expr a = Expr a
@@ -199,7 +221,9 @@ class
     Eq (FldX a),
     Show (FldX a),
     Eq (QualX a),
-    Show (QualX a)
+    Show (QualX a),
+    Eq (NameX a),
+    Show (NameX a)
   ) =>
   PhaseEqShow a
 

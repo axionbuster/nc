@@ -16,11 +16,11 @@ tests = testGroup "Tests" [unittests]
 data PT = PT String (Either Error CT.PrimType)
   deriving (Eq, Show)
 
-checkpt :: PT -> Parser (CT.PrimType, Span) -> IO ()
+checkpt :: PT -> Parser (WithSpan CT.PrimType) -> IO ()
 checkpt (PT s e) pa = do
   r <- test_runparser0 pa s
   case r of
-    OK (a, _) _ _ -> case e of
+    OK (WithSpan _ a) _ _ -> case e of
       Right k -> unless (a == k) $ assertFailure "checkpt OK/Right/NEQ"
       _ -> assertFailure "checkpt OK/Left (errored where success expected)"
     Err f -> case e of
