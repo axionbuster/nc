@@ -9,10 +9,12 @@ module Language.NC.Prelude
     Text,
     Span (..),
     WithSpan (..),
+    module Control.Monad,
     test_runparser0,
   )
 where
 
+import Control.Monad
 import Language.NC.Internal.Prelude
 
 -- temporary test helpers, which is why they're defined directly here.
