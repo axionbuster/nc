@@ -21,6 +21,7 @@ common lang
                             TypeFamilies, UndecidableInstances,
                             TemplateHaskell, OrPatterns, MagicHash,
                             ExtendedLiterals, PatternSynonyms
+    default-language:       GHC2024
 
 common optim
     ghc-options:            -O2 -fllvm
@@ -28,33 +29,24 @@ common optim
 library
     import:             warnings, lang, optim
     exposed-modules:    Language.NC, Language.NC.CTypes, Language.NC.Parse,
-                        Language.NC.ParseDec, Language.NC.Dec
-    other-modules:      Language.NC.Prelude, Language.NC.THLex,
+                        Language.NC.ParseDec, Language.NC.Dec,
+                        Language.NC.Prelude
+    other-modules:      Language.NC.Internal.Prelude, Language.NC.THLex,
                         Language.NC.ParseUtil
     default-extensions: NoImplicitPrelude
     build-depends:      base, vector, flatparse, containers, transformers,
                         bytestring, text, parser-combinators
-    hs-source-dirs:   src
-    default-language: GHC2024
+    hs-source-dirs:     src
 
 executable nc
-    import:           warnings, lang, optim
-    main-is:          Main.hs
-    -- other-modules:
-    -- other-extensions:
-    build-depends: base, nc
-
-    hs-source-dirs:   app
-    default-language: GHC2024
+    import:             warnings, lang, optim
+    main-is:            Main.hs
+    build-depends:      base, nc
+    hs-source-dirs:     app
 
 test-suite nc-test
-    import:           warnings, lang, optim
-    default-language: GHC2024
-    -- other-modules:
-    -- other-extensions:
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
-    main-is:          Main.hs
-    build-depends:
-        base,
-        nc
+    import:             warnings, lang, optim
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Main.hs
+    build-depends:      base, nc, tasty, tasty-hunit, flatparse

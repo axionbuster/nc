@@ -3,7 +3,8 @@
 
 module Language.NC.THLex where
 
-import Language.NC.Prelude
+import Language.NC.CTypes qualified as C
+import Language.NC.Internal.Prelude
 
 -- | Match any keyword (reserved word)
 anykeyword :: Parser ()
@@ -48,7 +49,6 @@ anykeyword =
            "_Bool" -> pure ()
            "_Complex" -> pure ()
            "_Imaginary" -> pure ()
-           _ -> failed
          |]
    )
 
@@ -106,7 +106,6 @@ punctuator =
            "," -> pure ()
            "#" -> pure ()
            "##" -> pure ()
-           _ -> failed
          |]
    )
 
@@ -152,7 +151,6 @@ _storageclass =
            "static" -> pure ()
            "auto" -> pure ()
            "register" -> pure ()
-           _ -> failed
          |]
    )
 
@@ -182,7 +180,6 @@ _primtypespec_word =
            "_Bool" -> pure ()
            "_Complex" -> pure ()
            "_Imaginary" -> pure ()
-           _ -> failed
          |]
    )
 
@@ -195,3 +192,61 @@ struct = $(string "struct")
 union = $(string "union")
 unionstruct = union >> ws >> struct
 enum = $(string "enum")
+
+_primtype :: Parser C.PrimType
+_primtype =
+  $( switch
+       [|
+         case _ of
+           "void" -> pure C.Void
+           "_Bool" -> pure C.Bool
+           "signed" -> ws >> signed
+           "unsigned" -> ws >> unsigned
+           "float" -> ws >> float
+           "double" -> ws >> double
+           _ -> zero False
+         |]
+   )
+  where
+    zero intonly =
+      $( switch
+           [|
+             case _ of
+               "char" -> pure C.Char_
+               "int" -> pure C.Int_
+               "short" -> pure (C.Int C.Signed C.Short)
+               "long" -> ws >> long intonly
+               _ ->
+                 if intonly
+                   then pure C.Int_ -- called from signed/unsigned
+                   else failed
+             |]
+       )
+    long intonly =
+      $( switch
+           [|
+             case _ of
+               "long" -> pure (C.Int C.Signed C.LongLong)
+               "double" ->
+                 if intonly
+                   then err (PrimTypeBadError BecauseSignInLongDouble)
+                   else double >>= mklongdouble
+               _ -> optional_ $(string "int") $> C.Int C.Signed C.Long
+             |]
+       )
+    mklongdouble = \case
+      C.Float (C.Real _) -> pure $ C.Float (C.Real C.RFLongDouble)
+      C.Float (C.Complex _) -> pure $ C.Float (C.Complex C.RFLongDouble)
+      _ -> err (InternalError "mklongdouble on neither float nor double")
+    signed = zero True >>= sgn C.Signed
+    unsigned = zero True >>= sgn C.Unsigned
+    float = branch $(string "_Complex") (pure c) (pure r)
+      where
+        r = C.Float $ C.Real C.RFFloat; c = C.Float $ C.Complex C.RFFloat
+    double = branch $(string "_Complex") (pure c) (pure r)
+      where
+        r = C.Float $ C.Real C.RFDouble; c = C.Float $ C.Complex C.RFDouble
+    sgn s = \case
+      C.Int _ l -> pure $ C.Int s l
+      C.Char _ -> pure $ C.Char (Just s)
+      _ -> err (PrimTypeBadError BecauseSignNotMeaningful)

@@ -1,14 +1,44 @@
-module Language.NC.CTypes where
+module Language.NC.CTypes
+  ( Tag,
+    Name,
+    Expr (..),
+    Field (..),
+    Type (..),
+    Case (..),
+    PrimType (..),
+    pattern Int_,
+    pattern Char_,
+    Signed (..),
+    IntLen (..),
+    FloatType (..),
+    RealFloatType (..),
+    Qualifier (..),
+    QualifiedType (..),
+    StorageClass (..),
+    PrimX,
+    ArrX,
+    StrX,
+    UniX,
+    UnsX,
+    FunX,
+    PtrX,
+    CaseX,
+    FldX,
+    qualzero,
+  )
+where
 
-import Language.NC.Prelude hiding (Bool, Char, Double, Enum, Float, Int, const)
-import Language.NC.Prelude qualified as Pr
+import Language.NC.Internal.Prelude hiding (Bool, Char, Double, Enum, Float, Int, const)
+import Language.NC.Internal.Prelude qualified as Pr
 
 -- for extensibility, i'm using the Trees That Grow approach
 -- for phase-dependent inline metadata.
 
-type Tag a = Text
+-- | Occurrence name (not mangled; tag for a struct, union, etc.)
+type Tag a = ByteString
 
-type Name a = Text
+-- | Occurrence name (not mangled)
+type Name a = ByteString
 
 -- | Placeholder for expression
 data Expr a = Expr a
@@ -35,7 +65,7 @@ deriving instance (PhaseEqShow a) => Show (Field a)
 data Type a
   = Primitive (PrimX a) PrimType
   | -- | Array, known dimensions, dependent dimensions
-    Array (ArrX a) (Type a) [Pr.Int] [Expr a]
+    Array (ArrX a) (Type a) [Pr.Int] [Expr a] -- Q: what about renaming?
   | Struct (StrX a) (Name a) [Field a]
   | Union (UniX a) (Name a) [Field a]
   | -- | The \'union struct\' is a new concept in this modification of C.
