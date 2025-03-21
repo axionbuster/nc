@@ -12,7 +12,7 @@ where
 
 import Control.Exception
 import Data.String
-import FlatParse.Stateful hiding (cut, Parser)
+import FlatParse.Stateful hiding (Parser, cut)
 import Prelude
 
 -- | An error, warning, or message of any kind.

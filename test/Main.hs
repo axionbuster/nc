@@ -78,17 +78,34 @@ checkpt (PT s e) = do
   r <- test_runparser0 (primtype <* cut eof UnexpectedEOFError) s
   case r of
     OK (WithSpan _ a) _ _ -> case e of
-      Right k -> unless (a == k) $ assertFailure $ printf 
-        "checkpt OK/Right/NEQ: got %s instead of %s" (show a) (show k)
-      _ -> assertFailure $ printf 
-        "checkpt OK/Left: errored where success expected for %s" (show s)
+      Right k ->
+        unless (a == k) $
+          assertFailure $
+            printf
+              "checkpt OK/Right/NEQ: got %s instead of %s"
+              (show a)
+              (show k)
+      k ->
+        assertFailure $
+          printf
+            "checkpt OK/Left: succeeded with %s where error of %s expected"
+            (show a)
+            (show k)
     Err f -> case e of
-      Left g -> unless (f == g) $ assertFailure $ printf
-        "checkpt Err/Left/NEQ: got %s instead of %s" (show f) (show g)
-      _ -> assertFailure $ printf
-        "checkpt Err/Right: succeeded where error expected for %s" (show s)
-    Fail -> assertFailure $ printf
-        "checkpt Fail: gave uninformative error for %s" (show s)
+      Left g ->
+        unless (f == g) $
+          assertFailure $
+            printf
+              "checkpt Err/Left/NEQ: got %s instead of %s"
+              (show f)
+              (show g)
+      g ->
+        assertFailure $
+          printf
+            "checkpt Err/Right: errored with %s where success of %s expected"
+            (show f)
+            (show g)
+    Fail -> assertFailure $ printf "checkpt Fail: gave uninformative error"
 
 unittests :: TestTree
 unittests =
