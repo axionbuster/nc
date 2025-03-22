@@ -154,7 +154,7 @@ unittests =
 data LMAO = LMAO {lmaointended :: String, lmaoexpressed :: String}
 
 instance Semigroup LMAO where
-  LMAO a b <> LMAO c d = LMAO (a <> c) (b <> d)
+  LMAO ~a ~b <> LMAO ~c ~d = LMAO (a <> c) (b <> d)
 
 instance Monoid LMAO where
   mempty = LMAO mempty mempty
@@ -167,7 +167,7 @@ instance IsString LMAO where
 
 -- comparison on expressed portion only
 instance Eq LMAO where
-  ~a == ~b = a.lmaoexpressed == b.lmaoexpressed
+  ~a == ~b = a.lmaointended == b.lmaointended
 
 -- make a sea of "types" -- well, only a tiny fraction will
 -- designate primitive non-derived types.
@@ -205,14 +205,15 @@ exhcheck1 = nubbed >>= report
     nubbed = nub <$> filterM parses mkseaoftypes
     report n
       | length n == length ptlist1 = pure ()
-      | otherwise =
+      | otherwise = do
+          let samplen = 50
           assertFailure
             ( printf
                 "get %d /= expect %d; samples (%d)\n%s"
                 (length n)
                 (length ptlist1)
-                (min 8 (length n))
-                (show $ Prelude.take 8 n)
+                (min samplen (length n))
+                (show $ Prelude.take samplen n)
             )
     parses s =
       test_runparser0 primtype s.lmaoexpressed <&> \case
