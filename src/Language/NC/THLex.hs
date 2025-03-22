@@ -189,7 +189,6 @@ _primtypespec_word =
            "short" -> pure ()
            "_Bool" -> pure ()
            "_Complex" -> pure ()
-           "_Imaginary" -> pure ()
          |]
    )
 
