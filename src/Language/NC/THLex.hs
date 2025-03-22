@@ -1,8 +1,12 @@
 -- due to a defect in FlatParse TH splice (generation of 'anykeyword')
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
+-- | Export various lexing utilities that rely on Template Haskell.
+--
+-- NOTE: Even functions that begin with an underscore (\_) are exported.
 module Language.NC.THLex where
 
+import Language.Haskell.TH.Syntax
 import Language.NC.CTypes qualified as C
 import Language.NC.Internal.Prelude
 
@@ -131,7 +135,7 @@ hspace = $(switch [|case _ of " " -> hspace; "\t" -> hspace; _ -> pure ()|])
 
 consumeline, findendcomment :: Parser ()
 
--- | Consume line
+-- | Consume line. Windows, Classic MacOS, and UNIX line endings.
 consumeline =
   $( switch
        [|
@@ -139,18 +143,37 @@ consumeline =
            "\r" -> ws
            "\r\n" -> ws
            "\n" -> ws
-           _ -> consumeline
+           _ -> branch skipAnyChar consumeline eof
          |]
    )
 
 -- | Find end of block comment (@*\/@)
-findendcomment = $(switch [|case _ of "*/" -> ws; _ -> findendcomment|])
+findendcomment =
+  $( switch
+       [|
+         case _ of
+           "*/" -> ws
+           _ -> skipAnyChar >> findendcomment
+         |]
+   )
 
 doubleslash, startcomment, endcomment :: Parser ()
+
+-- | Match a @\/\/@
 doubleslash = $(string "//")
+
+-- | Match a @\/*@
 startcomment = $(string "/*")
+
+-- | Match a @*\/@
 endcomment = $(string "*/")
 
+-- | Storage class specifier, one of
+--   - @typedef@
+--   - @extern@
+--   - @static@
+--   - @auto@
+--   - @register@
 _storageclass :: Parser ()
 _storageclass =
   $( switch
@@ -173,6 +196,7 @@ _storageclass =
 storageclass :: Parser Span
 storageclass = spanOf _storageclass
 
+-- | Match any of the keywords used to define a primitive nonderived type
 _primtypespec_word :: Parser ()
 _primtypespec_word =
   $( switch
@@ -202,6 +226,7 @@ union = $(string "union")
 unionstruct = union >> ws >> struct
 enum = $(string "enum")
 
+-- | Exported to support 'Language.NC.ParseDec.primtype'
 _primtype :: Parser C.PrimType
 _primtype =
   $( switch
@@ -265,3 +290,7 @@ _primtype =
       C.Int _ l -> pure $ C.Int s l
       C.Char _ -> pure $ C.Char (Just s)
       _ -> err (PrimTypeBadError BecauseSignNotMeaningful)
+
+-- | like 'switch', but after each match, consume any whitespace
+switch' :: Q Exp -> Q Exp
+switch' = switchWithPost (Just [|ws|])

@@ -1,6 +1,8 @@
 module Main (main) where
 
 import Control.Monad
+import Data.Functor ((<&>))
+import Data.List (nub)
 import Language.NC.CTypes qualified as CT
 import Language.NC.ParseDec
 import Language.NC.Prelude
@@ -139,5 +141,51 @@ unittests =
         (runpttests ptlist1),
       testGroup
         "Primitive, non-derived type parsing, must not parse"
-        (runpttests ptlist2)
+        (runpttests ptlist2),
+      testGroup
+        "Prmitive, exhaustive test over a list"
+        [testCase "" exhcheck1]
     ]
+
+-- make a sea of "types" -- well, only a tiny fraction will
+-- designate primitive non-derived types.
+mkseaoftypes :: [String]
+mkseaoftypes = do
+  -- last computed: 337,500 choices. may have changed.
+  let ty1 =
+        [ "",
+          "int",
+          "char",
+          "void",
+          "short",
+          "long",
+          "long int",
+          "long long",
+          "double",
+          "float",
+          "_Bool",
+          "_Complex"
+        ]
+  let sgn = ["", "signed", "unsigned"]
+  let ws = ["", " ", "/*\t*/\t/* int */", "/*int long*/", "//\n"]
+  let mergewords a b c d e = a ++ b ++ c ++ d ++ e
+  mergewords
+    <$> ws
+    <*> (sgn `mplus` ty1)
+    <*> ws
+    <*> (sgn `mplus` ty1)
+    <*> ws
+
+-- an exhaustive check to make sure there's no over-parsing.
+exhcheck1 :: IO ()
+exhcheck1 = report =<< length . nub <$> filterM parses mkseaoftypes
+  where
+    report n
+      | n == length ptlist1 = pure ()
+      | otherwise =
+          assertFailure
+            (printf "get %d /= expect %d" n (length ptlist1))
+    parses s =
+      test_runparser0 primtype s <&> \case
+        OK {} -> True
+        _ -> False

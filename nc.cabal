@@ -35,7 +35,8 @@ library
                         Language.NC.ParseUtil
     default-extensions: NoImplicitPrelude
     build-depends:      base, vector, flatparse, containers, transformers,
-                        bytestring, text, parser-combinators
+                        bytestring, text, parser-combinators,
+                        template-haskell
     hs-source-dirs:     src
 
 executable nc
