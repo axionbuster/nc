@@ -1,8 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main (main) where
 
 import Control.Monad
 import Data.Functor ((<&>))
 import Data.List (nub)
+import Data.String (IsString (..))
 import Language.NC.CTypes qualified as CT
 import Language.NC.ParseDec
 import Language.NC.Prelude
@@ -147,11 +150,30 @@ unittests =
         [testCase "" exhcheck1]
     ]
 
+-- used for some 'LMAO' testing below
+data LMAO = LMAO {lmaointended :: String, lmaoexpressed :: String}
+
+instance Semigroup LMAO where
+  LMAO a b <> LMAO c d = LMAO (a <> c) (b <> d)
+
+instance Monoid LMAO where
+  mempty = LMAO mempty mempty
+
+instance Show LMAO where
+  show l = printf "\"%s\" (--> %s)" l.lmaoexpressed l.lmaointended
+
+instance IsString LMAO where
+  fromString s = LMAO s s
+
+-- comparison on expressed portion only
+instance Eq LMAO where
+  ~a == ~b = a.lmaoexpressed == b.lmaoexpressed
+
 -- make a sea of "types" -- well, only a tiny fraction will
 -- designate primitive non-derived types.
-mkseaoftypes :: [String]
+mkseaoftypes :: [LMAO]
 mkseaoftypes = do
-  -- last computed: 337,500 choices. may have changed.
+  -- last computed: less than 337,500 choices. may have changed.
   let ty1 =
         [ "",
           "int",
@@ -167,8 +189,8 @@ mkseaoftypes = do
           "_Complex"
         ]
   let sgn = ["", "signed", "unsigned"]
-  let ws = ["", " ", "/*\t*/\t/* int */", "/*int long*/", "//\n"]
-  let mergewords a b c d e = a ++ b ++ c ++ d ++ e
+  let ws = LMAO "" <$> ["", " ", "/*\t*/\t/* int */", "/*int long*/", "//\n"]
+  let mergewords a b c d e = a <> b <> c <> d <> e
   mergewords
     <$> ws
     <*> (sgn `mplus` ty1)
@@ -178,14 +200,21 @@ mkseaoftypes = do
 
 -- an exhaustive check to make sure there's no over-parsing.
 exhcheck1 :: IO ()
-exhcheck1 = report =<< length . nub <$> filterM parses mkseaoftypes
+exhcheck1 = nubbed >>= report
   where
+    nubbed = nub <$> filterM parses mkseaoftypes
     report n
-      | n == length ptlist1 = pure ()
+      | length n == length ptlist1 = pure ()
       | otherwise =
           assertFailure
-            (printf "get %d /= expect %d" n (length ptlist1))
+            ( printf
+                "get %d /= expect %d; samples (%d)\n%s"
+                (length n)
+                (length ptlist1)
+                (min 8 (length n))
+                (show $ Prelude.take 8 n)
+            )
     parses s =
-      test_runparser0 primtype s <&> \case
+      test_runparser0 primtype s.lmaoexpressed <&> \case
         OK {} -> True
         _ -> False

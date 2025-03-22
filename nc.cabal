@@ -20,7 +20,8 @@ common lang
     default-extensions:     BlockArguments, ViewPatterns, LambdaCase,
                             TypeFamilies, UndecidableInstances,
                             TemplateHaskell, OrPatterns, MagicHash,
-                            ExtendedLiterals, PatternSynonyms
+                            ExtendedLiterals, PatternSynonyms,
+                            OverloadedRecordDot
     default-language:       GHC2024
 
 common optim
