@@ -36,4 +36,4 @@ operator = spanOf (skipSome opchar)
 
 -- | Parse a \"primitive\", non-derived type, and its span
 primtype :: Parser (WithSpan PrimType)
-primtype = withSpan _primtype pwithspan
+primtype = withSpan (lexeme _primtype) pwithspan

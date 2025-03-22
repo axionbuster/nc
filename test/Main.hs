@@ -3,8 +3,9 @@
 module Main (main) where
 
 import Control.Monad
+import Data.Containers.ListUtils (nubOrd)
 import Data.Functor ((<&>))
-import Data.List (nub)
+import Data.List ((\\))
 import Data.String (IsString (..))
 import Language.NC.CTypes qualified as CT
 import Language.NC.ParseDec
@@ -40,7 +41,6 @@ ptlist1 =
     PT "signed short int" (Right CT.Short_),
     PT "unsigned short" (Right CT.UShort_),
     PT "unsigned short int" (Right CT.UShort_),
-    PT "int" (Right CT.Int_),
     PT "signed" (Right CT.Int_),
     PT "signed int" (Right CT.Int_),
     PT "unsigned" (Right CT.UInt_),
@@ -165,15 +165,24 @@ instance Show LMAO where
 instance IsString LMAO where
   fromString s = LMAO s s
 
--- comparison on expressed portion only
+-- comparison on intended portion only
 instance Eq LMAO where
   ~a == ~b = a.lmaointended == b.lmaointended
+
+-- same
+instance Ord LMAO where
+  compare ~a ~b = compare a.lmaointended b.lmaointended
+  ~a < ~b = a.lmaointended < b.lmaointended
+
+-- | This helps collapse some false duplicates by trimming whitespace.
+cleanlmao :: LMAO -> LMAO
+cleanlmao ~l = LMAO (unwords $ words l.lmaointended) l.lmaoexpressed
 
 -- make a sea of "types" -- well, only a tiny fraction will
 -- designate primitive non-derived types.
 mkseaoftypes :: [LMAO]
 mkseaoftypes = do
-  -- last computed: less than 337,500 choices. may have changed.
+  let ws = LMAO " " <$> ["", " ", "/*\t*/\t/* int */", "/*int long*/", "//\n"]
   let ty1 =
         [ "",
           "int",
@@ -181,41 +190,49 @@ mkseaoftypes = do
           "void",
           "short",
           "long",
-          "long int",
           "long long",
           "double",
           "float",
           "_Bool",
           "_Complex"
         ]
+  let ty2 = do
+        a <- ty1
+        b <- ws
+        c <- ty1
+        pure $ a <> b <> c
   let sgn = ["", "signed", "unsigned"]
-  let ws = LMAO "" <$> ["", " ", "/*\t*/\t/* int */", "/*int long*/", "//\n"]
-  let mergewords a b c d e = a <> b <> c <> d <> e
-  mergewords
-    <$> ws
-    <*> (sgn `mplus` ty1)
-    <*> ws
-    <*> (sgn `mplus` ty1)
-    <*> ws
+  a <- ws
+  b <- sgn `mplus` ty1
+  c <- ws
+  d <- sgn `mplus` ty2
+  e <- ws
+  pure $ cleanlmao $ mconcat [a, b, c, d, e]
 
 -- an exhaustive check to make sure there's no over-parsing.
+-- this could get heavy on the memory.
 exhcheck1 :: IO ()
 exhcheck1 = nubbed >>= report
   where
-    nubbed = nub <$> filterM parses mkseaoftypes
+    nubbed = nubOrd <$> filterM parses mkseaoftypes
     report n
       | length n == length ptlist1 = pure ()
       | otherwise = do
           let samplen = 50
           assertFailure
             ( printf
-                "get %d /= expect %d; samples (%d)\n%s"
+                "get %d /= expect %d; diff samples (%d)\n%s"
                 (length n)
                 (length ptlist1)
                 (min samplen (length n))
-                (show $ Prelude.take samplen n)
+                ( -- on mismatch, compute set difference of
+                  -- expected set - computed set
+                  show $
+                    Prelude.take samplen $
+                      (map (\(PT a _) -> LMAO a a) ptlist1) \\ n
+                )
             )
     parses s =
-      test_runparser0 primtype s.lmaoexpressed <&> \case
+      test_runparser0 (primtype <* eof) s.lmaoexpressed <&> \case
         OK {} -> True
         _ -> False

@@ -129,6 +129,22 @@ ws =
          |]
    )
 
+-- | Consume some whitespace and comments.
+ws1 :: Parser ()
+ws1 =
+  $( switch
+       [|
+         case _ of
+           " " -> ws
+           "\t" -> ws
+           "\n" -> ws
+           "\r" -> ws
+           "//" -> consumeline
+           "/*" -> findendcomment
+           _ -> eof
+         |]
+   )
+
 -- | Consume 0 or more horizontal spaces
 hspace :: Parser ()
 hspace = $(switch [|case _ of " " -> hspace; "\t" -> hspace; _ -> pure ()|])
@@ -223,7 +239,7 @@ primtypespec_word = spanOf _primtypespec_word
 struct, union, unionstruct, enum :: Parser ()
 struct = $(string "struct")
 union = $(string "union")
-unionstruct = union >> ws >> struct
+unionstruct = union >> ws1 >> struct
 enum = $(string "enum")
 
 -- | Exported to support 'Language.NC.ParseDec.primtype'
@@ -234,10 +250,10 @@ _primtype =
          case _ of
            "void" -> pure C.Void
            "_Bool" -> pure C.Bool
-           "signed" -> ws >> signed
-           "unsigned" -> ws >> unsigned
-           "float" -> ws >> float
-           "double" -> ws >> double
+           "signed" -> ws1 >> signed
+           "unsigned" -> ws1 >> unsigned
+           "float" -> ws1 >> float
+           "double" -> ws1 >> double
            _ -> zero False
          |]
    )
@@ -249,10 +265,14 @@ _primtype =
                "char" -> pure C.Char_
                "int" -> pure C.Int_
                "short" ->
-                 ws
+                 ws1
                    >> optional_ $(string "int")
                    $> C.Int C.Signed C.Short
-               "long" -> ws >> long intonly
+               "long" -> ws1 >> long intonly
+               "float" -> err (PrimTypeBadError BecauseSignNotMeaningful)
+               "double" -> err (PrimTypeBadError BecauseSignNotMeaningful)
+               "_Bool" -> err (PrimTypeBadError BecauseSignNotMeaningful)
+               "void" -> err (PrimTypeBadError BecauseSignNotMeaningful)
                _ ->
                  if intonly
                    then pure C.Int_ -- called from signed/unsigned
@@ -264,13 +284,13 @@ _primtype =
            [|
              case _ of
                "long" ->
-                 ws
+                 ws1
                    >> optional_ $(string "int")
                    $> C.Int C.Signed C.LongLong
                "double" ->
                  if intonly
                    then err (PrimTypeBadError BecauseSignInLongDouble)
-                   else ws >> double >>= mklongdouble
+                   else ws1 >> double >>= mklongdouble
                _ -> optional_ $(string "int") $> C.Int C.Signed C.Long
              |]
        )
@@ -294,3 +314,12 @@ _primtype =
 -- | like 'switch', but after each match, consume any whitespace
 switch' :: Q Exp -> Q Exp
 switch' = switchWithPost (Just [|ws|])
+
+-- | like 'switch', but after each match, consume some whitespace
+switch1' :: Q Exp -> Q Exp
+switch1' = switchWithPost (Just [|ws1|])
+
+-- | Parse a thing and then require whitespace or end of file, which is
+-- also consumed.
+lexeme :: Parser a -> Parser a
+lexeme = (<* ws1)
