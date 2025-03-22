@@ -138,16 +138,31 @@ checkpt (PT s e) = do
 unittests :: TestTree
 unittests =
   testGroup
-    "Unit Tests"
+    "Primitive Nonderived Type Unit Tests"
     [ testGroup
-        "Primitive, non-derived type parsing, must parse"
+        "non-derived type parsing, must parse"
         (runpttests ptlist1),
       testGroup
-        "Primitive, non-derived type parsing, must not parse"
+        "non-derived type parsing, must not parse"
         (runpttests ptlist2),
       testGroup
-        "Prmitive, exhaustive test over a list"
-        [testCase "" exhcheck1]
+        "exhaustive test over a list"
+        [testCase "exhaustive test" exhcheck1],
+      testGroup
+        "span"
+        let stuff = "int    " -- 4 spaces
+            correct = Span (Pos 7) (Pos 4) -- begin, end; counted from end.
+            check =
+              test_runparser0 primtype stuff >>= \case
+                OK (WithSpan s _) _ _ ->
+                  unless (s == correct) do
+                    assertFailure $
+                      printf
+                        "span incorrect --- expected %s, got %s"
+                        (show correct)
+                        (show s)
+                _ -> assertFailure "no parse"
+         in [testCase (printf "\"%s\" has correct span" stuff) check]
     ]
 
 -- used for some 'LMAO' testing below
