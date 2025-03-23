@@ -37,7 +37,7 @@ library
     default-extensions: NoImplicitPrelude
     build-depends:      base, vector, flatparse, containers, transformers,
                         bytestring, text, parser-combinators,
-                        template-haskell
+                        template-haskell, hashtables, unliftio
     hs-source-dirs:     src
 
 executable nc

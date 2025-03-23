@@ -320,6 +320,14 @@ switch1' :: Q Exp -> Q Exp
 switch1' = switchWithPost (Just [|ws1|])
 
 -- | Parse a thing and then require whitespace or end of file, which is
--- also consumed.
+-- also consumed. If there's an error, annotate it with a span, log it, and
+-- then rethrow the error. Use 'try' to suppress the error.
 lexeme :: Parser a -> Parser a
-lexeme = (<* ws1)
+lexeme p = do
+  st <- getPos
+  let apologize e = do
+        en <- getPos
+        es <- pserrors <$> ask
+        modifyIORef es (:|> aenew e (Span st en))
+        err e
+  withError p apologize <* ws1

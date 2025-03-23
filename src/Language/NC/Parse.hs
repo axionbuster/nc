@@ -5,24 +5,38 @@ module Language.NC.Parse
     Parser,
     ParserState (..),
     WithSpan (..),
+    Symbol (..),
+    SymTab,
+    Str,
+    Seq (..),
+    aenew,
     pwithspan,
     cut,
     mkstate0,
+    symins,
+    symget,
+    symget_zr,
+    symtraverse_,
+    symfoldM,
   )
 where
 
 import Control.Exception
+import Control.Monad
+import Data.ByteString.Short
+import Data.HashTable.IO qualified as H
+import Data.IORef
+import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.String
-import FlatParse.Stateful hiding (Parser, cut)
+import Data.Text (Text)
+import FlatParse.Stateful hiding (Parser)
 import Prelude
 
 -- | An error, warning, or message of any kind.
 --
 -- Not all \"errors\" may be errors.
 data Error
-  = -- | Composite error (reverse list)
-    CompositeError [Error]
-  | -- | Miscellaneous programming error
+  = -- | Miscellaneous programming error
     BasicError String
   | -- | Bad primitive type
     PrimTypeBadError PrimTypeBadWhy
@@ -45,26 +59,76 @@ instance Exception Error
 instance IsString Error where
   fromString = BasicError
 
+-- | Hints and other related info.
+data RelatedInfo = RelatedInfo
+  { infospan :: Span,
+    infomesg :: Text
+  }
+  deriving (Eq, Show)
+
+-- | An error annotated with span and optional hints.
+data AnnotatedError = AnnotatedError
+  { aeerr :: Error,
+    aespn :: Span,
+    aerel :: [RelatedInfo]
+  }
+  deriving (Eq, Show)
+
+-- | Create a new empty annotated error with the given span.
+aenew :: Error -> Span -> AnnotatedError
+aenew e s = AnnotatedError e s mempty
+
+type Str = ShortByteString
+
+-- | Symbol table
+type SymTab = H.CuckooHashTable Str Symbol
+
+-- | Insert symbol
+symins :: SymTab -> Str -> Symbol -> IO ()
+symins = H.insert
+
+-- | Get symbol
+symget :: SymTab -> Str -> IO (Maybe Symbol)
+symget = H.lookup
+
+-- | Get symbol or throw 'mzero'
+symget_zr :: SymTab -> Str -> IO Symbol
+symget_zr s n =
+  symget s n >>= \case
+    Just m -> pure m
+    _ -> mzero
+
+-- | 'traverse_' for 'SymTab' (it\'s not an instance of 'Traversable')
+symtraverse_ :: ((Str, Symbol) -> IO a) -> SymTab -> IO ()
+symtraverse_ = H.mapM_
+
+-- | 'foldM' for 'SymTab'
+symfoldM :: (a -> (Str, Symbol) -> IO a) -> a -> SymTab -> IO a
+symfoldM = H.foldM
+
+-- | Symbol
+data Symbol = Symbol
+  deriving (Eq, Show)
+
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
+  { pserrors :: IORef (Seq AnnotatedError),
+    pssymbols :: SymTab
+  }
 
 -- | Create a starter state.
 mkstate0 :: IO ParserState
-mkstate0 = pure ParserState
+mkstate0 = do
+  e <- newIORef mempty
+  h <- H.new
+  pure (ParserState e h)
 
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error
 
--- | Data with span
+-- | Data with span.
 data WithSpan a = WithSpan Span a
   deriving (Eq, Show)
-
--- | Redefinition of 'FlatParse.Stateful.cut' that intelligently
--- merges errors.
-cut :: Parser a -> Error -> Parser a
-cut p e = cutting p e \case
-  (CompositeError l) -> \g -> CompositeError (g : l)
-  f -> \g -> CompositeError [g, f]
 
 -- | Pure \"parser\" to return a 'WithSpan'.
 --

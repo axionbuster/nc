@@ -16,6 +16,7 @@ module Language.NC.Internal.Prelude
     module GHC.Generics,
     module Language.NC.Parse,
     module Language.NC.ParseUtil,
+    module UnliftIO.IORef,
     Builder,
     ByteString,
     Text,
@@ -43,9 +44,10 @@ import Data.Functor
 import Data.Int
 import Data.Text (Text)
 import Data.Word
-import FlatParse.Stateful hiding (Parser, cut)
+import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics
 import Language.NC.Parse
 import Language.NC.ParseUtil
+import UnliftIO.IORef
 import Prelude hiding (take, unzip)

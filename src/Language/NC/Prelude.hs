@@ -26,4 +26,6 @@ import Language.NC.Internal.Prelude
 -- temporary test helpers, which is why they're defined directly here.
 
 test_runparser0 :: Parser a -> String -> IO (Result Error a)
-test_runparser0 p s = runParserIO p ParserState 0 (strToUtf8 s)
+test_runparser0 p s = do
+  q <- mkstate0
+  runParserIO p q 0 (strToUtf8 s)
