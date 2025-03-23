@@ -1,9 +1,15 @@
 module Language.NC.CTypes
   ( Tag,
     Name (..),
-    Expr (..),
+    Expr,
     Field (..),
+    Bind (..),
     Type (..),
+    Variadic (..),
+    UnionStruct (..),
+    Record (..),
+    EnumCase (..),
+    Enumeration (..),
     Case (..),
     PrimType (..),
     pattern Int_,
@@ -28,16 +34,6 @@ module Language.NC.CTypes
     Qualifier (..),
     QualifiedType (..),
     StorageClass (..),
-    PrimX,
-    ArrX,
-    StrX,
-    UniX,
-    UnsX,
-    FunX,
-    PtrX,
-    CaseX,
-    FldX,
-    NameX,
     qualzero,
   )
 where
@@ -50,83 +46,101 @@ import Language.NC.Internal.Prelude hiding
     Float,
     Int,
     const,
+    span,
   )
 import Language.NC.Internal.Prelude qualified as Pr
-
--- for extensibility, i'm using the Trees That Grow approach
--- for phase-dependent inline metadata.
 
 -- | For structs, unions, enums, and union structs.
 type Tag = Name
 
--- | Name with source location and optional phase-specific metadata
-data Name a = Name
+-- | Name with source location and possibly other annotations.
+data Name = Name
   { -- | Source location
-    span :: Span,
-    -- | Phase-specific metadata (such as name mangling info)
-    ext :: NameX a
+    span :: Span
   }
+  deriving (Eq, Show)
 
-deriving instance (Eq (NameX a)) => Eq (Name a)
-
-deriving instance (Show (NameX a)) => Show (Name a)
-
-type family NameX a
-
-type instance NameX () = ()
-
--- | Placeholder for expression
-data Expr a = Expr a
-
-instance Eq (Expr a) where
-  _ == _ = True
-
-instance Show (Expr a) where
-  show _ = "Expr"
+-- | Placeholder for expression; used for dependent typing in variable
+-- sized arrays and for enumerations. Right now, you can't make an instance of
+-- type, so any constructor that requires this type also can't be constructed.
+data Expr
+  deriving (Eq, Show)
 
 -- | Fields for structs, unions, and union struct cases.
-data Field a
-  = Field (FldX a) (Type a) (Name a)
-  | -- | Bit fields are highly restricted.
-    BitField (FldX a) (Type a) (Name a)
+data Field
+  = Field Type Name
+  | -- | Bit fields are highly restricted. We allow them for all
+    -- \"record\" types so we can report good errors.
+    BitField Type Name
+  deriving (Eq, Show)
 
-deriving instance (PhaseEqShow a) => Show (Field a)
+-- | A binding in a @union struct@ case or a parameter list.
+data Bind
+  = -- | Extended syntax allows name-only patterns in certain situations
+    -- where they would be disallowed in C.
+    Bind (Maybe Type) (Maybe Name)
+  deriving (Eq, Show)
 
--- Struct/Union/UnionStruct symbols live in a different namespace than
--- terms, but Struct/Union/UnionStruct symbols share the same namespace.
-
--- | n1256. 6.7.2 "Type specifiers", with an addition of @Sum@
--- (`union struct`).
-data Type a
-  = Primitive (PrimX a) PrimType
-  | -- | Array, known dimensions, dependent dimensions
-    Array (ArrX a) (Type a) [Pr.Int] [Expr a] -- Q: what about renaming?
-  | Struct (StrX a) (Name a) [Field a]
-  | Union (UniX a) (Name a) [Field a]
+-- | Type of a term. Anonymous record types, pointer decorations make them
+-- complicated.
+data Type
+  = -- | Primitive, non-derived type
+    PrimitiveT PrimType
+  | StructT Record
+  | UnionT Record
   | -- | The \'union struct\' is a new concept in this modification of C.
     -- It implements a true algebraic data type with a runtime tag
     -- to distinguish different cases.
-    UnionStruct (UnsX a) (Name a) [Field a]
-  | -- | Potentially variadic function.
-    --
-    -- In C declaring a function prototype with an unknown number
-    -- of arguments is allowed, and this is especially relevant
-    -- for declaration of a function pointer. See this example:
-    --
-    -- @int f(int (\*)(), double (\*)[3]);@
-    --
-    -- Here the first argument may take any number of arguments.
-    -- However, the return type must always be specified.
-    Function (FunX a) (Maybe [Type a]) [Type a] (Type a)
-  | Pointer (PtrX a) (QualifiedType a)
+    UnionStructT UnionStruct
+  | EnumT Enumeration
+  | -- | Potentially variadic function, with possibly missing argument list.
+    -- (This situation is different from having a @void@ argument list,
+    -- where it means it will take no arguments. With a missing argument list,
+    -- the number of arguments to take is unknown or hidden.)
+    FunctionT Variadic (Maybe (Seq Type)) Type
+  | PointerT QualifiedType
+  deriving (Eq, Show)
 
-deriving instance (PhaseEqShow a) => Show (Type a)
+-- | Is the function variadic?
+data Variadic
+  = Variadic
+  | NotVariadic
+  deriving (Eq, Show)
 
--- | A case in a union struct. All cases must have a name.
--- Case names live in the same namespace as tags do.
-data Case a = Case (CaseX a) (Name a) [Field a]
+-- | A @union struct@, that is, a tagged union.
+data UnionStruct
+  = -- | Name, cases, maybe a @default@ case.
+    USDef (Maybe Name) (Seq Case) (Maybe (Seq Field))
+  | -- | A @union struct@ declaration must give a name.
+    USDecl Name
+  deriving (Eq, Show)
 
-deriving instance (PhaseEqShow a) => Show (Case a)
+-- | A @struct@ or @union@ type's body.
+data Record
+  = -- | Name, Cases.
+    RecDef (Maybe Name) (Seq Name)
+  | -- | A @struct@ or @union@ declaration must give a name.
+    RecDecl Name
+  deriving (Eq, Show)
+
+-- | An @enum@ case.
+data EnumCase
+  = -- | Enum case given by name only.
+    NameOnlyEC Name
+  | -- | Constant expression evaluated enum case.
+    ConstEC Name Expr
+  deriving (Eq, Show)
+
+-- | An @enum@.
+data Enumeration
+  = EnumDef (Maybe Tag) (Seq Field)
+  | EnumDecl Tag
+  deriving (Eq, Show)
+
+-- | A case in a union struct. All cases must have a name, except for
+-- a possible default clause. Case names live in the same namespace as tags do.
+data Case = Case Name (Seq Bind)
+  deriving (Eq, Show)
 
 -- | Non-derived, primitive types
 data PrimType
@@ -147,21 +161,25 @@ pattern Int_, Char_ :: PrimType
 pattern Int_ = Int Signed IntLen
 pattern Char_ = Char Nothing
 
+-- | Some convenience patterns for 'PrimType'
 pattern Float_, Double_, LongDouble_ :: PrimType
 pattern Float_ = Float (Real RFFloat)
 pattern Double_ = Float (Real RFDouble)
 pattern LongDouble_ = Float (Real RFLongDouble)
 
+-- | Some convenience patterns for 'PrimType'
 pattern ComplexFloat_, ComplexDouble_, ComplexLongDouble_ :: PrimType
 pattern ComplexFloat_ = Float (Complex RFFloat)
 pattern ComplexDouble_ = Float (Complex RFDouble)
 pattern ComplexLongDouble_ = Float (Complex RFLongDouble)
 
+-- | Some convenience patterns for 'PrimType'
 pattern Short_, Long_, LongLong_ :: PrimType
 pattern Short_ = Int Signed Short
 pattern Long_ = Int Signed Long
 pattern LongLong_ = Int Signed LongLong
 
+-- | Some convenience patterns for 'PrimType'
 pattern UInt_, UShort_, ULong_, ULongLong_ :: PrimType
 pattern UInt_ = Int Unsigned IntLen
 pattern UShort_ = Int Unsigned Short
@@ -185,88 +203,30 @@ data RealFloatType = RFFloat | RFDouble | RFLongDouble
   deriving (Eq, Show)
 
 -- | Pointers need qualifiers
-data QualifiedType a = Qualified (QualX a) Qualifier (Type a)
-
-deriving instance (PhaseEqShow x) => Show (QualifiedType x)
+data QualifiedType = Qualified Qualifier Type
+  deriving (Eq, Show)
 
 -- | Type qualifiers (@const@, @volatile@, and, for referrents, @restrict@)
 --
 -- See also: 'qualzero'
 data Qualifier = Qualifier
-  {const :: Pr.Bool, volatile :: Pr.Bool, restrict :: Pr.Bool}
+  { const :: Pr.Bool,
+    volatile :: Pr.Bool,
+    restrict :: Pr.Bool,
+    -- | New idea, highly experimental. Similarly to @restrict@ (C99),
+    -- @_Linear@ can only be attached to pointers in a parameter list.
+    -- But with a crucial difference: whereas @restrict@ annotates the
+    -- referent of the pointer, @_Linear@ annotates the pointer itself.
+    -- As of writing this, a possible semantics of @_Linear@ is to
+    -- make sure exactly one lvalue\/rvalue conversion occurrs.
+    linear :: Pr.Bool
+  }
   deriving (Eq, Show)
 
--- | Storage class and linkage specifiers
+-- | Storage class and linkage specifiers. @_Thread_local@ is from C11.
 data StorageClass = Static | Extern | Register | Auto | ThreadLocal | NoStorage
   deriving (Eq, Show)
 
--- | Constraints for all phase annotations, requiring Eq and Show
-class
-  ( Eq (PrimX a),
-    Show (PrimX a),
-    Eq (ArrX a),
-    Show (ArrX a),
-    Eq (StrX a),
-    Show (StrX a),
-    Eq (UniX a),
-    Show (UniX a),
-    Eq (UnsX a),
-    Show (UnsX a),
-    Eq (FunX a),
-    Show (FunX a),
-    Eq (PtrX a),
-    Show (PtrX a),
-    Eq (CaseX a),
-    Show (CaseX a),
-    Eq (FldX a),
-    Show (FldX a),
-    Eq (QualX a),
-    Show (QualX a),
-    Eq (NameX a),
-    Show (NameX a)
-  ) =>
-  PhaseEqShow a
-
-type family PrimX a
-
-type family ArrX a
-
-type family StrX a
-
-type family UniX a
-
-type family UnsX a
-
-type family FunX a
-
-type family PtrX a
-
-type family CaseX a
-
-type family FldX a
-
-type instance PrimX () = ()
-
-type instance ArrX () = ()
-
-type instance StrX () = ()
-
-type instance UniX () = ()
-
-type instance UnsX () = ()
-
-type instance FunX () = ()
-
-type instance PtrX () = ()
-
-type instance CaseX () = ()
-
-type instance FldX () = ()
-
 -- | The null qualifier
 qualzero :: Qualifier
-qualzero = Qualifier False False False
-
-type family QualX a
-
-type instance QualX () = ()
+qualzero = Qualifier False False False False

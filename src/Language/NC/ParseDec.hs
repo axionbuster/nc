@@ -8,12 +8,6 @@ import Language.NC.THLex
 
 -- * Lexing
 
--- | Lexing stage
-data Lexing = Lexing
-
--- 'Span' is defined in "flatparse"; it's a pair of 'Pos'
-type instance PrimX Lexing = Span
-
 -- | Match an identifier
 ident :: Parser Span
 ident = spanOf (mainparse `butnot` anykeyword)
