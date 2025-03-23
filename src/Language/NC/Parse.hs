@@ -47,6 +47,10 @@ instance IsString Error where
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
 
+-- | Create a starter state.
+mkstate0 :: IO ParserState
+mkstate0 = pure ParserState
+
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error
 
