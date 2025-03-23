@@ -7,6 +7,7 @@ module Language.NC.Parse
     WithSpan (..),
     pwithspan,
     cut,
+    mkstate0,
   )
 where
 
