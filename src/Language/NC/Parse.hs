@@ -9,6 +9,8 @@ module Language.NC.Parse
     SymTab,
     Str,
     Seq (..),
+    AnnotatedError (..),
+    RelatedInfo (..),
     aenew,
     pwithspan,
     cut,

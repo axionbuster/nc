@@ -53,10 +53,12 @@ import Language.NC.Internal.Prelude qualified as Pr
 -- | For structs, unions, enums, and union structs.
 type Tag = Name
 
--- | Name with source location and possibly other annotations.
+-- | Name with optional source location and possibly other annotations.
 data Name = Name
-  { -- | Source location
-    span :: {-# UNPACK #-} !Span
+  { -- | Identifier in a 'Data.ByteString.Short.ShortByteString'.
+    name :: Str,
+    -- | Source location
+    span :: Maybe Span
   }
   deriving (Eq, Show)
 
