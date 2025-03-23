@@ -56,7 +56,7 @@ type Tag = Name
 -- | Name with source location and possibly other annotations.
 data Name = Name
   { -- | Source location
-    span :: Span
+    span :: {-# UNPACK #-} !Span
   }
   deriving (Eq, Show)
 
