@@ -1,5 +1,6 @@
 -- due to a defect in FlatParse TH splice (generation of 'anykeyword')
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
+-- also really annoying to type out type signatures
+{-# OPTIONS_GHC -Wno-name-shadowing -Wno-missing-signatures #-}
 
 -- | Export various lexing utilities that rely on Template Haskell.
 --
@@ -366,3 +367,83 @@ void', sizeof, offsetof :: Parser ()
 void' = $(string "void") <* ws1
 sizeof = $(string "sizeof")
 offsetof = $(string "offsetof")
+
+nondigit :: Parser ()
+nondigit = skipSatisfyAscii \c ->
+  ((fromIntegral (ord c - ord 'A') :: Word) < 26)
+    || ((fromIntegral (ord c - ord 'a') :: Word) < 26)
+    || (c == '_')
+
+digit :: Parser ()
+digit = skipSatisfyAscii isDigit
+
+universal_character_name :: Parser ()
+universal_character_name =
+  $( switch
+       [|
+         case _ of
+           "\\u" -> hex_quad
+           "\\U" -> hex_quad >> hex_quad
+         |]
+   )
+
+hex_quad :: Parser ()
+hex_quad = hd >> hd >> hd >> hd
+  where
+    hd = skipSatisfyAscii isHexDigit
+
+-- * Constants
+
+binary_prefix :: Parser ()
+binary_prefix = $(switch [|case _ of "0b" -> pure (); "0B" -> pure ()|])
+
+binary_digit :: Parser ()
+binary_digit = skipSatisfyAscii \c -> c == '0' || c == '1'
+
+octal_constant :: Parser ()
+octal_constant = $(char '0') >> (octal_constant <|> octal_digit)
+
+octal_digit :: Parser ()
+octal_digit = skipSatisfyAscii isOctDigit
+
+hexadecimal_digit = skipSatisfyAscii isHexDigit
+
+unsigned_suffix = skipSatisfyAscii \c -> c == 'u' || c == 'U'
+
+long_suffix = skipSatisfyAscii \c -> c == 'l' || c == 'L'
+
+long_long_suffix = $(switch [|case _ of "ll" -> pure (); "LL" -> pure ()|])
+
+sign = skipSatisfyAscii \c -> c == '+' || c == '-'
+
+floating_suffix = skipSatisfyAscii (`elem` "fFlL")
+
+singquot = $(char '\'')
+
+doubquot = $(char '"')
+
+biglquot = $(string "L\"")
+
+simple_escape_sequence =
+  $( switch
+       [|
+         case _ of
+           "\\a" -> pure ()
+           "\\b" -> pure ()
+           "\\f" -> pure ()
+           "\\n" -> pure ()
+           "\\r" -> pure ()
+           "\\t" -> pure ()
+           "\\v" -> pure ()
+           "\\'" -> pure ()
+           "\\\"" -> pure ()
+           "\\\\" -> pure ()
+           "\\?" -> pure ()
+         |]
+   )
+
+bkslash = $(char '\\')
+
+hexadecimal_escape_sequence = a <|> b
+  where a = bkslash >> $(string "x") >> hexadecimal_digit
+        b = hexadecimal_escape_sequence >> hexadecimal_digit
