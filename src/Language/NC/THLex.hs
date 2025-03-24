@@ -331,3 +331,38 @@ lexeme p = do
         modifyIORef es (:|> aenew e (Span st en))
         err e
   withError p apologize <* ws1
+
+-- * Various symbols
+
+lbra, rbra, lpar, rpar, lsqbra, rsqbra :: Parser ()
+lbra = $(char '{')
+rbra = $(char '}')
+lpar = $(char '(')
+rpar = $(char ')')
+lsqbra = $(char '[')
+rsqbra = $(char ']')
+
+inbra, inpar, insqbra :: Parser a -> Parser a
+inbra = between lbra rbra
+inpar = between lpar rpar
+insqbra = between lsqbra rsqbra
+
+comma, colon, semicolon :: Parser ()
+comma = $(char ',')
+colon = $(char ':')
+semicolon = $(char ';')
+
+star, amp, dot :: Parser ()
+star = $(char '*')
+amp = $(char '&')
+dot = $(char '.')
+
+rarr, equ_, equ0 :: Parser ()
+rarr = $(string "->")
+equ_ = $(char '=') <* ws1
+equ0 = $(char '=')
+
+void', sizeof, offsetof :: Parser ()
+void' = $(string "void") <* ws1
+sizeof = $(string "sizeof")
+offsetof = $(string "offsetof")

@@ -1,6 +1,7 @@
 module Language.NC.ParseDec where
 
 import Language.NC.CTypes
+import Language.NC.Expr
 import Language.NC.Internal.Prelude
 import Language.NC.THLex
 

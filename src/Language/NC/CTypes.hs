@@ -38,6 +38,7 @@ module Language.NC.CTypes
   )
 where
 
+import Language.NC.Expr
 import Language.NC.Internal.Prelude hiding
   ( Bool,
     Char,
@@ -62,18 +63,10 @@ data Name = Name
   }
   deriving (Eq, Show)
 
--- | Placeholder for expression; used for dependent typing in variable
--- sized arrays and for enumerations. Right now, you can't make an instance of
--- type, so any constructor that requires this type also can't be constructed.
-data Expr
-  deriving (Eq, Show)
-
 -- | Fields for structs, unions, and union struct cases.
 data Field
   = Field Type Name
-  | -- | Bit fields are highly restricted. We allow them for all
-    -- \"record\" types so we can report good errors.
-    BitField Type Name
+  | BitField Type Name
   deriving (Eq, Show)
 
 -- | A binding in a @union struct@ case or a parameter list.
@@ -88,19 +81,26 @@ data Bind
 data Type
   = -- | Primitive, non-derived type
     PrimitiveT PrimType
-  | StructT Record
-  | UnionT Record
-  | -- | The \'union struct\' is a new concept in this modification of C.
-    -- It implements a true algebraic data type with a runtime tag
+  | -- | C struct type.
+    StructT Record
+  | -- | C (untagged) union.
+    UnionT Record
+  | -- | The \'union struct\' is a concept in New C.
+    -- It represents a true algebraic data type with a runtime tag
     -- to distinguish different cases.
     UnionStructT UnionStruct
-  | EnumT Enumeration
-  | -- | Potentially variadic function, with possibly missing argument list.
+  | -- | C union type.
+    EnumT Enumeration
+  | -- | Potentially variadic C function, with possibly missing argument list.
     -- (This situation is different from having a @void@ argument list,
     -- where it means it will take no arguments. With a missing argument list,
     -- the number of arguments to take is unknown or hidden.)
-    FunctionT Variadic (Maybe (Seq Type)) Type
-  | PointerT QualifiedType
+    CFunctionT Variadic (Maybe (Seq Type)) Type
+  | -- | Regular function. No variadic functions. All arguments must be
+    -- specified at all times, even in a parameter list.
+    FunctionT (Seq Type) Type
+  | -- | Pointer type
+    PointerT QualifiedType
   deriving (Eq, Show)
 
 -- | Is the function variadic?

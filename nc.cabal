@@ -31,7 +31,7 @@ library
     import:             warnings, lang, optim
     exposed-modules:    Language.NC, Language.NC.CTypes, Language.NC.Parse,
                         Language.NC.ParseDec, Language.NC.Dec,
-                        Language.NC.Prelude
+                        Language.NC.Prelude, Language.NC.Expr
     other-modules:      Language.NC.Internal.Prelude, Language.NC.THLex,
                         Language.NC.ParseUtil
     default-extensions: NoImplicitPrelude
