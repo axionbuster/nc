@@ -1,17 +1,14 @@
 -- | Parser type, error type
 module Language.NC.Parse
-  ( Error (..),
-    PrimTypeBadWhy (..),
-    Parser,
+  ( Parser,
     ParserState (..),
     WithSpan (..),
     Symbol (..),
     SymTab,
     Str,
     Seq (..),
-    AnnotatedError (..),
     RelatedInfo (..),
-    aenew,
+    module Language.NC.Error,
     pwithspan,
     cut,
     mkstate0,
@@ -23,63 +20,16 @@ module Language.NC.Parse
   )
 where
 
-import Control.Exception
 import Control.Monad
 import Data.ByteString.Short
 import Data.HashTable.IO qualified as H
 import Data.IORef
 import Data.Sequence (Seq ((:<|), (:|>)))
-import Data.String
-import Data.Text (Text)
 import FlatParse.Stateful hiding (Parser)
+import Language.NC.Error
 import Prelude
 
--- | An error, warning, or message of any kind.
---
--- Not all \"errors\" may be errors.
-data Error
-  = -- | Miscellaneous programming error
-    BasicError String
-  | -- | Bad primitive type
-    PrimTypeBadError PrimTypeBadWhy
-  | -- | Unexpected end of file
-    UnexpectedEOFError
-  | -- | Internal error
-    InternalError String
-  deriving (Eq, Show)
-
--- | Why a primitive type couldn't be parsed, or is incorrect.
-data PrimTypeBadWhy
-  = -- | @(un)signed long double@
-    BecauseSignInLongDouble
-  | -- | Type cannot be given signedness
-    BecauseSignNotMeaningful
-  deriving (Eq, Show)
-
-instance Exception Error
-
-instance IsString Error where
-  fromString = BasicError
-
--- | Hints and other related info.
-data RelatedInfo = RelatedInfo
-  { infospan :: Span,
-    infomesg :: Text
-  }
-  deriving (Eq, Show)
-
--- | An error annotated with span and optional hints.
-data AnnotatedError = AnnotatedError
-  { aeerr :: Error,
-    aespn :: Span,
-    aerel :: [RelatedInfo]
-  }
-  deriving (Eq, Show)
-
--- | Create a new empty annotated error with the given span.
-aenew :: Error -> Span -> AnnotatedError
-aenew e s = AnnotatedError e s mempty
-
+-- | Unpinned memory used for short strings.
 type Str = ShortByteString
 
 -- | Symbol table

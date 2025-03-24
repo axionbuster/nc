@@ -445,5 +445,6 @@ simple_escape_sequence =
 bkslash = $(char '\\')
 
 hexadecimal_escape_sequence = a <|> b
-  where a = bkslash >> $(string "x") >> hexadecimal_digit
-        b = hexadecimal_escape_sequence >> hexadecimal_digit
+  where
+    a = bkslash >> $(string "x") >> hexadecimal_digit
+    b = hexadecimal_escape_sequence >> hexadecimal_digit
