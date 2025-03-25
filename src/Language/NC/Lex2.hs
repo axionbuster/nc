@@ -10,6 +10,9 @@
 --
 -- Also, it does NOT automatically handle whitespace and comments. Each lexeme
 -- should be wrapped in a 'lexeme' function.
+--
+-- Keywords are from C23 instead of C99, but the C99 keywords are still
+-- included.
 module Language.NC.Lex2
   ( -- * Lexing (6.4 Lexical elements)
     token,
@@ -62,16 +65,170 @@ module Language.NC.Lex2
     -- * Data structures
     Constexpr99 (..),
 
+    -- * Operators, keywords, and identifiers
+
+    -- ** Brackets and parentheses
+    ldbsqb,
+    rdbsqb,
+    lsqb0,
+    rsqb0,
+    lpar,
+    rpar,
+    lcur,
+    rcur,
+    insqb0,
+    indbsqb,
+    inpar,
+    incur,
+
+    -- ** Operator-like symbols
+
+    -- NO handling of lexeme boundaries, so these will match the first
+    -- part of a longer operator. Also, these don't generate parse nodes,
+    -- as they simply match sequences of characters.
+    period,
+    rarrow,
+    doubleplus,
+    doubleminus,
+    ampersand,
+    caret,
+    bar,
+    tilde,
+    plus,
+    minus,
+    star,
+    slash,
+    starslash,
+    percent,
+    less,
+    greater,
+    lessequal,
+    greaterequal,
+    equalequal,
+    notequal,
+    bang,
+    doubleamp,
+    doublebar,
+    equal,
+    starequal,
+    slashequal,
+    percentequal,
+    plusequal,
+    minusequal,
+    ampersandequal,
+    caretequal,
+    barequal,
+    tildeequal,
+    doublelessequal,
+    doublegreaterequal,
+    colon,
+    doublecolon,
+    questionmark,
+    hash,
+    hashhash,
+    backslash,
+    tripledot,
+
+    -- ** Compensating for deficient encodings
+    lesscolon,
+    colongreater,
+    lesspercent,
+    percentgreater,
+    percentcolon,
+    doublepercentcolon,
+
+    -- ** Individual keywords (roughly C23)
+
+    -- (also includes keywords from C99)
+
+    alignas',
+    alignof',
+    auto',
+    break',
+    case',
+    char',
+    const',
+    constexpr',
+    continue',
+    default',
+    do',
+    double',
+    else',
+    enum',
+    extern',
+    false',
+    float',
+    for',
+    goto',
+    if',
+    inline',
+    int',
+    long',
+    nullptr',
+    nullptr_t',
+    register',
+    restrict',
+    return',
+    short',
+    signed',
+    sizeof',
+    static',
+    static_assert',
+    struct',
+    switch',
+    thread_local',
+    true',
+    typedef',
+    typeof',
+    typeof_unequal',
+    union',
+    unsigned',
+    void',
+    volatile',
+    while',
+    _Alignas',
+    _Alignof',
+    _Atomic',
+    _BitInt',
+    _Bool',
+    _Complex',
+    _Decimal128',
+    _Decimal32',
+    _Decimal64',
+    _Generic',
+    _Imaginary',
+    _Noreturn',
+    _Static_assert',
+    _Thread_local',
+
+    -- ** Reserved identifiers with special meanings
+    __func__',
+    main',
+
+    -- ** Notable identifiers (expanding list)
+    memset',
+    printf',
+
+    -- ** Helping find 'bad' syntax for identifiers
+    doubleunderscore,
+    underscorecap,
+    sbs_doubleunderscore,
+    sbs_hasdunder,
+    bs_doubleunderscore,
+    bs_hasdunder,
+
     -- * Comments and whitespace
     ws,
     ws1,
 
     -- * Utility
-    switch',
-    switch1',
+    switch_ws,
+    switch1_ws,
   )
 where
 
+import Data.ByteString qualified as BS
+import Data.ByteString.Short qualified as SBS
 import Language.Haskell.TH.Syntax
 import Language.NC.CTypes qualified as C
 import Language.NC.Internal.Prelude
@@ -102,14 +259,18 @@ preprocessing_token =
 -- 6.4.1 Keywords
 
 keyword =
+  -- We have C23 keywords.
   $( switch
        [|
          case _ of
+           "alignas" -> pure ()
+           "alignof" -> pure ()
            "auto" -> pure ()
            "break" -> pure ()
            "case" -> pure ()
            "char" -> pure ()
            "const" -> pure ()
+           "constexpr" -> pure ()
            "continue" -> pure ()
            "default" -> pure ()
            "do" -> pure ()
@@ -117,6 +278,7 @@ keyword =
            "else" -> pure ()
            "enum" -> pure ()
            "extern" -> pure ()
+           "false" -> pure ()
            "float" -> pure ()
            "for" -> pure ()
            "goto" -> pure ()
@@ -124,6 +286,8 @@ keyword =
            "inline" -> pure ()
            "int" -> pure ()
            "long" -> pure ()
+           "nullptr" -> pure ()
+           "nullptr_t" -> pure ()
            "register" -> pure ()
            "restrict" -> pure ()
            "return" -> pure ()
@@ -131,17 +295,33 @@ keyword =
            "signed" -> pure ()
            "sizeof" -> pure ()
            "static" -> pure ()
+           "static_assert" -> pure ()
            "struct" -> pure ()
            "switch" -> pure ()
+           "thread_local" -> pure ()
+           "true" -> pure ()
            "typedef" -> pure ()
+           "typeof" -> pure ()
+           "typeof_unequal" -> pure ()
            "union" -> pure ()
            "unsigned" -> pure ()
            "void" -> pure ()
            "volatile" -> pure ()
            "while" -> pure ()
+           "_Alignas" -> pure ()
+           "_Alignof" -> pure ()
+           "_Atomic" -> pure ()
+           "_BitInt" -> pure ()
            "_Bool" -> pure ()
            "_Complex" -> pure ()
+           "_Decimal128" -> pure ()
+           "_Decimal32" -> pure ()
+           "_Decimal64" -> pure ()
+           "_Generic" -> pure ()
            "_Imaginary" -> pure ()
+           "_Noreturn" -> pure ()
+           "_Static_assert" -> pure ()
+           "_Thread_local" -> pure ()
          |]
    )
 
@@ -201,13 +381,8 @@ data Constexpr99
     IntConst Integer C.PrimType
   | -- | Floating point constant.
     FloatConst Double C.PrimType
-  | -- | Enumeration constant, having @int@ type. However,
-    -- value cannot be ascertained until later, so we return
-    -- a 'Span' to the identifier, which can be looked up
-    -- in the symbol table.
-    EnumConst Span
-  | -- | String literal's span.
-    StringConst Span
+  | -- | Enumeration constant, having @int@ type.
+    EnumConst
   deriving (Eq, Show)
 
 hexdigit = _satasc isHexDigit
@@ -383,7 +558,7 @@ character_constant =
         uni = asm 16 hexdigit'' 4
         oct = asm 8 octdigit'' 12
 
-enumeration_constant = spanOf identifier <&> EnumConst
+enumeration_constant = identifier $> EnumConst
 
 -- 6.4.5 String literals
 
@@ -418,8 +593,8 @@ string_literal = internal
                "\\f" -> pure ()
                "\\v" -> pure ()
                "\\?" -> pure ()
-               "\\x" -> upto 2 hexdigit
-               "\\" -> upto 3 octdigit
+               "\\x" -> upto 4 hexdigit
+               "\\" -> upto 6 octdigit
                "\\u" -> uni
                "\\U" -> uni
              |]
@@ -555,6 +730,302 @@ pp_number = optional_ $(char '.') >> digit >> go
                    |]
              )
 
+-- NOTE from now on... this module defines a **lexer**, not a **parser**,
+-- meaning it's not responsible for parsing expressions. Indeed, most lexers as
+-- defined above merely accept or reject a sequence of characters, rather
+-- than building up a tree of expressions.
+--
+-- But Template Haskell splices take up a lot of time to compile, so we
+-- define TH-based parsers and utilities here.
+
+-- Some operators. NOTE: if you parse say '=', it will match the first
+-- half of '==', and the same for other operators. This is not a problem
+-- for the lexer, but it could be for the parser.
+
+-- Parentheses, brackets, and braces
+-- At the lexing stage, we ignore digraphs.
+
+(lsqb, rsqb) = ($(char '['), $(char ']')) -- don't export; export insqb0 instead
+
+(ldbsqb, rdbsqb) = ($(string "[["), $(string "]]"))
+
+(lsqb0, rsqb0) = (lsqb `notFollowedBy` lsqb, rsqb `notFollowedBy` rsqb)
+
+(lpar, rpar) = ($(char '('), $(char ')'))
+
+(lcur, rcur) = ($(char '{'), $(char '}'))
+
+-- | Enclose a thing in square brackets not followed by another square bracket.
+insqb0 = between lsqb0 rsqb0
+
+-- | Enclose a thing in double square brackets.
+indbsqb = between ldbsqb rdbsqb
+
+-- | Enclose a thing in parentheses.
+inpar = between lpar rpar
+
+-- | Enclose a thing in braces.
+incur = between lcur rcur
+
+-- Member access operators
+(period, rarrow) = ($(char '.'), $(string "->"))
+
+-- Increment/decrement operators
+(doubleplus, doubleminus) = ($(string "++"), $(string "--"))
+
+-- Bitwise operators
+(ampersand, caret, bar, tilde) =
+  ($(char '&'), $(char '^'), $(char '|'), $(char '~'))
+
+-- Basic arithmetic operators
+(plus, minus, star, slash, percent) =
+  ($(char '+'), $(char '-'), $(char '*'), s, $(char '%'))
+  where
+    -- most operators do "clash" (share a prefix with another operator)
+    -- but the division operator clashes with comments so we will
+    -- check for that specifically
+    s =
+      $( switch
+           [|
+             case _ of
+               "//" -> failed
+               "/*" -> failed
+               "/" -> pure ()
+             |]
+       )
+
+-- this isn't an *operator* but sometimes it appears because a block
+-- comment wasn't closed properly
+
+starslash = $(string "*/")
+
+-- Relational operators
+(less, greater) = ($(char '<'), $(char '>'))
+
+(lessequal, greaterequal) = ($(string "<="), $(string ">="))
+
+(equalequal, notequal) = ($(string "=="), $(string "!="))
+
+-- Logical operators
+(bang, doubleamp, doublebar) = ($(char '!'), $(string "&&"), $(string "||"))
+
+-- Assignment operator
+equal = $(char '=')
+
+-- Compound assignments
+(starequal, slashequal, percentequal, plusequal, minusequal) =
+  ( $(string "*="),
+    $(string "/="),
+    $(string "%="),
+    $(string "+="),
+    $(string "-=")
+  )
+
+(ampersandequal, caretequal, barequal, tildeequal) =
+  ( $(string "&="),
+    $(string "^="),
+    $(string "|="),
+    $(string "~=")
+  )
+
+(doublelessequal, doublegreaterequal) =
+  ( $(string "<<="),
+    $(string ">>=")
+  )
+
+-- ** Misc operators (and parts of operators)
+
+(colon, doublecolon) = ($(char ':'), $(string "::"))
+
+questionmark = $(char '?')
+
+-- ** Preprocessor 'operators'
+
+(hash, hashhash) = ($(char '#'), $(string "##"))
+
+backslash = $(char '\\')
+
+-- ** Ellipsis
+
+tripledot = $(string "...")
+
+-- ** Compensation for deficient encodings (digraphs)
+
+-- square brackets
+(lesscolon, colongreater) = ($(string "<:"), $(string ":>"))
+
+-- braces
+(lesspercent, percentgreater) = ($(string "<%"), $(string "%>"))
+
+-- single and double hashes
+(percentcolon, doublepercentcolon) = ($(string "%:"), $(string "%:%:"))
+
+-- ** Keywords
+
+-- Same warning applies as above; they aren't defined as lexemes (yet)
+-- so it will be insensitive to whitespace, lookahead is not handled, etc.
+-- Basically no semantic grouping is done here.
+
+alignas' = $(string "alignas")
+
+alignof' = $(string "alignof")
+
+auto' = $(string "auto")
+
+break' = $(string "break")
+
+case' = $(string "case")
+
+char' = $(string "char")
+
+const' = $(string "const")
+
+constexpr' = $(string "constexpr")
+
+continue' = $(string "continue")
+
+default' = $(string "default")
+
+do' = $(string "do")
+
+double' = $(string "double")
+
+else' = $(string "else")
+
+enum' = $(string "enum")
+
+extern' = $(string "extern")
+
+false' = $(string "false")
+
+float' = $(string "float")
+
+for' = $(string "for")
+
+goto' = $(string "goto")
+
+if' = $(string "if")
+
+inline' = $(string "inline")
+
+int' = $(string "int")
+
+long' = $(string "long")
+
+nullptr' = $(string "nullptr")
+
+nullptr_t' = $(string "nullptr_t")
+
+register' = $(string "register")
+
+restrict' = $(string "restrict")
+
+return' = $(string "return")
+
+short' = $(string "short")
+
+signed' = $(string "signed")
+
+sizeof' = $(string "sizeof")
+
+static' = $(string "static")
+
+static_assert' = $(string "static_assert")
+
+struct' = $(string "struct")
+
+switch' = $(string "switch")
+
+thread_local' = $(string "thread_local")
+
+true' = $(string "true")
+
+typedef' = $(string "typedef")
+
+typeof' = $(string "typeof")
+
+typeof_unequal' = $(string "typeof_unequal")
+
+union' = $(string "union")
+
+unsigned' = $(string "unsigned")
+
+void' = $(string "void")
+
+volatile' = $(string "volatile")
+
+while' = $(string "while")
+
+_Alignas' = $(string "_Alignas")
+
+_Alignof' = $(string "_Alignof")
+
+_Atomic' = $(string "_Atomic")
+
+_BitInt' = $(string "_BitInt")
+
+_Bool' = $(string "_Bool")
+
+_Complex' = $(string "_Complex")
+
+_Decimal128' = $(string "_Decimal128")
+
+_Decimal32' = $(string "_Decimal32")
+
+_Decimal64' = $(string "_Decimal64")
+
+_Generic' = $(string "_Generic")
+
+_Imaginary' = $(string "_Imaginary")
+
+_Noreturn' = $(string "_Noreturn")
+
+_Static_assert' = $(string "_Static_assert")
+
+_Thread_local' = $(string "_Thread_local")
+
+-- ** some reserved identifiers.
+
+-- user code may not declare these identifiers. they have special
+-- meaning in the C standard.
+
+__func__' = $(string "__func__")
+
+main' = $(string "main")
+
+-- ** Any notable identifiers.
+
+-- this is an ever expanding list of identifiers that are not keywords
+-- or reserved identifiers, but are notable in some way.
+
+memset' = $(string "memset")
+
+printf' = $(string "printf")
+
+-- ** Helping find 'bad' syntax for identifiers.
+
+-- They are allowed by the standard, but are not recommended except
+-- in special circumstances (e.g., standard library implementations):
+--
+--  - Identifier begins with an underscore followed
+--    by an uppercase Latin letter.
+--  - Identifier contains two consecutive underscores anywhere.
+
+-- | AVOID, use efficient string search instead when possible.
+doubleunderscore = $(string "__")
+
+sbs_doubleunderscore = SBS.pack [95, 95]
+
+sbs_hasdunder = (sbs_doubleunderscore `SBS.isInfixOf`)
+
+bs_doubleunderscore = BS.pack [95, 95]
+
+bs_hasdunder = (bs_doubleunderscore `BS.isInfixOf`)
+
+-- | This is OK, because there's only one place to check and it's also
+-- an area where string search is not efficient.
+underscorecap = $(char '_') >> skipSatisfyAscii \c -> 'A' <= c && c <= 'Z'
+
 -- * Comments and whitespace
 
 -- | Consume line. Windows, Classic MacOS, and UNIX line endings.
@@ -627,12 +1098,12 @@ ws1 =
 -- * Some parser specific stuff
 
 -- | like 'switch', but after each match, consume any (optional) whitespace
-switch' :: Q Exp -> Q Exp
-switch' = switchWithPost (Just [|ws|])
+switch_ws :: Q Exp -> Q Exp
+switch_ws = switchWithPost (Just [|ws|])
 
 -- | like 'switch', but after each match, consume some whitespace
-switch1' :: Q Exp -> Q Exp
-switch1' = switchWithPost (Just [|ws1|])
+switch1_ws :: Q Exp -> Q Exp
+switch1_ws = switchWithPost (Just [|ws1|])
 
 -- | Parse a thing and then require whitespace or end of file, which is
 -- also consumed. If there's an error, annotate it with a span, log it, and

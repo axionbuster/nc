@@ -34,11 +34,12 @@ library
                         Language.NC.Prelude, Language.NC.Expr,
                         Language.NC.Error
     other-modules:      Language.NC.Internal.Prelude, Language.NC.THLex,
-                        Language.NC.ParseUtil, Language.NC.Lex2
+                        Language.NC.ParseUtil, Language.NC.Lex2,
+                        Language.NC.Internal.SBS
     default-extensions: NoImplicitPrelude
-    build-depends:      base, vector, flatparse, containers, transformers,
+    build-depends:      base, vector, flatparse, containers,
                         bytestring, text, parser-combinators,
-                        template-haskell, hashtables, unliftio
+                        template-haskell, hashtables, unliftio, primitive
     hs-source-dirs:     src
 
 executable nc

@@ -15,10 +15,12 @@ module Language.NC.Internal.Prelude
     module GHC.Float,
     module GHC.Generics,
     module Language.NC.Parse,
+    module Language.NC.Internal.SBS,
     module Language.NC.ParseUtil,
     module UnliftIO.IORef,
     Builder,
     ByteString,
+    ShortByteString,
     Text,
   )
 where
@@ -36,6 +38,7 @@ import Control.Monad.Combinators hiding
 import Control.Monad.Fix
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
+import Data.ByteString.Short (ShortByteString)
 import Data.Char hiding (isDigit)
 import Data.Data hiding (Fixity, Infix, Prefix)
 import Data.Dynamic
@@ -47,6 +50,7 @@ import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics
+import Language.NC.Internal.SBS
 import Language.NC.Parse
 import Language.NC.ParseUtil
 import UnliftIO.IORef
