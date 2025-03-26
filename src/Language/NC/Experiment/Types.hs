@@ -134,12 +134,17 @@ data Pretype
   | PAtomic CSpecAtomic
   deriving (Eq, Show)
 
+-- | Fully qualified and specified type.
 data Type = Type
   { typespec :: Specifier,
     typequal :: [Qualifier],
     typetype :: Pretype
   }
   deriving (Eq, Show)
+
+-- | Apply a function to the pretype of a type.
+onpretype :: (Pretype -> a) -> Type -> a
+onpretype = (. typetype)
 
 -- | A variable is either an object, array, function, or
 -- the type @void@.
@@ -164,3 +169,17 @@ catdata (PAtomic {}) = CatObject
 
 -- | Is a type complete?
 data Completeness = Complete | Incomplete deriving (Eq, Show)
+
+-- | Check if a (pre)type is complete.
+iscomplete :: Pretype -> Completeness
+iscomplete (PPrim Void) = Incomplete
+iscomplete (PPrim {}) = Complete
+iscomplete (PPointer {}) = Complete
+iscomplete (PFunction {}) = Complete
+iscomplete (PStruct {}) = error "not implemented: iscomplete PStruct"
+iscomplete (PUnionStruct {}) = error "not implemented: iscomplete PUnionStruct"
+iscomplete (PArray (CArrayUnsized {})) = Incomplete
+iscomplete (PArray (CArraySized {})) = Complete
+iscomplete (PUnion {}) = error "not implemented: iscomplete PUnion"
+iscomplete (PEnum {}) = Complete
+iscomplete (PAtomic {}) = Complete
