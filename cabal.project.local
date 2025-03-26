@@ -1,1 +1,4 @@
 tests: False
+
+package hashtables
+  flags: +see42

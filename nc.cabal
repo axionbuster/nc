@@ -32,12 +32,12 @@ library
     exposed-modules:    Language.NC, Language.NC.CTypes, Language.NC.Parse,
                         Language.NC.ParseDec, Language.NC.Dec,
                         Language.NC.Prelude, Language.NC.Expr,
-                        Language.NC.Error
+                        Language.NC.Error, Language.NC.Experiment.PrimTypes
     other-modules:      Language.NC.Internal.Prelude, Language.NC.THLex,
                         Language.NC.ParseUtil, Language.NC.Lex2,
                         Language.NC.Internal.SBS
     default-extensions: NoImplicitPrelude
-    build-depends:      base, vector, flatparse, containers,
+    build-depends:      base, flatparse, containers,
                         bytestring, text, parser-combinators,
                         template-haskell, hashtables, unliftio, primitive
     hs-source-dirs:     src
