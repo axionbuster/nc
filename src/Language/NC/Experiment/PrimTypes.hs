@@ -21,7 +21,7 @@ module Language.NC.Experiment.PrimTypes
     FloatType (..),
     RealFloatType (..),
   )
-  where
+where
 
 import Language.NC.Internal.Prelude hiding
   ( Bool,

@@ -124,8 +124,8 @@ module Language.NC.Lex2
     colon,
     doublecolon,
     questionmark,
-    hash,
-    hashhash,
+    hash',
+    doublehash',
     backslash,
     tripledot,
 
@@ -841,7 +841,7 @@ questionmark = $(char '?')
 
 -- ** Preprocessor 'operators'
 
-(hash, hashhash) = ($(char '#'), $(string "##"))
+(hash', doublehash') = ($(char '#'), $(string "##"))
 
 backslash = $(char '\\')
 

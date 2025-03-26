@@ -10,7 +10,9 @@ module Language.NC.Internal.Prelude
     module Data.Dynamic,
     module Data.Function,
     module Data.Functor,
+    module Data.Hashable,
     module Data.Int,
+    module Data.Unique,
     module Data.Word,
     module GHC.Float,
     module GHC.Generics,
@@ -44,8 +46,10 @@ import Data.Data hiding (Fixity, Infix, Prefix)
 import Data.Dynamic
 import Data.Function
 import Data.Functor
+import Data.Hashable
 import Data.Int
 import Data.Text (Text)
+import Data.Unique
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float

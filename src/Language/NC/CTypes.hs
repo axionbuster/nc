@@ -19,12 +19,12 @@ module Language.NC.CTypes
   )
 where
 
+import Language.NC.Experiment.PrimTypes
 import Language.NC.Expr
 import Language.NC.Internal.Prelude hiding
   ( const,
     span,
   )
-import Language.NC.Experiment.PrimTypes
 import Language.NC.Internal.Prelude qualified as Pr
 
 -- | For structs, unions, enums, and union structs.
