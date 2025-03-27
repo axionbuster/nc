@@ -6,7 +6,11 @@ import Language.NC.Internal.Prelude
 import Language.NC.Lex2
 
 -- i will parse PT and then merge it into a PrimType value
--- that's being unfolded.
+-- that's being unfolded. so a PT represents a token and
+-- it essentially gets left-folded onto a PTSummary value.
+-- the PTSummary value is then used to determine the final
+-- PrimType value. to reduce backtracking in my PEG parser
+-- i decided to use counting instead of a permutation parser.
 data PT
   = CarrySign Signed
   | CarryInt PTIntType
@@ -47,15 +51,15 @@ instance Show PTSummary where
           | n > 1 = "(multiple " ++ s ++ " specifiers)"
           | n > 0 = s
           | otherwise = ""
-    let ww = do
-          show' psvoid "void"
-            : ( if pssigns > 1
-                  then "(multiple sign specifiers)"
-                  else case pssigned of
-                    Just Signed -> "signed"
-                    Just Unsigned -> "unsigned"
-                    Nothing -> ""
-              )
+    let ww =
+          ( if pssigns > 1
+              then "(multiple sign specifiers)"
+              else case pssigned of
+                Just Signed -> "signed"
+                Just Unsigned -> "unsigned"
+                Nothing -> ""
+          )
+            : show' psvoid "void"
             : ( case psbitint of
                   0 -> ""
                   1 -> "_BitInt(" ++ show psbitintwidth ++ ")"
@@ -117,12 +121,13 @@ pscoercesign p
 -- an implementation that's based on counting keywords instead.
 pscvt :: PTSummary -> Parser PrimType
 pscvt p
-  | not (psbasiccheck p) = throwbasic "pscvt: too many specifiers"
+  | not (psbasiccheck p) =
+      emit (InvalidTypeSpec $ show p)
   | psvoid p > 0 =
       if psanyint p || psanyfloat p
-        then throwbasic "pscvt: void and other types"
+        then emit (IncompatibleTypes "void" [])
         else case p.pssigned of
-          Just _ -> throwbasic "pscvt: (un)signed void"
+          Just _ -> emit (InvalidSignedness "void")
           Nothing -> pure Void
   | pschar p > 0 =
       if (p.psbitint > 0)
@@ -130,17 +135,17 @@ pscvt p
         || (p.psshort > 0)
         || (p.pslong > 0)
         || psanyfloat p
-        then throwbasic "pscvt: char and other types"
+        then emit (IncompatibleTypes "char" [])
         else pure $ Char (pssigned p)
   | psbitint p > 0 =
       if (p.psint > 0)
         || (p.psshort > 0)
         || (p.pslong > 0)
         || psanyfloat p
-        then throwbasic "pscvt: _BitInt(...) and other types"
+        then emit (IncompatibleTypes "_BitInt" [])
         else
           if p.psbitintwidth == 0
-            then throwbasic "pscvt: _BitInt(0)"
+            then emit (InvalidBitIntWidth 0)
             else
               pure
                 $ Int (pscoercesign p)
@@ -148,7 +153,7 @@ pscvt p
                 $ fromIntegral p.psbitintwidth
   | psint p > 0 =
       if psanyfloat p || (p.psshort > 0 && p.pslong > 0)
-        then throwbasic "pscvt: int and other types"
+        then emit (IncompatibleTypes "int" [])
         else
           pure
             $ Int
@@ -160,59 +165,58 @@ pscvt p
                 | otherwise -> IntLen
   | psshort p > 0 =
       if psanyfloat p || p.pslong > 0
-        then throwbasic "pscvt: short and other types"
+        then emit (IncompatibleTypes "short" [])
         else pure $ Int (pscoercesign p) Short
   | pslong p > 1 -- long long
     =
       if psanyfloat p
-        then throwbasic "pscvt: long long and other types"
+        then emit (IncompatibleTypes "long long" [])
         else pure $ Int (pscoercesign p) LongLong
   | psfloat p > 0 =
       if (p.psdouble > 0)
         || (p.psdecimal > 0)
         || (p.psdecimalbits > 0)
         || (p.pslong > 0)
-        then throwbasic "pscvt: float and other types"
+        then emit (IncompatibleTypes "float" [])
         else
           if p.pssigned /= Nothing
-            then throwbasic "pscvt: (un)signed float"
+            then emit (InvalidSignedness "float")
             else
               if p.pscomplex > 0
                 then pure $ Float (Complex RFFloat)
                 else pure $ Float (Real RFFloat)
   | psdouble p > 0 =
       if p.psfloat > 0 || p.psdecimal > 0 || p.psdecimalbits > 0
-        then throwbasic "pscvt: double and other types"
+        then emit (IncompatibleTypes "double" [])
         else
           if p.pssigned /= Nothing
-            then throwbasic "pscvt: (un)signed double"
+            then emit (InvalidSignedness "double")
             else do
               subty <- case p.pslong of
                 0 -> pure RFDouble
                 1 -> pure RFLongDouble
-                _ -> throwbasic "pscvt: long long double"
+                _ -> emit (IncompatibleTypes "long long" [])
               if p.pscomplex > 0
                 then pure $ Float (Complex subty)
                 else pure $ Float (Real subty)
   | pslong p > 0 =
       if psanyfloat p
-        then throwbasic "pscvt: long and other types"
+        then emit (IncompatibleTypes "long" [])
         else pure $ Int (pscoercesign p) Long
   | psdecimal p > 0 =
       if p.pscomplex > 0
-        then throwbasic "pscvt: decimal complex"
+        then emit InvalidDecimalComplex
         else
           if p.pssigned /= Nothing
-            then throwbasic "pscvt: (un)signed decimal"
+            then emit (InvalidSignedness "_Decimal")
             else case p.psdecimalbits of
               32 -> pure $ Float (Real RFDecimal32)
               64 -> pure $ Float (Real RFDecimal64)
               128 -> pure $ Float (Real RFDecimal128)
-              _ -> throwbasic "pscvt: unsupported decimal bits"
-  | otherwise =
-      throwbasic
-        $ "pscvt: unsupported or empty type summary: "
-        ++ show p
+              _ -> emit (InvalidDecimalBits p.psdecimalbits)
+  | otherwise = emit (InvalidTypeSpec $ show p)
+  where
+    emit = err . PrimTypeBadError
 
 psfold :: PTSummary -> PT -> PTSummary
 psfold !sm = \case
@@ -238,17 +242,17 @@ ptkeyword :: Parser PT
 ptkeyword = do
   lex
     $ choice
-      [ signed' $> CarrySign Signed,
-        unsigned' $> CarrySign Unsigned,
-        char' $> CarryInt PTChar,
-        short' $> CarryInt PTShort,
-        int' $> CarryInt PTInt,
-        long' $> CarryInt PTLong,
-        bitint,
-        float' $> CarryFloat RFFloat,
-        double' $> CarryFloat RFDouble,
-        _Complex' $> CarryComplex,
+      [ int' $> CarryInt PTInt,
         void' $> CarryVoid,
+        char' $> CarryInt PTChar,
+        long' $> CarryInt PTLong,
+        double' $> CarryFloat RFDouble,
+        float' $> CarryFloat RFFloat,
+        signed' $> CarrySign Signed,
+        unsigned' $> CarrySign Unsigned,
+        short' $> CarryInt PTShort,
+        _Complex' $> CarryComplex,
+        bitint,
         _Decimal32' $> CarryFloat RFDecimal32,
         _Decimal64' $> CarryFloat RFDecimal64,
         _Decimal128' $> CarryFloat RFDecimal128
@@ -264,8 +268,8 @@ ptkeyword = do
             . fromIntegral
             <$> (anyAsciiDecimalInt >>= guardnat)
         )
-        (BasicError "bitint: invalid bit width")
-    guardnat n = guard (n > 0 && n < 256) $> n
+        (PrimTypeBadError InvalidBitIntWidthOverflowOrBadFormat)
+    guardnat n = guard (n >= 0 && n < 256) $> n
 
 -- | Parse a primitive, non-derived type
 primtype :: Parser PrimType
