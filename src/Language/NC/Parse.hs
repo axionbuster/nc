@@ -17,6 +17,7 @@ module Language.NC.Parse
     symget_zr,
     symtraverse_,
     symfoldM,
+    throwbasic,
   )
 where
 
@@ -87,3 +88,6 @@ data WithSpan a = WithSpan Span a
 -- Argument order was readjusted to agree with 'withSpan' in "flatparse".
 pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
+
+throwbasic :: String -> Parser a
+throwbasic = throw . BasicError

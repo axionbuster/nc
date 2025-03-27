@@ -81,7 +81,12 @@ data Signed = Signed | Unsigned
   deriving (Eq, Show)
 
 -- | @int@, @short@, @long@, or @long long@
-data IntLen = IntLen | Short | Long | LongLong
+data IntLen
+  = IntLen
+  | Short
+  | Long
+  | LongLong
+  | BitInt Int
   deriving (Eq, Show)
 
 -- | Real or complex and what type?
@@ -89,5 +94,11 @@ data FloatType = Real RealFloatType | Complex RealFloatType
   deriving (Eq, Show)
 
 -- | @float@, @double@, or @long double@?
-data RealFloatType = RFFloat | RFDouble | RFLongDouble
+data RealFloatType
+  = RFFloat
+  | RFDouble
+  | RFLongDouble
+  | RFDecimal128
+  | RFDecimal32
+  | RFDecimal64
   deriving (Eq, Show)

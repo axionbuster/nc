@@ -33,7 +33,8 @@ library
                         Language.NC.ParseDec, Language.NC.Dec,
                         Language.NC.Prelude, Language.NC.Expr,
                         Language.NC.Error, Language.NC.Experiment.PrimTypes,
-                        Language.NC.Experiment.Types
+                        Language.NC.Experiment.Types,
+                        Language.NC.Parse.Frag1
     other-modules:      Language.NC.Internal.Prelude, Language.NC.THLex,
                         Language.NC.ParseUtil, Language.NC.Lex2,
                         Language.NC.Internal.SBS

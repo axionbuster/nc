@@ -22,7 +22,7 @@ instance Hashable Name where
 --
 -- Note: \"typedef\" is NOT an actual storage class, but merely
 -- occupies that position in the C grammar.
-data Specifier
+data Storage
   = -- | Automatic storage duration
     Auto
   | -- | Register storage duration
@@ -121,7 +121,8 @@ data CUnionStruct
   deriving (Eq, Show)
 
 -- | C pretypes, which are types that can be used to declare
--- variables, but are not qualified.
+-- variables, but are not qualified. Officially called "type
+-- specifiers" in the C standard.
 data Pretype
   = PPrim PrimType
   | PPointer CPointer
@@ -136,8 +137,7 @@ data Pretype
 
 -- | Fully qualified and specified type.
 data Type = Type
-  { typespec :: Specifier,
-    typequal :: [Qualifier],
+  { typequal :: [Qualifier],
     typetype :: Pretype
   }
   deriving (Eq, Show)

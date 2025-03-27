@@ -1,0 +1,201 @@
+structDeclarator
+    : declarator
+    | declarator? ':' constantExpression
+    ;
+
+declarator
+    : pointer? directDeclarator gccDeclaratorExtension*
+    ;
+
+pointer
+    : ('*' typeQualifierList?)+
+    ;
+
+typeQualifierList
+    : typeQualifier+
+    ;
+
+typeQualifier
+    : 'const'
+    | 'restrict'
+    | 'volatile'
+    | '_Atomic'
+    ;
+
+directDeclarator
+    : Identifier
+    | '(' declarator ')'
+    | directDeclarator '[' typeQualifierList? assignmentExpression? ']'
+    | directDeclarator '[' 'static' typeQualifierList? assignmentExpression ']'
+    | directDeclarator '[' typeQualifierList 'static' assignmentExpression ']'
+    | directDeclarator '[' typeQualifierList? '*' ']'
+    | directDeclarator '(' parameterTypeList ')'
+    | directDeclarator '(' identifierList? ')'
+    | Identifier ':' DigitSequence         // bit field
+    ;
+
+assignmentExpression
+    : conditionalExpression
+    | unaryExpression assignmentOperator assignmentExpression
+    | DigitSequence // for
+    ;
+
+conditionalExpression
+    : logicalOrExpression ('?' expression ':' conditionalExpression)?
+    ;
+
+unaryExpression
+    : ('++' | '--' | 'sizeof')* (
+        postfixExpression
+        | unaryOperator castExpression
+        | ('sizeof' | '_Alignof') '(' typeName ')'
+        | '&&' Identifier // GCC extension address of label
+    )
+    ;
+
+postfixExpression
+    : (primaryExpression | '__extension__'? '(' typeName ')' '{' initializerList ','? '}') (
+        '[' expression ']'
+        | '(' argumentExpressionList? ')'
+        | ('.' | '->') Identifier
+        | '++'
+        | '--'
+    )*
+    ;
+
+initializer
+    : assignmentExpression
+    | '{' initializerList ','? '}'
+    ;
+
+initializerList
+    : designation? initializer (',' designation? initializer)*
+    ;
+
+designation
+    : designatorList '='
+    ;
+
+designatorList
+    : designator+
+    ;
+
+designator
+    : '[' constantExpression ']'
+    | '.' Identifier
+    ;
+
+constantExpression
+    : conditionalExpression
+    ;
+
+conditionalExpression
+    : logicalOrExpression ('?' expression ':' conditionalExpression)?
+    ;
+
+logicalOrExpression
+    : logicalAndExpression ('||' logicalAndExpression)*
+    ;
+
+logicalAndExpression
+    : inclusiveOrExpression ('&&' inclusiveOrExpression)*
+    ;
+
+// and on and on and on...
+
+castExpression
+    : '__extension__'? '(' typeName ')' castExpression
+    | unaryExpression
+    | DigitSequence // for
+    ;
+
+typeName
+    : specifierQualifierList abstractDeclarator?
+    ;
+
+abstractDeclarator
+    : pointer
+    | pointer? directAbstractDeclarator gccDeclaratorExtension*
+    ;
+
+directAbstractDeclarator
+    : '(' abstractDeclarator ')' gccDeclaratorExtension*
+    | '[' typeQualifierList? assignmentExpression? ']'
+    | '[' 'static' typeQualifierList? assignmentExpression ']'
+    | '[' typeQualifierList 'static' assignmentExpression ']'
+    | '[' '*' ']'
+    | '(' parameterTypeList? ')' gccDeclaratorExtension*
+    | directAbstractDeclarator '[' typeQualifierList? assignmentExpression? ']'
+    | directAbstractDeclarator '[' 'static' typeQualifierList? assignmentExpression ']'
+    | directAbstractDeclarator '[' typeQualifierList 'static' assignmentExpression ']'
+    | directAbstractDeclarator '[' '*' ']'
+    | directAbstractDeclarator '(' parameterTypeList? ')' gccDeclaratorExtension*
+    ;
+
+gccDeclaratorExtension
+    : '__asm' '(' StringLiteral+ ')'
+    | gccAttributeSpecifier
+    ;
+
+gccAttributeSpecifier
+    : '__attribute__' '(' '(' gccAttributeList ')' ')'
+    ;
+
+gccAttributeList
+    : gccAttribute? (',' gccAttribute?)*
+    ;
+
+gccAttribute
+    : ~(',' | '(' | ')') // relaxed def for "identifier or reserved word"
+    ('(' argumentExpressionList? ')')?
+    ;
+
+argumentExpressionList
+    : assignmentExpression (',' assignmentExpression)*
+    ;
+
+parameterTypeList
+    : parameterList (',' '...')?
+    ;
+
+parameterList
+    : parameterDeclaration (',' parameterDeclaration)*
+    ;
+
+parameterDeclaration
+    : declarationSpecifiers declarator
+    | declarationSpecifiers2 abstractDeclarator?
+    ;
+
+declaration
+    : declarationSpecifiers initDeclaratorList? ';'
+    | staticAssertDeclaration
+    ;
+
+declarationSpecifiers
+    : declarationSpecifier+
+    ;
+
+declarationSpecifiers2
+    : declarationSpecifier+
+    ;
+
+declarationSpecifier
+    : storageClassSpecifier
+    | typeSpecifier
+    | typeQualifier
+    | functionSpecifier
+    | alignmentSpecifier
+    ;
+
+initDeclaratorList
+    : initDeclarator (',' initDeclarator)*
+    ;
+
+initDeclarator
+    : declarator ('=' initializer)?
+    ;
+
+expression
+    : assignmentExpression (',' assignmentExpression)*
+    ;

@@ -1,0 +1,147 @@
+# I instructed Claude to focus on the spirit of the C language
+# so this grammar might be simple to read but may not be entirely accurate.
+# that is totally expected, though.
+
+# Core declarations
+Decl <- DeclSpec InitDeclList? ";" / StaticAssert
+
+# Types and declarators (no left recursion)
+Declarator <- Ptr? DirDecl GccExt*
+
+# Direct declarator without left recursion
+DirDecl <- 
+  ID / 
+  "(" Declarator ")" /
+  ArrayDecl /
+  FuncDecl /
+  BitField
+
+# Array declarator patterns
+ArrayDecl <-
+  (ID / "(" Declarator ")") ArraySuffix+
+
+ArraySuffix <-
+  "[" TQList? AssignExpr? "]" /
+  "[" "static" TQList? AssignExpr "]" /
+  "[" TQList "static" AssignExpr "]" /
+  "[" TQList? "*" "]"
+
+# Function declarator patterns  
+FuncDecl <-
+  (ID / "(" Declarator ")") FuncSuffix+
+
+FuncSuffix <-
+  "(" ParamList ")" /
+  "(" IDList? ")"
+
+BitField <- ID ":" Digits
+
+# Pointers simplified
+Ptr <- ("*" TQList?)+
+
+# Type qualifiers
+TQList <- TQ+
+TQ <- "const" / "restrict" / "volatile" / "_Atomic"
+
+# Expressions - eliminating left recursion
+Expr <- AssignExpr ("," AssignExpr)*
+AssignExpr <- CondExpr / UnaryExpr AssignOp AssignExpr / Digits
+
+# Conditional expressions
+CondExpr <- OrExpr CondTail?
+CondTail <- "?" Expr ":" CondExpr
+OrExpr <- AndExpr ("||" AndExpr)*
+AndExpr <- BitOrExpr ("&&" BitOrExpr)*
+
+# Unary expressions
+UnaryExpr <-
+  PrefixOp* (
+    PrimaryExpr PostfixOp* /
+    UnaryOp CastExpr /
+    SizeofExpr /
+    "&&" ID
+  )
+
+PrefixOp <- "++" / "--" / "sizeof"
+PostfixOp <-
+  "[" Expr "]" /
+  "(" ArgList? ")" /
+  ("." / "->") ID /
+  "++" /
+  "--"
+
+SizeofExpr <- ("sizeof" / "_Alignof") "(" TypeName ")"
+
+# Type constructs
+TypeName <- SpecQualList AbsDecl?
+AbsDecl <- Ptr / Ptr? DirAbsDecl GccExt*
+
+# Direct abstract declarator (recursion eliminated)
+DirAbsDecl <- 
+  "(" AbsDecl ")" GccExt* /
+  AbsArrayDecl /
+  AbsFuncDecl
+
+AbsArrayDecl <-
+  "[" TQList? AssignExpr? "]" /
+  "[" "static" TQList? AssignExpr "]" /
+  "[" TQList "static" AssignExpr "]" /
+  "[" "*" "]" /
+  DirAbsDecl "[" TQList? AssignExpr? "]" /
+  DirAbsDecl "[" "static" TQList? AssignExpr "]" /
+  DirAbsDecl "[" TQList "static" AssignExpr "]" /
+  DirAbsDecl "[" "*" "]"
+
+AbsFuncDecl <-
+  "(" ParamTypeList? ")" GccExt* /
+  DirAbsDecl "(" ParamTypeList? ")" GccExt*
+
+# Parameters
+ParamTypeList <- ParamList ("," "...")?
+ParamList <- ParamDecl ("," ParamDecl)*
+ParamDecl <-
+  DeclSpec Declarator /
+  DeclSpec2 AbsDecl?
+
+# Declaration specifics
+DeclSpec <- DeclSpecifier+
+DeclSpecifier <-
+  StorageClass /
+  TypeSpec /
+  TQ /
+  FuncSpec /
+  AlignSpec
+
+# Initializers
+InitDeclList <- InitDecl ("," InitDecl)*
+InitDecl <- Declarator ("=" Init)?
+Init <- AssignExpr / "{" InitList ","? "}"
+InitList <- Design? Init ("," Design? Init)*
+Design <- DesignList "="
+DesignList <- Designator+
+Designator <- "[" ConstExpr "]" / "." ID
+
+# It proposed new grammar for some of the planned features
+
+# Advanced type features
+TypeClass <- "typeclass" ID TypeParams? "{" ClassMem* "}"
+Instance <- "instance" TypeName TypeArgs "{" InstMem* "}"
+
+# Linear types
+LinParam <- DeclSpec "linear" Declarator
+
+# Effects system
+FuncDecl <-
+  (ID / "(" Declarator ")") "(" ParamList ")" Effects?
+Effects <- "effects" "(" EffList ")"
+EffList <- Eff ("," Eff)*
+Eff <- "pure" / "io" / "alloc" / "except" / ID
+
+# Rank-N types
+RankN <- "forall" TypeParams "." TypeName
+TypeParams <- "<" TypeParam ("," TypeParam)* ">"
+TypeParam <- ID (":" TypeClass)?
+
+# Continuations
+ContExpr <- "call/cc" "(" Expr ")"
+ContType <- "cont" "<" TypeName ">"
