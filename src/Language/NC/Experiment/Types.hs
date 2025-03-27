@@ -1,5 +1,31 @@
 -- | C23-based types, later augmented with extensions.
-module Language.NC.Experiment.Types where
+module Language.NC.Experiment.Types
+  ( module Language.NC.Experiment.PrimTypes,
+    Name (..),
+    Storage (..),
+    Qualifier (..),
+    QConst (..),
+    QVolatile (..),
+    QRestrict (..),
+    QAtomic (..),
+    CEnum (..),
+    CRecordField (..),
+    CRecord (..),
+    CSpecAtomic (..),
+    CPointer (..),
+    CFunction (..),
+    CArray (..),
+    UnionStructCase (..),
+    CUnionStruct (..),
+    Pretype (..),
+    Type (..),
+    onpretype,
+    DataCategory (..),
+    catdata,
+    Completeness (..),
+    iscomplete,
+  )
+where
 
 import Language.NC.Experiment.PrimTypes
 import Language.NC.Internal.Prelude
@@ -162,6 +188,7 @@ catdata (PPrim {}) = CatObject
 catdata (PPointer {}) = CatObject
 catdata (PFunction {}) = CatFunction
 catdata (PStruct {}) = CatObject
+catdata (PUnionStruct {}) = CatObject
 catdata (PArray {}) = CatArray
 catdata (PUnion {}) = CatObject
 catdata (PEnum {}) = CatObject

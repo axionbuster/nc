@@ -5,22 +5,6 @@ import Language.NC.Experiment.Types
 import Language.NC.Internal.Prelude
 import Language.NC.Lex2
 
--- read in a storage class specifier or fail.
--- when 'typedef' is encountered, it is treated as a NoSpecifier.
-storclass =
-  choice
-    [ Auto <$ lexeme auto',
-      Register <$ lexeme register',
-      Extern <$ lexeme extern',
-      Static <$ lexeme static',
-      ThreadLocal <$ lexeme threadLocal',
-      Constexpr <$ lexeme constexpr',
-      Volatile <$ lexeme volatile',
-      NoSpecifier <$ lexeme typedef' -- a bit of a hack
-    ]
-
--- i just can't resist using Template Haskell
-
 -- i will parse PT and then merge it into a PrimType value
 -- that's being unfolded.
 data PT
@@ -43,24 +27,24 @@ data PTIntType
 data PTSummary
   = PTSummary
   { pssigned :: Maybe Signed,
-    psbitint :: Int8,
-    psint :: Int8,
-    psshort :: Int8,
-    pschar :: Int8,
-    pslong :: Int8,
-    psfloat :: Int8,
-    psdouble :: Int8,
-    pscomplex :: Int8,
-    psdecimal :: Int8,
-    psdecimalbits :: Word8, -- 0, 32, 64, 128 (different from other fields)
-    psvoid :: Int8
+    psbitint :: Word8,
+    psbitintwidth :: Word8, -- custom field, populated with bitint
+    psint :: Word8,
+    psshort :: Word8,
+    pschar :: Word8,
+    pslong :: Word8,
+    psfloat :: Word8,
+    psdouble :: Word8,
+    pscomplex :: Word8,
+    psdecimal :: Word8,
+    psdecimalbits :: Word8, -- flexible membership as impl. changes
+    psvoid :: Word8
   }
   deriving (Show)
 
 psbasiccheck :: PTSummary -> Bool
 psbasiccheck p =
-  let inr x y z = x >= y && x <= z
-      b = p.psbitint
+  let b = p.psbitint
       i = p.psint
       s = p.psshort
       c = p.pschar
@@ -69,19 +53,17 @@ psbasiccheck p =
       d = p.psdouble
       o = p.pscomplex
       m = p.psdecimal
-      e = p.psdecimalbits
       v = p.psvoid
-   in inr b 0 1
-        && inr i 0 1
-        && inr s 0 1
-        && inr c 0 1
-        && inr l 0 2 -- long and long long
-        && inr f 0 1
-        && inr d 0 1
-        && inr o 0 1
-        && inr m 0 1
-        && (e `elem` [0, 32, 64, 128])
-        && inr v 0 1
+   in (b <= 1)
+        && (i <= 1)
+        && (s <= 1)
+        && (c <= 1)
+        && (l <= 2) -- long and long long
+        && (f <= 1)
+        && (d <= 1)
+        && (o <= 1)
+        && (m <= 1)
+        && (v <= 1)
 
 psanyfloat :: PTSummary -> Bool
 psanyfloat p =
@@ -92,7 +74,7 @@ psanyfloat p =
     || (psdecimalbits p > 0)
 
 psanyint :: PTSummary -> Bool
-psanyint p = i > 0 || s > 0 || c > 0 || l > 0
+psanyint p = q > 0 || i > 0 || s > 0 || c > 0 || l > 0
   where
     q = psbitint p
     i = psint p
@@ -107,14 +89,13 @@ pscoercesign p
 
 pscvt :: PTSummary -> Parser PrimType
 pscvt p
-  | not (psbasiccheck p) = throwbasic "pscvt: basic check failed"
+  | not (psbasiccheck p) = throwbasic "pscvt: too many specifiers"
   | psvoid p > 0 =
       if psanyint p || psanyfloat p
         then throwbasic "pscvt: void and other types"
-        else
-          if p.pssigned
-            then throwbasic "pscvt: signed or unsigned void"
-            else pure Void
+        else case p.pssigned of
+          Just _ -> throwbasic "pscvt: (un)signed void"
+          Nothing -> pure Void
   | pschar p > 0 =
       if (p.psbitint > 0)
         || (p.psint > 0)
@@ -129,49 +110,80 @@ pscvt p
         || (p.pslong > 0)
         || psanyfloat p
         then throwbasic "pscvt: _BitInt(...) and other types"
-        else pure $ Int (pscoercesign p) BitInt
+        else
+          if p.psbitintwidth == 0
+            then throwbasic "pscvt: _BitInt(0)"
+            else
+              pure
+                $ Int (pscoercesign p)
+                $ BitInt
+                $ fromIntegral p.psbitintwidth
   | psint p > 0 =
-      if ps.anyfloat p
+      if psanyfloat p || (p.psshort > 0 && p.pslong > 0)
         then throwbasic "pscvt: int and other types"
-        else pure $ Int (pscoercesign p) IntType
+        else
+          pure
+            $ Int
+              (pscoercesign p)
+              if
+                | p.psshort > 0 -> Short
+                | p.pslong == 1 -> Long
+                | p.pslong == 2 -> LongLong
+                | otherwise -> IntLen
   | psshort p > 0 =
-      if ps.anyfloat p
+      if psanyfloat p || p.pslong > 0
         then throwbasic "pscvt: short and other types"
         else pure $ Int (pscoercesign p) Short
   | pslong p > 1 -- long long
     =
-      if ps.anyfloat p
+      if psanyfloat p
         then throwbasic "pscvt: long long and other types"
         else pure $ Int (pscoercesign p) LongLong
   | psfloat p > 0 =
-      if p.psdouble > 0 || p.psdecimal > 0 || p.psdecimalbits > 0
+      if (p.psdouble > 0)
+        || (p.psdecimal > 0)
+        || (p.psdecimalbits > 0)
+        || (p.pslong > 0)
         then throwbasic "pscvt: float and other types"
         else
-          if p.psdouble > 0
-            then pure $ Float (Complex RFFloat)
-            else pure $ Float (Real RFFloat)
+          if p.pssigned /= Nothing
+            then throwbasic "pscvt: (un)signed float"
+            else
+              if p.pscomplex > 0
+                then pure $ Float (Complex RFFloat)
+                else pure $ Float (Real RFFloat)
   | psdouble p > 0 =
       if p.psfloat > 0 || p.psdecimal > 0 || p.psdecimalbits > 0
         then throwbasic "pscvt: double and other types"
         else
-          let subty
-                | p.pslong == 0 = RFDouble
-                | p.pslong == 1 = RFLongDouble
-                | otherwise = throwbasic "pscvt: long long double"
-           in if p.pscomplex > 0
+          if p.pssigned /= Nothing
+            then throwbasic "pscvt: (un)signed double"
+            else do
+              subty <- case p.pslong of
+                0 -> pure RFDouble
+                1 -> pure RFLongDouble
+                _ -> throwbasic "pscvt: long long double"
+              if p.pscomplex > 0
                 then pure $ Float (Complex subty)
                 else pure $ Float (Real subty)
   | pslong p > 0 =
-      if ps.anyfloat p
+      if psanyfloat p
         then throwbasic "pscvt: long and other types"
         else pure $ Int (pscoercesign p) Long
   | psdecimal p > 0 =
       if p.pscomplex > 0
         then throwbasic "pscvt: decimal complex"
-        else pure $ Float (Decimal RFFloat)
+        else
+          if p.pssigned /= Nothing
+            then throwbasic "pscvt: (un)signed decimal"
+            else case p.psdecimalbits of
+              32 -> pure $ Float (Real RFDecimal32)
+              64 -> pure $ Float (Real RFDecimal64)
+              128 -> pure $ Float (Real RFDecimal128)
+              _ -> throwbasic "pscvt: unsupported decimal bits"
   | otherwise =
       throwbasic
-        $ "pscvt: unsupported or empty type summary"
+        $ "pscvt: unsupported or empty type summary: "
         ++ show p
 
 constexpr = error "constexpr: not implemented"

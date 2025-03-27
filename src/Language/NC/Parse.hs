@@ -90,4 +90,4 @@ pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
 
 throwbasic :: String -> Parser a
-throwbasic = throw . BasicError
+throwbasic = err . BasicError

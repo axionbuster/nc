@@ -31,6 +31,7 @@ import Language.NC.Internal.Prelude hiding
     Float,
     Int,
   )
+import Prelude qualified as Pr
 
 -- | Non-derived, primitive types
 data PrimType
@@ -86,7 +87,7 @@ data IntLen
   | Short
   | Long
   | LongLong
-  | BitInt Int
+  | BitInt Pr.Int
   deriving (Eq, Show)
 
 -- | Real or complex and what type?

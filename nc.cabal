@@ -21,7 +21,7 @@ common lang
                             TypeFamilies, UndecidableInstances,
                             TemplateHaskell, OrPatterns, MagicHash,
                             ExtendedLiterals, PatternSynonyms,
-                            OverloadedRecordDot
+                            OverloadedRecordDot, MultiWayIf
     default-language:       GHC2024
 
 common optim
