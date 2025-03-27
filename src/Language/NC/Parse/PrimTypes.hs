@@ -1,4 +1,4 @@
--- | A fragment of the parser for C.
+-- | Parse primitive non-derived types.
 module Language.NC.Parse.PrimTypes (primtype) where
 
 import Language.NC.Experiment.Types
