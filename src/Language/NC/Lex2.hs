@@ -60,7 +60,7 @@ module Language.NC.Lex2
     octdigit'',
 
     -- * Lexeme
-    lexeme,
+    lex,
 
     -- * Data structures
     Constexpr99 (..),
@@ -224,13 +224,14 @@ module Language.NC.Lex2
     -- * Utility
     switch_ws,
     switch1_ws,
+    butnot,
   )
 where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Language.Haskell.TH.Syntax
-import Language.NC.CTypes qualified as C
+import Language.NC.Experiment.PrimTypes qualified as C
 import Language.NC.Internal.Prelude
 
 -- PERF NOTE: backtracking can be expensive. Use the most precise and
@@ -756,16 +757,16 @@ pp_number = optional_ $(char '.') >> digit >> go
 (lcur, rcur) = ($(char '{'), $(char '}'))
 
 -- | Enclose a thing in square brackets not followed by another square bracket.
-insqb0 = between lsqb0 rsqb0
+insqb0 = between (lsqb0 >> ws) rsqb0
 
 -- | Enclose a thing in double square brackets.
-indbsqb = between ldbsqb rdbsqb
+indbsqb = between (ldbsqb >> ws) rdbsqb
 
 -- | Enclose a thing in parentheses.
-inpar = between lpar rpar
+inpar = between (lpar >> ws) rpar
 
 -- | Enclose a thing in braces.
-incur = between lcur rcur
+incur = between (lcur >> ws) rcur
 
 -- Member access operators
 (period, rarrow) = ($(char '.'), $(string "->"))
@@ -1108,8 +1109,8 @@ switch1_ws = switchWithPost (Just [|ws1|])
 -- | Parse a thing and then require whitespace or end of file, which is
 -- also consumed. If there's an error, annotate it with a span, log it, and
 -- then rethrow the error. Use 'try' to suppress the error.
-lexeme :: Parser a -> Parser a
-lexeme p = do
+lex :: Parser a -> Parser a
+lex p = do
   st <- getPos
   let apologize e = do
         en <- getPos
@@ -1117,3 +1118,7 @@ lexeme p = do
         modifyIORef es (:|> aenew e (Span st en))
         err e
   withError p apologize <* ws1
+
+-- | Parse @a@ but also make sure @q@ cannot parse (must consume span).
+butnot :: Parser a -> Parser b -> Parser a
+butnot p q = withSpan p \x sp -> ((inSpan sp q >> eof) `fails`) $> x

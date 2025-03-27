@@ -18,7 +18,6 @@ module Language.NC.Internal.Prelude
     module GHC.Generics,
     module Language.NC.Parse,
     module Language.NC.Internal.SBS,
-    module Language.NC.ParseUtil,
     module UnliftIO.IORef,
     Builder,
     ByteString,
@@ -56,6 +55,5 @@ import GHC.Float
 import GHC.Generics
 import Language.NC.Internal.SBS
 import Language.NC.Parse
-import Language.NC.ParseUtil
 import UnliftIO.IORef
-import Prelude hiding (take, unzip)
+import Prelude hiding (lex, take, unzip)

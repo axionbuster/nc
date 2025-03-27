@@ -1,7 +1,5 @@
 -- | Users should use this import rather than importing
 -- individual modules or "FlatParse" modules directly.
---
--- For one thing, it redefines 'cut' from FlatParse.
 module Language.NC.Prelude
   ( Parser,
     Error (..),

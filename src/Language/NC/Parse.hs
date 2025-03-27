@@ -89,5 +89,6 @@ data WithSpan a = WithSpan Span a
 pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
 
+-- | Throw a 'BasicError'.
 throwbasic :: String -> Parser a
 throwbasic = err . BasicError

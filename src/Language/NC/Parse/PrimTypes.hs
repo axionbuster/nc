@@ -1,5 +1,5 @@
 -- | A fragment of the parser for C.
-module Language.NC.Parse.Frag1 where
+module Language.NC.Parse.PrimTypes (primtype) where
 
 import Language.NC.Experiment.Types
 import Language.NC.Internal.Prelude
@@ -20,8 +20,7 @@ data PTIntType
   | PTShort
   | PTInt
   | PTLong
-  | PTLongLong
-  | PTBitInt
+  | PTBitInt Word8 -- bit width
 
 -- record counts of each token occurrence
 data PTSummary
@@ -189,8 +188,7 @@ psfold !sm = \case
     PTShort -> sm {psshort = psshort sm + 1}
     PTInt -> sm {psint = psint sm + 1}
     PTLong -> sm {pslong = pslong sm + 1}
-    PTLongLong -> sm {pslong = pslong sm + 1}
-    PTBitInt -> sm {psbitint = psbitint sm + 1}
+    PTBitInt w -> sm {psbitint = psbitint sm + 1, psbitintwidth = w}
   CarryFloat f -> case f of
     RFFloat -> sm {psfloat = psfloat sm + 1}
     RFDouble -> sm {psdouble = psdouble sm + 1}
@@ -202,4 +200,41 @@ psfold !sm = \case
   CarryChar -> sm {pschar = pschar sm + 1}
   CarryVoid -> sm {psvoid = psvoid sm + 1}
 
-constexpr = error "constexpr: not implemented"
+ptkeyword :: Parser PT
+ptkeyword = do
+  lex
+    $ choice
+      [ signed' $> CarrySign Signed,
+        unsigned' $> CarrySign Unsigned,
+        char' $> CarryInt PTChar,
+        short' $> CarryInt PTShort,
+        int' $> CarryInt PTInt,
+        long' $> CarryInt PTLong,
+        bitint,
+        float' $> CarryFloat RFFloat,
+        double' $> CarryFloat RFDouble,
+        _Complex' $> CarryComplex,
+        void' $> CarryVoid
+      ]
+  where
+    bitint = do
+      lex _BitInt'
+      cut
+        ( inpar
+            $ lex
+            $ CarryInt
+            . PTBitInt
+            . fromIntegral
+            <$> (anyAsciiDecimalInt >>= guardnat)
+        )
+        (BasicError "bitint: invalid bit width")
+    guardnat n = guard (n > 0 && n < 256) $> n
+
+-- | Parse a primitive, non-derived type
+primtype :: Parser PrimType
+primtype =
+  chainl
+    psfold
+    (pure $ PTSummary Nothing 0 0 0 0 0 0 0 0 0 0 0 0 0)
+    ptkeyword
+    >>= pscvt
