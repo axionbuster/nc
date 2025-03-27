@@ -27,6 +27,7 @@ data PTIntType
 data PTSummary
   = PTSummary
   { pssigned :: Maybe Signed,
+    pssigns :: Word8,
     psbitint :: Word8,
     psbitintwidth :: Word8, -- custom field, populated with bitint
     psint :: Word8,
@@ -44,26 +45,17 @@ data PTSummary
 
 psbasiccheck :: PTSummary -> Bool
 psbasiccheck p =
-  let b = p.psbitint
-      i = p.psint
-      s = p.psshort
-      c = p.pschar
-      l = p.pslong
-      f = p.psfloat
-      d = p.psdouble
-      o = p.pscomplex
-      m = p.psdecimal
-      v = p.psvoid
-   in (b <= 1)
-        && (i <= 1)
-        && (s <= 1)
-        && (c <= 1)
-        && (l <= 2) -- long and long long
-        && (f <= 1)
-        && (d <= 1)
-        && (o <= 1)
-        && (m <= 1)
-        && (v <= 1)
+  (p.psbitint <= 1)
+    && (p.pssigns <= 1)
+    && (p.psint <= 1)
+    && (p.psshort <= 1)
+    && (p.pschar <= 1)
+    && (p.pslong <= 2) -- long and long long
+    && (p.psfloat <= 1)
+    && (p.psdouble <= 1)
+    && (p.pscomplex <= 1)
+    && (p.psdecimal <= 1)
+    && (p.psvoid <= 1)
 
 psanyfloat :: PTSummary -> Bool
 psanyfloat p =
@@ -87,6 +79,9 @@ pscoercesign p
   | Just s <- pssigned p = s
   | otherwise = Signed
 
+-- C primitive type keywords can be given in any permutation
+-- but i didn't want to use a permutation parser; so this is
+-- an implementation that's based on counting keywords instead.
 pscvt :: PTSummary -> Parser PrimType
 pscvt p
   | not (psbasiccheck p) = throwbasic "pscvt: too many specifiers"
@@ -185,5 +180,26 @@ pscvt p
       throwbasic
         $ "pscvt: unsupported or empty type summary: "
         ++ show p
+
+psfold :: PTSummary -> PT -> PTSummary
+psfold !sm = \case
+  CarrySign s -> sm {pssigned = Just s, pssigns = pssigns sm + 1}
+  CarryInt i -> case i of
+    PTChar -> sm {pschar = pschar sm + 1}
+    PTShort -> sm {psshort = psshort sm + 1}
+    PTInt -> sm {psint = psint sm + 1}
+    PTLong -> sm {pslong = pslong sm + 1}
+    PTLongLong -> sm {pslong = pslong sm + 1}
+    PTBitInt -> sm {psbitint = psbitint sm + 1}
+  CarryFloat f -> case f of
+    RFFloat -> sm {psfloat = psfloat sm + 1}
+    RFDouble -> sm {psdouble = psdouble sm + 1}
+    RFLongDouble -> sm {psdouble = psdouble sm + 1}
+    RFDecimal32 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 32}
+    RFDecimal64 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 64}
+    RFDecimal128 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 128}
+  CarryComplex -> sm {pscomplex = pscomplex sm + 1}
+  CarryChar -> sm {pschar = pschar sm + 1}
+  CarryVoid -> sm {psvoid = psvoid sm + 1}
 
 constexpr = error "constexpr: not implemented"
