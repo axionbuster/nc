@@ -218,25 +218,28 @@ pscvt p
   where
     emit = err . PrimTypeBadError
 
+inc :: Word8 -> Word8
+inc w | w == maxBound = maxBound | otherwise = w + 1
+
 psfold :: PTSummary -> PT -> PTSummary
 psfold !sm = \case
-  CarrySign s -> sm {pssigned = Just s, pssigns = pssigns sm + 1}
+  CarrySign s -> sm {pssigned = Just s, pssigns = inc $ pssigns sm}
   CarryInt i -> case i of
-    PTChar -> sm {pschar = pschar sm + 1}
-    PTShort -> sm {psshort = psshort sm + 1}
-    PTInt -> sm {psint = psint sm + 1}
-    PTLong -> sm {pslong = pslong sm + 1}
-    PTBitInt w -> sm {psbitint = psbitint sm + 1, psbitintwidth = w}
+    PTChar -> sm {pschar = inc $ pschar sm}
+    PTShort -> sm {psshort = inc $ psshort sm}
+    PTInt -> sm {psint = inc $ psint sm}
+    PTLong -> sm {pslong = inc $ pslong sm}
+    PTBitInt w -> sm {psbitint = inc $ psbitint sm, psbitintwidth = w}
   CarryFloat f -> case f of
-    RFFloat -> sm {psfloat = psfloat sm + 1}
-    RFDouble -> sm {psdouble = psdouble sm + 1}
-    RFLongDouble -> sm {psdouble = psdouble sm + 1}
-    RFDecimal32 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 32}
-    RFDecimal64 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 64}
-    RFDecimal128 -> sm {psdecimal = psdecimal sm + 1, psdecimalbits = 128}
-  CarryComplex -> sm {pscomplex = pscomplex sm + 1}
-  CarryChar -> sm {pschar = pschar sm + 1}
-  CarryVoid -> sm {psvoid = psvoid sm + 1}
+    RFFloat -> sm {psfloat = inc $ psfloat sm}
+    RFDouble -> sm {psdouble = inc $ psdouble sm}
+    RFLongDouble -> sm {psdouble = inc $ psdouble sm}
+    RFDecimal32 -> sm {psdecimal = inc $ psdecimal sm, psdecimalbits = 32}
+    RFDecimal64 -> sm {psdecimal = inc $ psdecimal sm, psdecimalbits = 64}
+    RFDecimal128 -> sm {psdecimal = inc $ psdecimal sm, psdecimalbits = 128}
+  CarryComplex -> sm {pscomplex = inc $ pscomplex sm}
+  CarryChar -> sm {pschar = inc $ pschar sm}
+  CarryVoid -> sm {psvoid = inc $ psvoid sm}
 
 ptkeyword :: Parser PT
 ptkeyword = do
