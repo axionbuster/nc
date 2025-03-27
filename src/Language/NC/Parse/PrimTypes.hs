@@ -40,7 +40,41 @@ data PTSummary
     psdecimalbits :: Word8, -- flexible membership as impl. changes
     psvoid :: Word8
   }
-  deriving (Show)
+
+instance Show PTSummary where
+  show PTSummary {..} = do
+    let show' n s
+          | n > 1 = "(multiple " ++ s ++ " specifiers)"
+          | n > 0 = s
+          | otherwise = ""
+    let ww = do
+          show' psvoid "void"
+            : ( if pssigns > 1
+                  then "(multiple sign specifiers)"
+                  else case pssigned of
+                    Just Signed -> "signed"
+                    Just Unsigned -> "unsigned"
+                    Nothing -> ""
+              )
+            : ( case psbitint of
+                  0 -> ""
+                  1 -> "_BitInt(" ++ show psbitintwidth ++ ")"
+                  _ -> "(multiple _BitInt specifiers)"
+              )
+            : show' psshort "short"
+            : (if pslong > 1 then "long long" else show' pslong "long")
+            : show' psint "int"
+            : show' pschar "char"
+            : show' psfloat "float"
+            : show' psdouble "double"
+            : ( case psdecimal of
+                  0 -> ""
+                  1 -> "_Decimal" ++ show psdecimalbits
+                  _ -> "(multiple _Decimal specifiers)"
+              )
+            : show' pscomplex "_Complex"
+            : []
+    unwords $ filter (not . null) ww
 
 psbasiccheck :: PTSummary -> Bool
 psbasiccheck p =
@@ -214,7 +248,10 @@ ptkeyword = do
         float' $> CarryFloat RFFloat,
         double' $> CarryFloat RFDouble,
         _Complex' $> CarryComplex,
-        void' $> CarryVoid
+        void' $> CarryVoid,
+        _Decimal32' $> CarryFloat RFDecimal32,
+        _Decimal64' $> CarryFloat RFDecimal64,
+        _Decimal128' $> CarryFloat RFDecimal128
       ]
   where
     bitint = do
