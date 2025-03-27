@@ -261,7 +261,7 @@ ptkeyword = do
         _Decimal128' $> CarryFloat RFDecimal128
       ]
   where
-    bitint = do
+    bitint = lex do
       lex _BitInt'
       cut
         ( inpar
