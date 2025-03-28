@@ -46,9 +46,3 @@ library
                         template-haskell, hashtables, unliftio, primitive,
                         lens
     hs-source-dirs:     src
-
-executable nc
-    import:             warnings, lang, optim
-    main-is:            Main.hs
-    build-depends:      base, nc
-    hs-source-dirs:     app
