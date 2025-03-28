@@ -34,6 +34,8 @@ library
                         Language.NC.Error, Language.NC.Experiment.PrimTypes,
                         Language.NC.Experiment.Types,
                         Language.NC.Parse.PrimTypes,
+                        Language.NC.Parse.Decl,
+                        Language.NC.Parse.Expr,
                         -- Lex2: exposed only for testing
                         Language.NC.Lex2
     other-modules:      Language.NC.Internal.Prelude,
@@ -41,7 +43,8 @@ library
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, hashable,
                         bytestring, text, parser-combinators,
-                        template-haskell, hashtables, unliftio, primitive
+                        template-haskell, hashtables, unliftio, primitive,
+                        lens
     hs-source-dirs:     src
 
 executable nc

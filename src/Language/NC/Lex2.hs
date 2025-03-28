@@ -61,6 +61,9 @@ module Language.NC.Lex2
 
     -- * Lexeme
     lex,
+    lex0,
+    lx,
+    lx0,
 
     -- * Data structures
     Constexpr99 (..),
@@ -86,6 +89,8 @@ module Language.NC.Lex2
     -- NO handling of lexeme boundaries, so these will match the first
     -- part of a longer operator. Also, these don't generate parse nodes,
     -- as they simply match sequences of characters.
+    comma,
+    semicolon,
     period,
     rarrow,
     doubleplus,
@@ -768,6 +773,10 @@ inpar = between (lpar >> ws) rpar
 -- | Enclose a thing in braces.
 incur = between (lcur >> ws) rcur
 
+-- Important punctuations
+
+(comma, semicolon) = ($(char ','), $(char ';'))
+
 -- Member access operators
 (period, rarrow) = ($(char '.'), $(string "->"))
 
@@ -1118,6 +1127,30 @@ lex p = do
         modifyIORef es (:|> aenew e (Span st en))
         err e
   withError p apologize <* ws1
+
+-- | Like 'lex', but it does not require whitespace after parsing.
+-- This is useful for lexing tokens where whitespace is not required after
+-- the token (e.g., in the case of identifiers or certain punctuators).
+lex0 :: Parser a -> Parser a
+lex0 p = do
+  st <- getPos
+  let apologize e = do
+        en <- getPos
+        es <- pserrors <$> ask
+        modifyIORef es (:|> aenew e (Span st en))
+        err e
+  withError p apologize <* ws
+
+-- | Like 'lex', but no error handling is performed. It only requires
+-- whitespace after. This is good for performance since it doesn't allocate
+-- closures.
+lx :: Parser a -> Parser a
+lx = (<* ws1)
+
+-- | Like 'lex0', but no error handling is performed to not allocate
+-- closures.
+lx0 :: Parser a -> Parser a
+lx0 = (<* ws)
 
 -- | Parse @a@ but also make sure @q@ cannot parse (must consume span).
 butnot :: Parser a -> Parser b -> Parser a

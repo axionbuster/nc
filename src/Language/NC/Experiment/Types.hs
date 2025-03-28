@@ -3,16 +3,22 @@ module Language.NC.Experiment.Types
   ( module Language.NC.Experiment.PrimTypes,
     Name (..),
     Storage (..),
+    Attribute (..),
+    StandardAttribute (..),
     Qualifier (..),
+    QualifierKey (..),
     QConst (..),
     QVolatile (..),
     QRestrict (..),
     QAtomic (..),
+    Inline (..),
+    EffectKey (..),
+    Effects (..),
+    ENoReturn (..),
     CEnum (..),
     CRecordField (..),
     CRecord (..),
     CSpecAtomic (..),
-    CPointer (..),
     CFunction (..),
     CArray (..),
     UnionStructCase (..),
@@ -65,6 +71,22 @@ data Storage
     NoSpecifier
   deriving (Eq, Show)
 
+data Attribute
+  = StandardAttribute StandardAttribute
+  | -- | namespace, name; value not supported yet
+    CustomAttribute Name Name
+  deriving (Eq, Show)
+
+data StandardAttribute
+  = SAFallthrough
+  | SADeprecated
+  | SAMaybeUnused
+  | SANoDiscard
+  | SANoReturn
+  | SAUnsequenced
+  | SAReproducible
+  deriving (Eq, Show)
+
 data Qualifier = Qualifier
   { qconst :: QConst,
     qvolatile :: QVolatile,
@@ -73,13 +95,36 @@ data Qualifier = Qualifier
   }
   deriving (Eq, Show)
 
-data QConst = QNotConst | QConst deriving (Eq, Show)
+data QConst = QNotConst | QConst deriving (Eq, Show, Ord, Enum)
 
-data QVolatile = QNotVolatile | QVolatile deriving (Eq, Show)
+data QVolatile = QNotVolatile | QVolatile deriving (Eq, Show, Ord, Enum)
 
-data QRestrict = QNotRestrict | QRestrict deriving (Eq, Show)
+data QRestrict = QNotRestrict | QRestrict deriving (Eq, Show, Ord, Enum)
 
-data QAtomic = QNotAtomic | QAtomic deriving (Eq, Show)
+data QAtomic = QNotAtomic | QAtomic deriving (Eq, Show, Ord, Enum)
+
+data QualifierKey
+  = QKConst
+  | QKVolatile
+  | QKRestrict
+  | QKAtomic
+  deriving (Eq, Show)
+
+-- | Only use the (+) and (*) operators. This allows using the
+-- 'Data.Semigroup.Sum' and 'Data.Semigroup.Product' monoids.
+--
+-- - (+): does inclusive OR on each field.
+-- - (*): same but does an AND instead.
+instance Num Qualifier where
+  Qualifier c0 v0 r0 a0 + Qualifier c1 v1 r1 a1 =
+    Qualifier (max c0 c1) (max v0 v1) (max r0 r1) (max a0 a1)
+  Qualifier c0 v0 r0 a0 * Qualifier c1 v1 r1 a1 =
+    Qualifier (min c0 c1) (min v0 v1) (min r0 r1) (min a0 a1)
+  fromInteger = error "Qualifier fromInteger does not make sense"
+  signum = error "Qualifier signum does not make sense"
+  abs = error "Qualifier abs does not make sense"
+  negate = error "Qualifier negate does not make sense"
+  (-) = error "Qualifier subtract does not make sense"
 
 data CEnum
   = -- | Backing type (default to @int@) and list of enumerators
@@ -110,16 +155,28 @@ newtype CRecord
 -- * Atomic qualifier: same type, new rep.
 newtype CSpecAtomic = CSpecAtomic Pretype deriving (Eq, Show)
 
--- | Requires a qualified type.
-data CPointer = CPointer Type deriving (Eq, Show)
+-- | Is this function marked \'inline\'?
+data Inline = MarkedInline | NotMarkedInline deriving (Eq, Show, Ord, Enum)
+
+-- | Effect attribute to a function.
+data EffectKey
+  = -- | xref: 'SANoreturn'
+    EKNoReturn
+  deriving (Eq, Show)
+
+data ENoReturn = ENoReturn | ENotNoReturn deriving (Eq, Show, Ord, Enum)
+
+data Effects
+  = Effects {enoreturn :: ENoReturn}
+  deriving (Eq, Show)
 
 -- Since C23, all functions must have a prototype,
 -- and varargs don't have to be preceded by a parameter.
 data CFunction
   = -- | Regular function
-    CRegularFunction (Seq Type) Type
+    CRegularFunction (Seq Type) Type Effects
   | -- | Vararg function
-    CVarargFunction (Seq Type) Type
+    CVarargFunction (Seq Type) Type Effects
   deriving (Eq, Show)
 
 -- Currently variably-sized arrays are not supported
@@ -151,7 +208,7 @@ data CUnionStruct
 -- specifiers" in the C standard.
 data Pretype
   = PPrim PrimType
-  | PPointer CPointer
+  | PPointer Type
   | PFunction CFunction
   | PStruct (Maybe CRecord) Name
   | PUnionStruct (Maybe CUnionStruct) Name
@@ -161,9 +218,10 @@ data Pretype
   | PAtomic CSpecAtomic
   deriving (Eq, Show)
 
--- | Fully qualified and specified type.
+-- | Fully qualified and specified type, possibly with attributes.
 data Type = Type
   { typequal :: [Qualifier],
+    typeattr :: [Attribute],
     typetype :: Pretype
   }
   deriving (Eq, Show)

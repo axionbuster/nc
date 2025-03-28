@@ -1,5 +1,6 @@
 module Language.NC.Internal.Prelude
   ( module Control.Applicative,
+    module Control.Lens,
     module Control.Monad,
     module Control.Monad.Combinators,
     module Control.Monad.Fix,
@@ -27,6 +28,7 @@ module Language.NC.Internal.Prelude
 where
 
 import Control.Applicative hiding (many, optional, some, (<|>))
+import Control.Lens
 import Control.Monad
 import Control.Monad.Combinators hiding
   ( many,
@@ -52,7 +54,7 @@ import Data.Unique
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float
-import GHC.Generics
+import GHC.Generics hiding (from, to)
 import Language.NC.Internal.SBS
 import Language.NC.Parse
 import UnliftIO.IORef
