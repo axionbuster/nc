@@ -29,17 +29,11 @@ common optim
 
 library
     import:             warnings, lang, optim
-    exposed-modules:    Language.NC, Language.NC.Parse,
-                        Language.NC.Prelude,
-                        Language.NC.Error, Language.NC.Experiment.PrimTypes,
-                        Language.NC.Experiment.Types,
-                        Language.NC.Parse.PrimTypes,
-                        Language.NC.Parse.Decl,
-                        Language.NC.Parse.Expr,
-                        -- Lex2: exposed only for testing
-                        Language.NC.Lex2
+    exposed-modules:    Language.NC
     other-modules:      Language.NC.Internal.Prelude,
-                        Language.NC.Internal.SBS
+                        Language.NC.Internal.SBS,
+                        Language.NC.Internal.Parse,
+                        Language.NC.Internal.Error
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, hashable,
                         bytestring, text, parser-combinators,
