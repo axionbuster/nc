@@ -220,7 +220,8 @@ data Pretype
 
 -- | Fully qualified and specified type, possibly with attributes.
 data Type = Type
-  { typequal :: [Qualifier],
+  { typestor :: [Storage],
+    typequal :: [Qualifier],
     typeattr :: [Attribute],
     typetype :: Pretype
   }
