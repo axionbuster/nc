@@ -12,7 +12,7 @@ module Language.NC.Internal.Lex where
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Data.Text.ICU.Char qualified as C
-import GHC.Int
+import GHC.Int (Int (..))
 import GHC.Integer.Logarithms (integerLog2#)
 import Language.NC.Internal.Prelude
 import Language.NC.Internal.PrimTypes qualified as PT
@@ -491,7 +491,8 @@ ucnam_val_word =
 
 -- *** 6.4.4 Constants
 
--- | Assemble a number from a base, parser, and max number of digits.
+-- | Assemble a number from a base, parser, digit separator,
+-- and an optional max number of digits.
 --
 -- The third argument is a parser for the digit separator. Give it @'pure' ()@
 -- to disable it.
@@ -501,11 +502,10 @@ ucnam_val_word =
 -- Require at least one digit be consumed, or else fail.
 asm b p sep = go 0 True
   where
-    -- i make sure two separators (') can't follow each other.
+    -- making sure separators can't appear in a row.
     go n sepfresh = \case
       (0 :: Int) -> pure n
       i ->
-        -- for simplicity i hard-code the digit separator.
         branch
           (sep >> guard sepfresh)
           (go n False i)
@@ -599,7 +599,7 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
     go _ _ = err $ LiteralBadError IncorrectIntSuffix
 
 -- used to compute bitwidth for _BitInt(N) literals.
--- as an invariant, this is > 1.
+-- as an invariant, this is >= 1.
 integerneededbits 0 = 1
 integerneededbits x
   | x < 0 = I# (integerLog2# (negate x)) + 1 -- sign bit
