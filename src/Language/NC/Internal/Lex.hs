@@ -519,16 +519,10 @@ _hexdigit =
       | otherwise -> error "_hexdigit: impossible"
 
 _octdigit =
-  satisfyAscii isOctDigit <&> fromIntegral . \c ->
-    if
-      | '0' <= c && c <= '7' -> ord c - ord '0'
-      | otherwise -> error "_octdigit: impossible"
+  satisfyAscii isOctDigit <&> fromIntegral . \c -> ord c - ord '0'
 
 _decdigit =
-  satisfyAscii isDigit <&> fromIntegral . \c ->
-    if
-      | '0' <= c && c <= '9' -> ord c - ord '0'
-      | otherwise -> error "_decdigit: impossible"
+  satisfyAscii isDigit <&> fromIntegral . \c -> ord c - ord '0'
 
 _bindigit =
   $( switch
