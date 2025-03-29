@@ -22,6 +22,7 @@ module Language.NC.Internal.Prelude
     module UnliftIO.IORef,
     Builder,
     ByteString,
+    LazyByteString,
     ShortByteString,
     Text,
   )
@@ -40,6 +41,7 @@ import Control.Monad.Combinators hiding
   )
 import Control.Monad.Fix
 import Data.ByteString (ByteString)
+import Data.ByteString.Lazy (LazyByteString)
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Short (ShortByteString)
 import Data.Char hiding (isDigit)

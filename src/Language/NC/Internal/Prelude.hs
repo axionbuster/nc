@@ -1,6 +1,9 @@
 module Language.NC.Internal.Prelude
   ( Builder,
     ByteString,
+    LazyByteString,
+    ShortByteString,
+    Text,
     module Control.Applicative,
     module Control.Lens,
     module Control.Monad,
@@ -22,8 +25,6 @@ module Language.NC.Internal.Prelude
     module Language.NC.Internal.Parse,
     module Language.NC.Internal.SBS,
     module Prelude,
-    ShortByteString,
-    Text,
     module UnliftIO.IORef,
   )
 where
@@ -42,6 +43,7 @@ import Control.Monad.Combinators hiding
 import Control.Monad.Fix
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
+import Data.ByteString.Lazy (LazyByteString)
 import Data.ByteString.Short (ShortByteString)
 import Data.Char hiding (isDigit)
 import Data.Data hiding (Fixity, Infix, Prefix)

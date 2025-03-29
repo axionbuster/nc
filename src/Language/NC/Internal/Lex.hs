@@ -110,6 +110,8 @@ incur = between (lcur >> ws0) (ws0 >> rcur)
 
 (comma, semicolon) = ($(char ','), $(char ';'))
 
+(quote, dbquote) = ($(char '\''), $(char '"'))
+
 -- Member access operators
 (period, rarrow) = ($(char '.'), $(string "->"))
 
@@ -629,7 +631,6 @@ integer_constant_val =
     >>= \(wasdecimal, n) -> IntegerLiteral n <$> sfx wasdecimal n
   where
     -- the (-1) indicates max number of digits (unrestricted)
-    quote = $(char '\'')
     hex = (False,) <$> asm 16 _hexdigit quote (-1)
     oct = (False,) <$> asm 8 _octdigit quote (-1)
     dec = (True,) <$> asm 10 _decdigit quote (-1)
