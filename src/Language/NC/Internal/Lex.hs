@@ -664,26 +664,23 @@ floating_constant =
     sfx = do
       oneof_ascii "fFlLdD"
       oneof_ascii "flFL"
-    dgt = skipSatisfyAscii isDigit
+    exp e = do
+      oneof_ascii e
+      optional_ $ oneof_ascii "+-"
+      skipSome $ skipSatisfyAscii isDigit
     -- "mantissa" ... which is the main part.
     -- f scans a digit.
     man f =
       (skipSome f >> optional_ (period >> skipMany f))
         <|> (period >> skipSome f)
     dec =
-      man dgt >> optional_ do
-        -- optional exponent
-        oneof_ascii "eE"
-        optional_ $ oneof_ascii "+-"
-        skipSome dgt
+      man (skipSatisfyAscii isDigit) >> optional_ (exp "eE")
     hex = do
       $(char '0')
       oneof_ascii "xX"
       man $ skipSatisfyAscii isHexDigit
       -- exponent. exponent is given in decimal.
-      oneof_ascii "pP"
-      optional_ $ oneof_ascii "+-"
-      skipSome dgt
+      exp "pP"
 
 -- | Create a Template Haskell splice like 'switch' that
 -- efficiently matches strings and moves on, but also
