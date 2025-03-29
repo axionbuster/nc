@@ -545,7 +545,10 @@ instance Semigroup ISFX_ where
   ISFX_ a b c <> ISFX_ x y z = ISFX_ (a ^^+ x) (b ^^+ y) (c ^^+ z)
     where
       -- carry with overflow guard
-      p ^^+ q = min maxBound (p + q)
+      p ^^+ 0 = p
+      255 ^^+ 1 = 255
+      p ^^+ 1 = p + 1
+      _ ^^+ _ = error "ISFX_'s ^^+: impossible"
 
 instance Monoid ISFX_ where
   mempty = ISFX_ 0 0 0
