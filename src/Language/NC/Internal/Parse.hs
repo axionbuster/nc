@@ -37,16 +37,16 @@ data Symbol = Symbol
 -- other platforms, it's generally 64 bits.
 data IntegerSettings
   = IntegerSettings
-  { ist_charbitwidth :: Word8,
-    ist_shortbitwidth :: Word8,
-    ist_intbitwidth :: Word8,
-    ist_longbitwidth :: Word8,
-    ist_longlongbitwidth :: Word8,
+  { ist_charbitwidth :: !Word8,
+    ist_shortbitwidth :: !Word8,
+    ist_intbitwidth :: !Word8,
+    ist_longbitwidth :: !Word8,
+    ist_longlongbitwidth :: !Word8,
     -- | is @char@ represented as @signed char@ or @unsigned char@?
-    ist_charissigned :: Bool,
-    ist_floatbitwidth :: Word8,
-    ist_doublebitwidth :: Word8,
-    ist_longdoublebitwidth :: Word8
+    ist_charissigned :: !Bool,
+    ist_floatbitwidth :: !Word8,
+    ist_doublebitwidth :: !Word8,
+    ist_longdoublebitwidth :: !Word8
   }
   deriving (Eq, Show)
 
@@ -59,6 +59,7 @@ ain = psintset <$> ask
 --
 -- For @char@, it depends on the signedness.
 ist_preciseposbw :: PT.PrimType -> Parser Word8
+ist_preciseposbw (PT.Int _ (PT.BitInt n)) = pure n
 ist_preciseposbw (PT.Int s a) = do
   x <- ist_pbw' a
   pure $ x - fromIntegral (fromEnum (s == PT.Signed))
@@ -67,7 +68,7 @@ ist_preciseposbw (PT.Int s a) = do
     ist_pbw' PT.IntLen = ist_intbitwidth <$> ain
     ist_pbw' PT.Long = ist_longbitwidth <$> ain
     ist_pbw' PT.LongLong = ist_longlongbitwidth <$> ain
-    ist_pbw' (PT.BitInt n) = pure n
+    ist_pbw' _ = error "ist_pbw' on _BitInt(N) ... impossible"
 ist_preciseposbw (PT.Char (Just PT.Unsigned)) = ist_charbitwidth <$> ain
 ist_preciseposbw (PT.Char (Just PT.Signed)) = pred . ist_charbitwidth <$> ain
 ist_preciseposbw (PT.Char Nothing) = do
