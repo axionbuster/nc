@@ -543,7 +543,7 @@ data IntegerLiteral
   deriving (Eq, Show)
 
 data ISFX_
-  = -- occurrence counts. we do a very basic check.
+  = -- occurrence counts
   ISFX_ {isfxu :: !Word8, isfxl :: !Word8, isfxbw :: !Word8}
 
 instance Semigroup ISFX_ where
@@ -705,14 +705,15 @@ character_constant_val = do
   val <- between $(char '\'') $(char '\'') value
   pure $ val typ
   where
+    charset = pscharset <$> ask
     encpfx =
       $( switch
            [|
              case _ of
-               "u8" -> cst_char8_type . pscharset <$> ask
-               "u" -> cst_char16_type . pscharset <$> ask
-               "U" -> cst_char32_type . pscharset <$> ask
-               "L" -> cst_wchar_type . pscharset <$> ask
+               "u8" -> cst_char8_type <$> charset
+               "u" -> cst_char16_type <$> charset
+               "U" -> cst_char32_type <$> charset
+               "L" -> cst_wchar_type <$> charset
                _ -> pure PT.UChar_
              |]
        )
