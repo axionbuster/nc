@@ -16,6 +16,8 @@ data Error
     BasicError String
   | -- | Bad primitive type
     PrimTypeBadError PrimTypeBadWhy
+  | -- | Literal problem
+    LiteralBadError LiteralBadWhy
   | -- | Unexpected end of file
     UnexpectedEOFError
   | -- | Internal error
@@ -58,6 +60,18 @@ instance Show PrimTypeBadWhy where
       printf "giving signedness to non-integral type %s" t
     InvalidDecimalComplex -> "constructing a decimal complex type"
     InvalidTypeSpec t -> printf "empty or unsupported type specification %s" t
+
+data LiteralBadWhy
+  = -- | Incorrect integer suffix combo.
+    IncorrectIntSuffix
+  | -- | Literal too large to fit.
+    LiteralTooLarge
+  deriving (Eq)
+
+instance Show LiteralBadWhy where
+  show = \case
+    IncorrectIntSuffix -> "incorrect integer suffix"
+    LiteralTooLarge -> "literal is too large to fit"
 
 instance Exception Error
 

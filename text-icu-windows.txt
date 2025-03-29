@@ -1,0 +1,54 @@
+On the issue of `text-icu` on Windows.
+
+If the build fails because of a problem installing `text-icu`, chances
+are that the issue is it can't find a native library regarding ICU.
+
+If that's the issue, take these steps.
+
+1. Go to the GHCUp's MSYS2 directory, and launch a shell there.
+It's typically located in the C:\ghcup\msys64 directory.
+
+2. Update `pacman`
+
+```
+pacman -Syu
+```
+
+3. Install the required packages.
+
+```
+pacman -S mingw-w64-x86_64-pkg-config mingw-w64-x86_64-icu
+```
+
+4. Add the MSYS2 binary path to the system PATH. The default location is:
+
+```
+C:\msys64\mingw64\bin
+```
+
+5. Reopen the terminal or editor to refresh the PATH.
+
+If you're using Visual Studio Code, really close the editor out and then
+reopen it, rather than using "Reload Window." Reloading the Window does not
+refresh the environment variables.
+
+6. Check the availability of the library by doing
+
+```
+where libicuuc76.dll
+```
+
+If you're using Nushell, you'll need to prefix the name `where`
+with a caret (`^`) to distinguish it from a native keyword.
+
+If the installation is successful, you'll get an output like:
+```
+C:\ghcup\msys64\mingw64\bin\libicuuc76.dll
+```
+
+But if unsuccessful, you'll instead get an error:
+```
+INFO: Could not find files for the given pattern(s).
+```
+
+7. Now build the project normally. `text-icu` should now build.
