@@ -491,10 +491,13 @@ ucnam_val_word =
 
 -- | Assemble a number from a base, parser, and max number of digits.
 --
+-- The third argument is a parser for the digit separator. Give it @'pure' ()@
+-- to disable it.
+--
 -- Set max number to a negative number to consume all digits.
 --
 -- Require at least one digit be consumed, or else fail.
-asm b p = go 0 True
+asm b p sep = go 0 True
   where
     -- i make sure two separators (') can't follow each other.
     go n sepfresh = \case
@@ -502,7 +505,7 @@ asm b p = go 0 True
       i ->
         -- for simplicity i hard-code the digit separator.
         branch
-          ($(char '\'') >> guard sepfresh)
+          (sep >> guard sepfresh)
           (go n False i)
           ( do
               d <- p
@@ -626,10 +629,11 @@ integer_constant_val =
     >>= \(wasdecimal, n) -> IntegerLiteral n <$> sfx wasdecimal n
   where
     -- the (-1) indicates max number of digits (unrestricted)
-    hex = (False,) <$> asm 16 _hexdigit (-1)
-    oct = (False,) <$> asm 8 _octdigit (-1)
-    dec = (True,) <$> asm 10 _decdigit (-1)
-    bin = (False,) <$> asm 2 _bindigit (-1)
+    quote = $(char '\'')
+    hex = (False,) <$> asm 16 _hexdigit quote (-1)
+    oct = (False,) <$> asm 8 _octdigit quote (-1)
+    dec = (True,) <$> asm 10 _decdigit quote (-1)
+    bin = (False,) <$> asm 2 _bindigit quote (-1)
     sfx wasdecimal n = do
       let sfxchr =
             $( switch
@@ -681,6 +685,57 @@ floating_constant =
       man $ skipSatisfyAscii isHexDigit
       -- exponent. exponent is given in decimal.
       exp "pP"
+
+-- | Consume an integer character constant and then discard it.
+character_constant = () <$ character_constant_val
+
+data CharacterLiteral
+  = -- | Literal character or universal character name, encoding choice delayed.
+    CharacterLiteral Char PT.PrimType
+  | -- | Specified in octal or hexadecimal.
+    IntCharacterLiteral Integer PT.PrimType
+  deriving (Eq, Show)
+
+-- | Consume an integer character constant and then return its value.
+--
+-- The range is NOT checked.
+character_constant_val = do
+  typ <- encpfx <|> pure PT.Int_
+  val <- between $(char '\'') $(char '\'') value
+  pure $ val typ
+  where
+    encpfx =
+      $( switch
+           [|
+             case _ of
+               "u8" -> cst_char8_type . pscharset <$> ask
+               "u" -> cst_char16_type . pscharset <$> ask
+               "U" -> cst_char32_type . pscharset <$> ask
+               "L" -> cst_wchar_type . pscharset <$> ask
+               _ -> pure PT.UChar_
+             |]
+       )
+    value =
+      $( switch
+           [|
+             case _ of
+               "\\" -> esc
+               "'" -> esc
+               "\n" -> esc
+               "\r" -> esc
+               "\r\n" -> esc
+               _ -> CharacterLiteral <$> anyChar
+             |]
+       )
+    esc = $(char '\\') >> choice [simple, octal, hex, skipBack 1 >> universal]
+    simple = CharacterLiteral <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
+    universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
+    -- base parser digit_sep (max_digits or -1 to disable)
+    octal = IntCharacterLiteral <$> asm 8 _octdigit (pure ()) 3
+    hex =
+      IntCharacterLiteral <$> do
+        $(char 'x')
+        asm 16 _hexdigit (pure ()) (-1)
 
 -- | Create a Template Haskell splice like 'switch' that
 -- efficiently matches strings and moves on, but also

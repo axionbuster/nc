@@ -5,6 +5,7 @@ module Language.NC.Internal.Parse
     WithSpan (..),
     Symbol (..),
     IntegerSettings (..),
+    CharSettings (..),
     Str,
     Seq (..),
     RelatedInfo (..),
@@ -13,6 +14,8 @@ module Language.NC.Internal.Parse
     mkstate0,
     throwbasic,
     ist_preciseposbw,
+    ist_precisebw,
+    int_canrepresent,
   )
 where
 
@@ -35,6 +38,8 @@ data Symbol = Symbol
 -- | Bit widths of primitive integers. Pay especially close attention to
 -- the bit width of @long@; on Windows, it's generally 32 bits, but on
 -- other platforms, it's generally 64 bits.
+--
+-- FIXME: 'IntegerSettings' is also responsible for floating-point settings.
 data IntegerSettings
   = IntegerSettings
   { ist_charbitwidth :: !Word8,
@@ -89,20 +94,70 @@ ist_preciseposbw t =
     InternalError $
       "ist_preciseposbw called on unsupported type " ++ show t
 
+-- | Recall the exact number of bits needed to represent a scalar type.
+ist_precisebw :: PT.PrimType -> Parser Word8
+ist_precisebw (PT.Int _ a) = case a of
+  PT.Short -> ist_shortbitwidth <$> ain
+  PT.IntLen -> ist_intbitwidth <$> ain
+  PT.Long -> ist_longbitwidth <$> ain
+  PT.LongLong -> ist_longlongbitwidth <$> ain
+  PT.BitInt n -> pure n
+ist_precisebw (PT.Char _) = ist_charbitwidth <$> ain
+ist_precisebw t = ist_preciseposbw t
+
+-- | Currently, the real type that is equal to @wchar_t@.
+data CharSettings = CharSettings
+  { -- | We'll make @wchar_t@ unsigned for many reasons.
+    cst_wchar_type :: PT.PrimType,
+    -- | It's good to make @char8_t@ unsigned.
+    cst_char8_type :: PT.PrimType,
+    -- | must be unsigned.
+    cst_char16_type :: PT.PrimType,
+    -- | must be unsigned, too.
+    cst_char32_type :: PT.PrimType
+  }
+
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
   { pserrors :: IORef (Seq AnnotatedError),
-    psintset :: IntegerSettings
+    psintset :: IntegerSettings,
+    pscharset :: CharSettings
   }
+
+-- | See if an integer constant can be represented by a given type.
+int_canrepresent :: Integer -> PT.PrimType -> Parser Bool
+int_canrepresent i = \case
+  PT.Bool -> pure $ i == 0 || i == 1
+  t@(PT.Int PT.Signed _; PT.Char (Just PT.Signed)) -> rep PT.Signed t
+  t@(PT.Int PT.Unsigned _; PT.Char (Just PT.Unsigned)) -> rep PT.Unsigned t
+  t@(PT.Char Nothing) -> do
+    s <- ist_charissigned <$> ain
+    rep (if s then PT.Signed else PT.Unsigned) t
+  _ -> err (InternalError "int_canrepresent called on a non-integral type")
+  where
+    rep PT.Signed t = do
+      bw <- ist_precisebw t
+      let rngtop = 2 ^ (bw - 1) - 1
+      let rngbot = negate $ 2 ^ (bw - 1)
+      pure $ rngbot <= i && i <= rngtop
+    rep PT.Unsigned t = do
+      bw <- ist_precisebw t
+      pure $ i <= 2 ^ bw
 
 -- | Create a starter state.
 --
--- @long@ is assigned 64 bits as a temporary measure.
+-- Defaults: these defaults may work better on a UNIX-like system.
+-- They definitely don't work on Windows.
+--
+-- - @long@ is assigned 64 bits as a temporary measure.
+-- - @char@ is backed by @signed char@.
+-- - @wchar_t@ is currently represented by @int@.
 mkstate0 :: IO ParserState
 mkstate0 = do
   e <- newIORef mempty
   let is0 = IntegerSettings 8 16 32 64 64 True 32 64 64
-  pure (ParserState e is0)
+  let cs0 = CharSettings PT.UInt_ PT.UChar_ PT.UShort_ PT.UInt_
+  pure (ParserState e is0 cs0)
 
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error

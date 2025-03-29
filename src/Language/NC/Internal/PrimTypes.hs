@@ -3,6 +3,8 @@ module Language.NC.Internal.PrimTypes
   ( PrimType (..),
     pattern Int_,
     pattern Char_,
+    pattern SChar_,
+    pattern UChar_,
     pattern Float_,
     pattern Double_,
     pattern LongDouble_,
@@ -79,9 +81,11 @@ _primsign2 = sets \chgsgn -> \case
   Void -> Void
 
 -- | Some convenience patterns for 'PrimType'
-pattern Int_, Char_ :: PrimType
+pattern Int_, Char_, SChar_, UChar_ :: PrimType
 pattern Int_ = Int Signed IntLen
 pattern Char_ = Char Nothing
+pattern SChar_ = Char (Just Signed)
+pattern UChar_ = Char (Just Unsigned)
 
 -- | Some convenience patterns for 'PrimType'
 pattern Float_, Double_, LongDouble_ :: PrimType
