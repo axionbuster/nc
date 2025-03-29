@@ -648,6 +648,43 @@ integer_constant_val =
 -- | Parse an integer constant; discard the value, if any.
 integer_constant = () <$ integer_constant_val
 
+oneof_ascii _set = skipSatisfyAscii (`elem` _set)
+
+-- | Parse a floating-point literal. Discard the value.
+floating_constant =
+  -- TODO: move onto a parser that also produces the value.
+  -- Unfortunately, handling floating points correctly for the *target*
+  -- platform is a bit involved and I will need to invest more time
+  -- trying to support them.
+  -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
+  -- 2-page CFG down to like 3 PEG clauses.
+  (dec <|> hex) >> sfx
+  where
+    -- floating-point suffix.
+    sfx = do
+      oneof_ascii "fFlLdD"
+      optional_ $ oneof_ascii "flFL"
+    dgt = skipSatisfyAscii isDigit
+    -- "mantissa" ... which is the main part.
+    -- f scans a digit.
+    man f =
+      (skipSome f >> optional_ (period >> skipMany f))
+        <|> (period >> skipSome f)
+    dec =
+      man dgt >> optional_ do
+        -- optional exponent
+        oneof_ascii "eE"
+        optional_ $ oneof_ascii "+-"
+        skipSome dgt
+    hex = do
+      $(char '0')
+      oneof_ascii "xX"
+      man $ skipSatisfyAscii isHexDigit
+      -- exponent. exponent is given in decimal.
+      oneof_ascii "pP"
+      optional_ $ oneof_ascii "+-"
+      skipSome dgt
+
 -- | Create a Template Haskell splice like 'switch' that
 -- efficiently matches strings and moves on, but also
 -- optionally consumes whitespace after each match.
