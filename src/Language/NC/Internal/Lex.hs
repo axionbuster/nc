@@ -602,7 +602,7 @@ integerneededbits x
 
 -- | Parse an integer constant and the value.
 --
--- Two things to note:
+-- Three things to note:
 --  - No sign parsing: it's done by the negation (-) operator.
 --  - Automatic widening as per C23: the C23 standard prescribes
 --    certain automatic widenings that must occur if the literal
