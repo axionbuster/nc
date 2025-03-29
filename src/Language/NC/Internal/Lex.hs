@@ -553,7 +553,7 @@ instance Semigroup ISFX_ where
 instance Monoid ISFX_ where
   mempty = ISFX_ 0 0 0
 
--- find integral type that fits literal or else return 'Nothing'
+-- find integral type that fits literal or else throw error.
 isfx_2inttyp wasdecimal = gated_go . integerneededbits
   where
     i_ = PT.Int_
