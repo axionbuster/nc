@@ -658,12 +658,12 @@ floating_constant =
   -- trying to support them.
   -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
   -- 2-page CFG down to like 3 PEG clauses.
-  (dec <|> hex) >> sfx
+  (hex <|> dec) >> optional_ sfx
   where
     -- floating-point suffix.
     sfx = do
       oneof_ascii "fFlLdD"
-      optional_ $ oneof_ascii "flFL"
+      oneof_ascii "flFL"
     dgt = skipSatisfyAscii isDigit
     -- "mantissa" ... which is the main part.
     -- f scans a digit.
