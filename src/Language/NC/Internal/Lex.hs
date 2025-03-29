@@ -9,7 +9,6 @@
 --  - It also does not consume whitespace after itself.
 module Language.NC.Internal.Lex where
 
-import Data.Bits (complement)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Data.Text.ICU.Char qualified as C
@@ -495,26 +494,27 @@ ucnam_val_word =
 -- Set max number to a negative number to consume all digits.
 --
 -- Require at least one digit be consumed, or else fail.
-asm b p = go 1 0 True
+asm b p = go 0 True
   where
     -- i make sure two separators (') can't follow each other.
-    go r n sepfresh = \case
+    go n sepfresh = \case
       (0 :: Int) -> pure n
       i ->
         -- for simplicity i hard-code the digit separator.
         branch
           ($(char '\'') >> guard sepfresh)
-          (go r n False i)
+          (go n False i)
           ( do
               d <- p
-              go (r * b) (n + d * r) True (i - 1) <|> pure n
+              let m = n * b + d
+              go m True (i - 1) <|> pure m
           )
 
 _hexdigit =
   satisfyAscii isHexDigit <&> fromIntegral . \c ->
     if
-      | 'A' <= c && c <= 'F' -> ord c - ord 'A'
-      | 'a' <= c && c <= 'f' -> ord c - ord 'a'
+      | 'A' <= c && c <= 'F' -> ord c - ord 'A' + 10
+      | 'a' <= c && c <= 'f' -> ord c - ord 'a' + 10
       | '0' <= c && c <= '9' -> ord c - ord '0'
       | otherwise -> error "_hexdigit: impossible"
 
@@ -541,6 +541,7 @@ _bindigit =
 
 data IntegerLiteral
   = IntegerLiteral Integer PT.PrimType
+  deriving (Eq, Show)
 
 data ISFX_
   = -- occurrence counts. we do a very basic check.
@@ -550,9 +551,7 @@ instance Semigroup ISFX_ where
   ISFX_ a b c <> ISFX_ x y z = ISFX_ (a ^^+ x) (b ^^+ y) (c ^^+ z)
     where
       -- carry with overflow guard
-      p ^^+ q
-        | complement p + q < q = maxBound
-        | otherwise = p + q
+      p ^^+ q = min maxBound (p + q)
 
 instance Monoid ISFX_ where
   mempty = ISFX_ 0 0 0
@@ -604,7 +603,18 @@ integerneededbits x
   | x < 0 = I# (integerLog2# (negate x)) + 1 -- sign bit
   | otherwise = I# (integerLog2# x)
 
-integer_constant =
+-- | Parse an integer constant and the value.
+--
+-- Two things to note:
+--  - No sign parsing: it's done by the negation (-) operator.
+--  - Automatic widening as per C23: the C23 standard prescribes
+--    certain automatic widenings that must occur if the literal
+--    is too big to fit in the specified (if any) suffix.
+--  - No guard for trailing digits: so things like \"01138\"
+--    will parse just fine and return the octal number 0113 (dec 75)
+--    and input 8 that's left over. that's OK; you should use it with
+--    a word boundary parser like 'lx1' to reject such cases.
+integer_constant_val =
   $( switch
        [|
          case _ of
@@ -612,7 +622,7 @@ integer_constant =
            "0X" -> hex
            "0b" -> bin
            "0B" -> bin
-           "0" -> oct
+           "0" -> oct <|> pure (False, 0)
            _ -> dec
          |]
    )
@@ -637,6 +647,9 @@ integer_constant =
                    |]
              )
       chainl (<>) (pure mempty) sfxchr >>= isfx_2inttyp wasdecimal n
+
+-- | Parse an integer constant; discard the value, if any.
+integer_constant = () <$ integer_constant_val
 
 -- | Create a Template Haskell splice like 'switch' that
 -- efficiently matches strings and moves on, but also
