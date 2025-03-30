@@ -9,6 +9,7 @@ module Language.NC.Internal.Parse
     Str,
     Seq (..),
     RelatedInfo (..),
+    Endianness (..),
     pwithspan,
     cut,
     mkstate0,
@@ -105,6 +106,13 @@ ist_precisebw (PT.Int _ a) = case a of
 ist_precisebw (PT.Char _) = ist_charbitwidth <$> ain
 ist_precisebw t = ist_preciseposbw t
 
+data Endianness = LittleEndian | BigEndian
+  deriving (Eq, Show)
+
+-- i might consider adding methods (virtual functions) to CharSettings
+-- that encode integer character literals into a custom target encoding
+-- that isn't necessarily in Unicode.
+
 -- | Currently, the real type that is equal to @wchar_t@.
 data CharSettings = CharSettings
   { -- | We'll make @wchar_t@ unsigned for many reasons.
@@ -114,7 +122,10 @@ data CharSettings = CharSettings
     -- | must be unsigned.
     cst_char16_type :: PT.PrimType,
     -- | must be unsigned, too.
-    cst_char32_type :: PT.PrimType
+    cst_char32_type :: PT.PrimType,
+    -- | Separate from integer endianness, we record
+    -- the endianness used for multi-byte Unicode encodings.
+    cst_char_endian :: Endianness
   }
 
 -- | Parsing state, to include such things as symbol tables.
@@ -152,11 +163,12 @@ int_canrepresent i = \case
 -- - @long@ is assigned 64 bits as a temporary measure.
 -- - @char@ is backed by @signed char@.
 -- - @wchar_t@ is currently represented by @int@.
+-- - Multi-byte characters are encoded in little-endian Unicode.
 mkstate0 :: IO ParserState
 mkstate0 = do
   e <- newIORef mempty
   let is0 = IntegerSettings 8 16 32 64 64 True 32 64 64
-  let cs0 = CharSettings PT.UInt_ PT.UChar_ PT.UShort_ PT.UInt_
+  let cs0 = CharSettings PT.UInt_ PT.UChar_ PT.UShort_ PT.UInt_ LittleEndian
   pure (ParserState e is0 cs0)
 
 -- | The parser, which lives in IO.

@@ -10,6 +10,7 @@
 module Language.NC.Internal.Lex where
 
 import Data.ByteString qualified as BS
+import Data.ByteString.Builder qualified as BB
 import Data.ByteString.Short qualified as SBS
 import Data.Text.ICU.Char qualified as C
 import GHC.Int (Int (..))
@@ -697,47 +698,120 @@ data CharacterLiteral
     IntCharacterLiteral Integer PT.PrimType
   deriving (Eq, Show)
 
+char_encpfx =
+  $( switch
+       [|
+         case _ of
+           "u8" -> cst_char8_type <$> charset
+           "u" -> cst_char16_type <$> charset
+           "U" -> cst_char32_type <$> charset
+           "L" -> cst_wchar_type <$> charset
+         |]
+   )
+  where
+    charset = pscharset <$> ask
+
 -- | Consume an integer character constant and then return its value.
 --
 -- The range is NOT checked.
 character_constant_val = do
-  typ <- encpfx <|> pure PT.Int_
-  val <- between $(char '\'') $(char '\'') value
+  typ <- char_encpfx <|> pure PT.Int_
+  val <- between quote quote value
   pure $ val typ
   where
-    charset = pscharset <$> ask
-    encpfx =
-      $( switch
-           [|
-             case _ of
-               "u8" -> cst_char8_type <$> charset
-               "u" -> cst_char16_type <$> charset
-               "U" -> cst_char32_type <$> charset
-               "L" -> cst_wchar_type <$> charset
-               _ -> pure PT.UChar_
-             |]
-       )
     value =
       $( switch
            [|
              case _ of
                "\\" -> esc
-               "'" -> esc
-               "\n" -> esc
-               "\r" -> esc
-               "\r\n" -> esc
+               "'" -> skipBack 1 >> failed
+               "\n" -> failed
+               "\r" -> failed
+               "\r\n" -> failed
                _ -> CharacterLiteral <$> anyChar
              |]
        )
-    esc = $(char '\\') >> choice [simple, octal, hex, skipBack 1 >> universal]
-    simple = CharacterLiteral <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
-    universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
-    -- base parser digit_sep (max_digits or -1 to disable)
-    octal = IntCharacterLiteral <$> asm 8 _octdigit (pure ()) 3
-    hex =
-      IntCharacterLiteral <$> do
-        $(char 'x')
-        asm 16 _hexdigit (pure ()) (-1)
+    esc = choice [simple, octal, hex, skipBack 1 >> universal]
+      where
+        simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
+        universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
+        -- FIXME: currently we assume that the host and target have the
+        -- same integer endianness.
+        -- base parser digit_sep (max_digits or -1 to disable)
+        octal = IntCharacterLiteral <$> asm 8 _octdigit (pure ()) 3
+        hex =
+          IntCharacterLiteral <$> do
+            $(char 'x')
+            asm 16 _hexdigit (pure ()) (-1)
+        interpret = CharacterLiteral . \case
+          'a' -> '\a'
+          'b' -> '\b'
+          'f' -> '\f'
+          'n' -> '\n'
+          'r' -> '\r'
+          't' -> '\t'
+          'v' -> '\v'
+          c -> c
+
+-- | A string literal; escape sequences have been interpreted, but
+-- a NUL byte has NOT been inserted at the end. The encoding is:
+--
+--  - UTF-8 for single-byte-character strings
+--  - UTF-16 for two-byte-character strings
+--  - UTF-32 for four-byte-character strings
+data StringLiteral
+  = -- | Interpreted value, type of each element.
+    StringLiteral Builder !PT.PrimType
+  deriving (Show)
+
+string_literal_val = do
+  typ <-
+    ( char_encpfx
+        >> err
+          ( InternalError
+              "string literals except regular literals not supported yet"
+          )
+    )
+      <|> pure PT.Char_
+  let enc c
+        | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
+        | otherwise = err $ LiteralBadError BadChar
+  val <- between dbquote dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
+  pure $ StringLiteral val typ
+  where
+    -- currently, no support for joining adjacent string literals, or
+    -- writing a string literal across source lines using a backslash.
+    ch =
+      $( switch
+           [|
+             case _ of
+               "\\" -> esc
+               "\"" -> skipBack 1 >> failed
+               "\n" -> failed
+               "\r" -> failed
+               "\r\n" -> failed
+               _ -> fromIntegral . ord <$> anyChar
+             |]
+       )
+    esc = choice [simple, octal, hex, skipBack 1 >> universal]
+      where
+        simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
+        universal = fromIntegral <$> ucnam_val_word
+        -- base parser digit_sep (max_digits or -1 to disable)
+        octal = fromIntegral <$> asm 8 _octdigit (pure ()) 3
+        hex = do $(char 'x'); fromIntegral <$> asm 16 _hexdigit (pure ()) (-1)
+        interpret = fromIntegral . ord . \case
+          'a' -> '\a'
+          'b' -> '\b'
+          'f' -> '\f'
+          'n' -> '\n'
+          'r' -> '\r'
+          't' -> '\t'
+          'v' -> '\v'
+          c -> c
+
+-- | Parse a string literal but discard the value.
+string_literal = () <$ string_literal_val
 
 -- | Create a Template Haskell splice like 'switch' that
 -- efficiently matches strings and moves on, but also

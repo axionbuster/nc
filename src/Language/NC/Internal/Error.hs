@@ -3,7 +3,7 @@ module Language.NC.Internal.Error where
 import Control.Exception
 import Data.String
 import Data.Text (Text)
-import Data.Word (Word8)
+import Data.Word
 import FlatParse.Stateful (Span)
 import Text.Printf (printf)
 import Prelude (Eq, Show (..), mempty)
@@ -66,12 +66,18 @@ data LiteralBadWhy
     IncorrectIntSuffix
   | -- | Literal too large to fit.
     LiteralTooLarge
+  | -- | Unsupported character encoding.
+    UnsupportedEncoding
+  | -- | Invalid character in a string or character literal.
+    BadChar
   deriving (Eq)
 
 instance Show LiteralBadWhy where
   show = \case
     IncorrectIntSuffix -> "incorrect integer suffix"
     LiteralTooLarge -> "literal is too large to fit"
+    UnsupportedEncoding -> "unsupported character encoding"
+    BadChar -> "invalid character in a string or character literal"
 
 instance Exception Error
 
