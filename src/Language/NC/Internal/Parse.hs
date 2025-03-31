@@ -17,6 +17,7 @@ module Language.NC.Internal.Parse
     ist_preciseposbw,
     ist_precisebw,
     int_canrepresent,
+    runandgetspan,
   )
 where
 
@@ -174,8 +175,9 @@ mkstate0 = do
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error
 
--- | Data with span.
-data WithSpan a = WithSpan Span a
+-- | Data with span. Bogus span could exist if some construct was
+-- created in thin air by the parser. Bogus spans will be 0:0.
+data WithSpan a = WithSpan !Span a
   deriving (Eq, Show)
 
 -- | Pure \"parser\" to return a 'WithSpan'.
@@ -183,6 +185,10 @@ data WithSpan a = WithSpan Span a
 -- Argument order was readjusted to agree with 'withSpan' in "flatparse".
 pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
+
+-- | Run a parser and return a 'WithSpan'.
+runandgetspan :: Parser a -> Parser (WithSpan a)
+runandgetspan p = withSpan p pwithspan
 
 -- | Throw a 'BasicError'.
 throwbasic :: String -> Parser a
