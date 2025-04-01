@@ -27,6 +27,13 @@ data Lit
     LitString StringLiteral
   deriving (Show)
 
+literal =
+  choice
+    [ LitInteger <$> integer_constant_val,
+      LitChar <$> character_constant_val,
+      LitString <$> string_literal_val
+    ]
+
 -- * Whitespace and comments
 
 -- first, smart punctuator detection for boundary detection...

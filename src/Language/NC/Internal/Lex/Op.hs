@@ -157,7 +157,7 @@ cond = do
   a <- lx0 logor
   let qu = do
         lx0 questionmark
-        b <- lx1 expr
+        b <- lx0 expr
         lx0 colon
         c <- cond
         pure $ ExprConditional a b c
@@ -191,7 +191,7 @@ bitand =
 rel = do
   a <- lx0 shift
   r <- relop
-  b <- shift
+  b <- lx0 shift
   pure $ r a b
   where
     relop =
@@ -210,7 +210,7 @@ rel = do
 shift = do
   a <- lx0 add
   s <- shiftop
-  b <- add
+  b <- lx0 add
   pure $ s a b
   where
     shiftop =
@@ -225,7 +225,7 @@ shift = do
 add = do
   a <- lx0 mul
   s <- addop
-  b <- mul
+  b <- lx0 mul
   pure $ s a b
   where
     addop =
@@ -240,7 +240,7 @@ add = do
 mul = do
   a <- lx0 cast_
   s <- mulop
-  b <- cast_
+  b <- lx0 cast_
   pure $ s a b
   where
     mulop =
@@ -253,7 +253,7 @@ mul = do
              |]
        )
 
-cast_ = lx0 unary <|> ExprCast <$> lx0 (inpar (lx0 typeexpr)) <*> cast_
+cast_ = lx0 unary <|> ExprCast <$> lx0 (inpar (lx1 typeexpr)) <*> cast_
 
 unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
   where
@@ -279,16 +279,14 @@ unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
         <*> cast_
     sizeof = do
       lx1 sizeof'
-      unary <|> fmap ExprSizeOf (inpar (lx0 typeexpr))
+      unary <|> fmap ExprSizeOf (inpar (lx1 typeexpr))
     alignof = do
       lx1 alignof'
-      ExprAlignOf <$> inpar (lx0 typeexpr)
+      ExprAlignOf <$> inpar (lx1 typeexpr)
 
 compound =
   -- now literal in initializer list form.
   err $ InternalError "compound literal not implemented yet"
-
-args = assign `sepBy` comma
 
 postfix = do
   a <- primary
@@ -298,22 +296,22 @@ postfix = do
             b <- lx0 expr_
             lx0 ']' $> ExprArray a b
           '(' -> do
-            b <- assign `sepBy` comma
+            b <- assign `sepBy` lx0 comma
             lx0 ')' $> ExprCall a b
           '.' -> do
-            b <- lx0 ident
+            b <- lx1 ident
             pure $ ExprMember a b
           '-' ->
             anyChar >>= \case
               '>' -> do
-                b <- lx0 ident
+                b <- lx1 ident
                 pure $ ExprMemberPtr a b
               '-' -> pure $ ExprPostDec a
               _ -> failed
           _ -> failed
   sfxop <|> compound
 
-primary = ident <|> literal <|> inpar (lx0 expr) <|> generic
+primary = ident <|> literal <|> inpar (lx0 (runandgetspan expr)) <|> generic
 
 ident = do
   WithSpan s i <- lx1 (runandgetspan $ sbsOf identifier)
@@ -322,15 +320,15 @@ ident = do
 generic = do
   lx1 _Generic'
   inpar do
-    a <- lx1 assign
+    a <- lx0 assign
     lx0 comma
-    b <- genassoc `sepBy1` comma
+    b <- genassoc `sepBy1` lx0 comma
     pure $ ExprGeneric a b
   where
     genassoc = do
       a <- lx1 (typeexpr <|> default')
       lx0 colon
-      GenAssoc (Just a) <$> many (lx0 comma *> lx1 typeexpr)
+      GenAssoc (Just a) <$> many (lx0 comma >> lx1 typeexpr)
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =
