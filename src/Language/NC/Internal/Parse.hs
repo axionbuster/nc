@@ -18,12 +18,15 @@ module Language.NC.Internal.Parse (
   ist_precisebw,
   int_canrepresent,
   runandgetspan,
+  newUnique,
 ) where
 
+import Control.Monad.IO.Class (liftIO)
 import Data.ByteString (ByteString)
 import Data.IORef
 import Data.Sequence (Seq ((:<|), (:|>)))
-import Data.Unique
+import Data.Unique hiding (newUnique)
+import Data.Unique qualified as U
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import Language.NC.Internal.Error
@@ -36,8 +39,12 @@ type Str = ByteString
 -- anonymous structs, unions, etc. get a unique symbol to represent
 -- them even though they don't have a name.
 
--- | Symbol (without the actual name). Currently a type alias for 'Unique'.
-type Symbol = Unique
+-- | Symbol (without the actual name). Wrapper around 'Unique' with proper instances.
+newtype Symbol = Symbol Unique
+  deriving (Eq)
+
+instance Show Symbol where
+  show _ = "(anonymous)"
 
 -- | Information about a symbol.
 data SymbolInfo = SymbolInfo
@@ -208,3 +215,7 @@ runandgetspan p = withSpan p pwithspan
 -- | Throw a 'BasicError'.
 throwbasic :: String -> Parser a
 throwbasic = err . BasicError
+
+-- | Create a new unique symbol.
+newUnique :: Parser Symbol
+newUnique = Symbol <$> liftIO U.newUnique

@@ -49,8 +49,8 @@ module Language.NC.Internal.Lex.Type (
 ) where
 
 import Data.List (intercalate)
-import Language.NC.Internal.Lex.Lex
 import Language.NC.Internal.Lex.Op
+import Language.NC.Internal.PrimTypes (PrimType)
 import Language.NC.Internal.Prelude
 
 -- in this parser-lexer we parse type names.
@@ -68,12 +68,12 @@ instance Show StorageClass where
       intercalate " "
         $ filter
           (not . null)
-          [ if s .&. sc_register /= 0 then "register" else "",
-            if s .&. sc_auto /= 0 then "auto" else "",
-            if s .&. sc_static /= 0 then "static" else "",
-            if s .&. sc_extern /= 0 then "extern" else "",
-            if s .&. sc_threadlocal /= 0 then "_Thread_local" else "",
-            if s .&. sc_typedef /= 0 then "typedef" else ""
+          [ if s .&. unstorclass sc_register /= 0 then "register" else "",
+            if s .&. unstorclass sc_auto /= 0 then "auto" else "",
+            if s .&. unstorclass sc_static /= 0 then "static" else "",
+            if s .&. unstorclass sc_extern /= 0 then "extern" else "",
+            if s .&. unstorclass sc_threadlocal /= 0 then "_Thread_local" else "",
+            if s .&. unstorclass sc_typedef /= 0 then "typedef" else ""
           ]
 
 instance Semigroup StorageClass where
@@ -104,9 +104,9 @@ instance Show FuncSpec where
       intercalate " "
         $ filter
           (not . null)
-          [ if f .&. fs_inline /= 0 then "inline" else "",
-            if f .&. fs_noreturn /= 0 then "_Noreturn" else "",
-            if f .&. fs_atomic /= 0 then "_Atomic" else ""
+          [ if f .&. unfuncspec fs_inline /= 0 then "inline" else "",
+            if f .&. unfuncspec fs_noreturn /= 0 then "_Noreturn" else "",
+            if f .&. unfuncspec fs_atomic /= 0 then "_Atomic" else ""
           ]
 
 instance Semigroup FuncSpec where
@@ -198,9 +198,9 @@ instance Show TypeQual where
       intercalate " "
         $ filter
           (not . null)
-          [ if q .&. tq_const /= 0 then "const" else "",
-            if q .&. tq_volatile /= 0 then "volatile" else "",
-            if q .&. tq_restrict /= 0 then "restrict" else ""
+          [ if q .&. untypequal tq_const /= 0 then "const" else "",
+            if q .&. untypequal tq_volatile /= 0 then "volatile" else "",
+            if q .&. untypequal tq_restrict /= 0 then "restrict" else ""
           ]
 
 instance Semigroup TypeQual where

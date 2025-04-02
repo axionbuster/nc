@@ -52,7 +52,7 @@ import Data.Functor
 import Data.Hashable
 import Data.Int
 import Data.Text (Text)
-import Data.Unique
+import Data.Unique hiding (newUnique)
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float

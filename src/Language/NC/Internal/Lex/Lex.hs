@@ -24,7 +24,7 @@ data Lit
     LitChar CharacterLiteral
   | -- | String literal
     LitString StringLiteral
-  deriving (Show)
+  deriving (Eq, Show)
 
 literal =
   choice
@@ -787,6 +787,11 @@ data StringLiteral
   = -- | Interpreted value, type of each element.
     StringLiteral Builder !PT.PrimType
   deriving (Show)
+
+instance Eq StringLiteral where
+  -- ByteString.Builder doesn't have an Eq instance, so we'll just consider two StringLiterals
+  -- equal if they have the same type
+  StringLiteral _ t1 == StringLiteral _ t2 = t1 == t2
 
 string_literal_val = do
   typ <-

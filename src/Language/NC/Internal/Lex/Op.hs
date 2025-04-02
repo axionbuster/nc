@@ -2,7 +2,6 @@
 
 module Language.NC.Internal.Lex.Op where
 
-import Control.Monad.Combinators.Expr
 import Language.NC.Internal.Lex.Lex
 import {-# SOURCE #-} Language.NC.Internal.Lex.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
@@ -30,11 +29,13 @@ data PrimExpr
     PrimParen (WithSpan Expr)
   | -- | generic selection
     PrimGeneric Expr GenAssoc
+  deriving (Eq, Show)
 
 -- | A @Generic\_@ selection expression.
 data GenAssoc
   = -- | generic selection
     GenAssoc (Maybe Str) Expr
+  deriving (Eq, Show)
 
 -- | According to the C standard, an expression is an operator bound
 -- to operands, or a primary expression.
@@ -141,24 +142,59 @@ data Expr
     ExprAssignBitOr Expr Expr
   | -- | comma operator
     ExprComma Expr Expr
+  deriving (Eq, Show)
+
+{- PEG grammar referenced; converted from C23 CFG grammar.
+
+# Expressions
+primary <- id / const / str / "(" expr ")" / "_Generic" "(" assign "," genassoc ("," genassoc)* ")"
+genassoc <- (type ":" / "default" ":") assign
+postfix <- primary (("[" expr "]" / "(" args? ")" / "." id / "->" id / "++" / "--") / compound)*
+args <- assign ("," assign)*
+compound <- "(" storage? type ")" init
+storage <- storage_spec+
+unary <- postfix / ("++" / "--") unary / ("&" / "*" / "+" / "-" / "~" / "!") cast / "sizeof" (unary / "(" type ")") / "alignof" "(" type ")"
+cast <- unary / "(" type ")" cast
+mul <- cast (("*" / "/" / "%") cast)*
+add <- mul (("+" / "-") mul)*
+shift <- add (("<<" / ">>") add)*
+rel <- shift (("<" / ">" / "<=" / ">=" / "==" / "!=") shift)*
+bitand <- rel ("&" rel)*
+bitxor <- bitand ("^" bitand)*
+bitor <- bitxor ("|" bitxor)*
+logand <- bitor ("&&" bitor)*
+logor <- logand ("||" logand)*
+cond <- logor ("?" expr ":" cond)?
+assign <- cond / unary ("=" / "+=" / "-=" / "*=" / "/=" / "%=" / "<<=" / ">>=" / "|=" / "^=" / "&=") assign
+expr <- assign ("," assign)*
+
+# Declarations
+decl <- decl_spec init_decl_list? ";" / attr decl_spec init_decl_list ";" / static_assert / attr_decl
+decl_spec <- (storage_spec / type_spec / func_spec) attr? decl_spec?
+init_decl_list <- init_decl ("," init_decl)*
+-}
 
 -- | Parse an expression and additionally return the span.
 expr = runandgetspan expr_
 
-expr_ = assign `sepBy` lx0 comma
+-- Use foldl to chain comma operators
+expr_ = do
+  a <- assign
+  b <- many (lx0 comma >> assign)
+  pure $ foldl ExprComma a b
 
 assign =
   cond <|> do
     a <- lx0 unary
-    op <- lx0 binasgnop
+    operator <- lx0 binasgnop
     b <- lx0 assign
-    pure $ op a b
+    pure $ operator a b
 
 cond = do
   a <- lx0 logor
   let qu = do
         lx0 questionmark
-        b <- lx0 expr
+        b <- lx0 expr_
         lx0 colon
         c <- cond
         pure $ ExprConditional a b c
@@ -304,28 +340,44 @@ postfix = do
         anyChar >>= \case
           '[' -> do
             b <- lx0 expr_
-            lx0 ']' $> ExprArray a b
+            lx0 rsqb
+            pure $ ExprArray a b
           '(' -> do
             b <- assign `sepBy` lx0 comma
-            lx0 ')' $> ExprCall a b
+            lx0 rpar
+            pure $ ExprCall a b
           '.' -> do
-            b <- lx1 ident
-            pure $ ExprMember a b
+            _ <- lx1 identifier
+            s <- newUnique
+            pure $ ExprMember a s
           '-' ->
             anyChar >>= \case
               '>' -> do
-                b <- lx1 ident
-                pure $ ExprMemberPtr a b
+                _ <- lx1 identifier
+                s <- newUnique
+                pure $ ExprMemberPtr a s
               '-' -> pure $ ExprPostDec a
               _ -> failed
           _ -> failed
   sfxop <|> compound
 
-primary = ident <|> literal <|> inpar (lx0 (runandgetspan expr)) <|> generic
+primary = ident <|> litexpr <|> paren <|> generic
+
+paren = inpar $ do
+  we <- runandgetspan expr_
+  withSpan (pure ()) $ \_ spn ->
+    pure $ Expr $ WithSpan spn $ PrimParen we
+
+litexpr = do
+  l <- literal
+  withSpan (pure ()) $ \_ spn ->
+    pure $ Expr $ WithSpan spn $ PrimLit l
 
 ident = do
-  WithSpan s i <- lx1 (runandgetspan identifier)
-  pure . Expr . WithSpan s . PrimId $ i
+  -- Use byteStringOf to capture the text
+  WithSpan s _ <- lx1 (runandgetspan identifier)
+  i <- byteStringOf identifier
+  pure $ Expr $ WithSpan s $ PrimId i
 
 generic = do
   lx1 _Generic'
