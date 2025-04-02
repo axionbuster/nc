@@ -324,7 +324,7 @@ postfix = do
 primary = ident <|> literal <|> inpar (lx0 (runandgetspan expr)) <|> generic
 
 ident = do
-  WithSpan s i <- lx1 (runandgetspan $ sbsOf identifier)
+  WithSpan s i <- lx1 (runandgetspan identifier)
   pure . Expr . WithSpan s . PrimId $ i
 
 generic = do

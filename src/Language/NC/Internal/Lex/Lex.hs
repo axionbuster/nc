@@ -11,7 +11,6 @@ module Language.NC.Internal.Lex.Lex where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BB
-import Data.ByteString.Short qualified as SBS
 import Data.Text.ICU.Char qualified as C
 import GHC.Int (Int (..))
 import GHC.Integer.Logarithms (integerLog2#)
@@ -390,10 +389,6 @@ printf' = $(string "printf")
 
 -- | AVOID, use efficient string search instead when possible.
 doubleunderscore = $(string "__")
-
-sbs_doubleunderscore = SBS.pack [95, 95]
-
-sbs_hasdunder = (sbs_doubleunderscore `SBS.isInfixOf`)
 
 bs_doubleunderscore = BS.pack [95, 95]
 

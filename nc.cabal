@@ -31,7 +31,6 @@ library
     import:             warnings, lang, optim
     exposed-modules:    Language.NC
     other-modules:      Language.NC.Internal.Prelude,
-                        Language.NC.Internal.SBS,
                         Language.NC.Internal.Parse,
                         Language.NC.Internal.Error,
                         Language.NC.Internal.Lex,

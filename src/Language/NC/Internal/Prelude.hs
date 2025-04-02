@@ -2,7 +2,6 @@ module Language.NC.Internal.Prelude (
   Builder,
   ByteString,
   LazyByteString,
-  ShortByteString,
   Text,
   module Control.Applicative,
   module Control.Lens,
@@ -24,7 +23,6 @@ module Language.NC.Internal.Prelude (
   module GHC.Generics,
   module Language.NC.Internal.Error,
   module Language.NC.Internal.Parse,
-  module Language.NC.Internal.SBS,
   module Prelude,
   module Text.Printf,
   module UnliftIO.IORef,
@@ -46,7 +44,6 @@ import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy (LazyByteString)
-import Data.ByteString.Short (ShortByteString)
 import Data.Char hiding (isDigit)
 import Data.Data hiding (Fixity, Infix, Prefix)
 import Data.Dynamic
@@ -62,7 +59,6 @@ import GHC.Float
 import GHC.Generics hiding (from, to)
 import Language.NC.Internal.Error
 import Language.NC.Internal.Parse
-import Language.NC.Internal.SBS
 import Text.Printf (PrintfArg, PrintfType, printf)
 import UnliftIO.IORef
 import Prelude hiding (lex, take, unzip)

@@ -20,7 +20,7 @@ module Language.NC.Internal.Parse (
   runandgetspan,
 ) where
 
-import Data.ByteString.Short
+import Data.ByteString (ByteString)
 import Data.IORef
 import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Unique
@@ -30,8 +30,8 @@ import Language.NC.Internal.Error
 import Language.NC.Internal.PrimTypes qualified as PT
 import Prelude
 
--- | Unpinned memory used for short strings.
-type Str = ShortByteString
+-- | Memory used for strings.
+type Str = ByteString
 
 -- anonymous structs, unions, etc. get a unique symbol to represent
 -- them even though they don't have a name.

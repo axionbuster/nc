@@ -260,3 +260,5 @@ array ← '[' type-qualifier-list? assignment-expression? ']' / '[' 'static' typ
 func ← '(' parameter-type-list? ')'
 -}
 
+parsetype :: Parser Type
+parsetype = error "parsetype: not implemented"

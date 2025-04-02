@@ -20,6 +20,7 @@
 - Follow the so-called "libc" naming convention for values, but traditional style for types (e.g., `typnam` for identifiers, but `TypeName` for types)
 - Type signatures required for top-level bindings, except in lexer and parser modules, to avoid clutter
 - Keep modules focused on single responsibility
+- Use `fourmolu -i src/**/*.hs` for formatting often
 
 ## Guidance for Writing Parsers and Lexers
 
