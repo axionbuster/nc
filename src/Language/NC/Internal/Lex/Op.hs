@@ -145,46 +145,34 @@ data Expr
   deriving (Eq, Show)
 
 {- PEG grammar referenced; converted from C23 CFG grammar.
-
 # Expressions
-primary <- id / const / str / "(" expr ")" / "_Generic" "(" assign "," genassoc ("," genassoc)* ")"
-genassoc <- (type ":" / "default" ":") assign
-postfix <- primary (("[" expr "]" / "(" args? ")" / "." id / "->" id / "++" / "--") / compound)*
-args <- assign ("," assign)*
-compound <- "(" storage? type ")" init
-storage <- storage_spec+
-unary <- postfix / ("++" / "--") unary / ("&" / "*" / "+" / "-" / "~" / "!") cast / "sizeof" (unary / "(" type ")") / "alignof" "(" type ")"
-cast <- unary / "(" type ")" cast
-mul <- cast (("*" / "/" / "%") cast)*
-add <- mul (("+" / "-") mul)*
-shift <- add (("<<" / ">>") add)*
-rel <- shift (("<" / ">" / "<=" / ">=" / "==" / "!=") shift)*
-bitand <- rel ("&" rel)*
-bitxor <- bitand ("^" bitand)*
-bitor <- bitxor ("|" bitxor)*
-logand <- bitor ("&&" bitor)*
-logor <- logand ("||" logand)*
-cond <- logor ("?" expr ":" cond)?
-assign <- cond / unary ("=" / "+=" / "-=" / "*=" / "/=" / "%=" / "<<=" / ">>=" / "|=" / "^=" / "&=") assign
 expr <- assign ("," assign)*
-
-# Declarations
-decl <- decl_spec init_decl_list? ";" / attr decl_spec init_decl_list ";" / static_assert / attr_decl
-decl_spec <- (storage_spec / type_spec / func_spec) attr? decl_spec?
-init_decl_list <- init_decl ("," init_decl)*
+assign <- unary ("=" / "+=" / "-=" / "*=" / "/=" / "%=" / "<<=" / ">>=" / "|=" / "^=" / "&=") assign / cond
+cond <- logor ("?" expr ":" assign)?
+logor <- logand ("||" logand)*
+logand <- bitor ("&&" bitor)*
+bitor <- bitxor ("|" bitxor)*
+bitxor <- bitand ("^" bitand)*
+bitand <- rel ("&" rel)*
+rel <- shift (("<" / ">" / "<=" / ">=" / "==" / "!=") shift)*
+shift <- add (("<<" / ">>") add)*
+add <- mul (("+" / "-") mul)*
+mul <- cast (("*" / "/" / "%") cast)*
+cast <- unary / "(" type ")" cast
+unary <- postfix / ("++" / "--") unary / ("&" / "*" / "+" / "-" / "~" / "!") cast / "sizeof" (unary / "(" type ")") / "alignof" "(" type ")"
 -}
 
 -- | Parse an expression and additionally return the span.
+expr :: Parser (WithSpan Expr)
 expr = runandgetspan expr_
 
--- Use foldl to chain comma operators
-expr_ = do
-  a <- assign
-  b <- many (lx0 comma >> assign)
-  pure $ foldl ExprComma a b
+-- | Parse an expression without returning the span.
+expr_ :: Parser Expr
+expr_ = chainl ExprComma assign (lx0 comma >> assign)
 
-assign =
-  cond <|> do
+assign = assignop <|> cond
+ where
+  assignop = do
     a <- lx0 unary
     operator <- lx0 binasgnop
     b <- lx0 assign
@@ -192,45 +180,66 @@ assign =
 
 cond = do
   a <- lx0 logor
-  let qu = do
-        lx0 questionmark
-        b <- lx0 expr_
-        lx0 colon
-        c <- cond
-        pure $ ExprConditional a b c
-  qu <|> pure a
+  option a do
+    lx0 questionmark
+    b <- lx0 expr_
+    lx0 colon
+    c <- assign
+    pure $ ExprConditional a b c
 
-logor =
-  chainl ExprOr (lx0 logand) do
+logor = do
+  a <- lx0 logand
+  go a
+ where
+  go a = option a do
     lx0 doublebar
-    lx0 logand
+    b <- lx0 logand
+    go (ExprOr a b)
 
-logand =
-  chainl ExprAnd (lx0 bitor) do
-    lx0 ampersand
-    lx0 bitor
+logand = do
+  a <- lx0 bitor
+  go a
+ where
+  go a = option a do
+    lx0 doubleamp
+    b <- lx0 bitor
+    go (ExprAnd a b)
 
-bitor =
-  chainl ExprBitOr (lx0 bitxor) do
+bitor = do
+  a <- lx0 bitxor
+  go a
+ where
+  go a = option a do
     lx0 bar
-    lx0 bitxor
+    b <- lx0 bitxor
+    go (ExprBitOr a b)
 
-bitxor =
-  chainl ExprBitXor (lx0 bitand) do
+bitxor = do
+  a <- lx0 bitand
+  go a
+ where
+  go a = option a do
     lx0 caret
-    lx0 bitand
+    b <- lx0 bitand
+    go (ExprBitXor a b)
 
-bitand =
-  chainl ExprBitAnd (lx0 rel) do
+bitand = do
+  a <- lx0 rel
+  go a
+ where
+  go a = option a do
     lx0 ampersand
-    lx0 rel
+    b <- lx0 rel
+    go (ExprBitAnd a b)
 
 rel = do
   a <- lx0 shift
-  r <- relop
-  b <- lx0 shift
-  pure $ r a b
+  go a
  where
+  go a = option a do
+    r <- relop
+    b <- lx0 shift
+    go (r a b)
   relop =
     $( switch_ws0
          [|
@@ -246,10 +255,12 @@ rel = do
 
 shift = do
   a <- lx0 add
-  s <- shiftop
-  b <- lx0 add
-  pure $ s a b
+  go a
  where
+  go a = option a do
+    s <- shiftop
+    b <- lx0 add
+    go (s a b)
   shiftop =
     $( switch_ws0
          [|
@@ -261,10 +272,12 @@ shift = do
 
 add = do
   a <- lx0 mul
-  s <- addop
-  b <- lx0 mul
-  pure $ s a b
+  go a
  where
+  go a = option a do
+    s <- addop
+    b <- lx0 mul
+    go (s a b)
   addop =
     $( switch_ws0
          [|
@@ -276,10 +289,12 @@ add = do
 
 mul = do
   a <- lx0 cast_
-  s <- mulop
-  b <- lx0 cast_
-  pure $ s a b
+  go a
  where
+  go a = option a do
+    s <- mulop
+    b <- lx0 cast_
+    go (s a b)
   mulop =
     $( switch_ws0
          [|
@@ -323,7 +338,8 @@ unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
       <*> cast_
   sizeof = do
     lx1 sizeof'
-    (ExprSizeOf . Left <$> inpar (lx1 parsetype)) <|> (ExprSizeOf . Right <$> unary)
+    (ExprSizeOf . Left <$> inpar (lx1 parsetype))
+      <|> (ExprSizeOf . Right <$> unary)
   alignof = do
     lx1 alignof'
     ExprAlignOf . Left <$> inpar (lx1 parsetype)
@@ -334,50 +350,57 @@ compound = do
   -- compound literals
   lx0 (inpar (lx1 parsetype)) >> lx0 (incur anyChar) >> failed
 
-postfix = do
-  a <- primary
-  let sfxop =
-        anyChar >>= \case
-          '[' -> do
-            b <- lx0 expr_
-            lx0 rsqb
-            pure $ ExprArray a b
-          '(' -> do
-            b <- assign `sepBy` lx0 comma
-            lx0 rpar
-            pure $ ExprCall a b
-          '.' -> do
-            _ <- lx1 identifier
-            s <- newUnique
-            pure $ ExprMember a s
-          '-' ->
-            anyChar >>= \case
-              '>' -> do
-                _ <- lx1 identifier
-                s <- newUnique
-                pure $ ExprMemberPtr a s
-              '-' -> pure $ ExprPostDec a
-              _ -> failed
-          _ -> failed
-  sfxop <|> compound
+postfix = go =<< primary
+ where
+  go a = do
+    let sfxop =
+          anyChar >>= \case
+            '[' -> do
+              b <- lx0 expr_
+              lx0 rsqb
+              pure $ ExprArray a b
+            '(' -> do
+              b <- assign `sepBy` lx0 comma
+              lx0 rpar
+              pure $ ExprCall a b
+            '.' -> do
+              -- placeholder because we don't have a symbol table yet.
+              _ <- lx1 identifier
+              s <- newUnique
+              pure $ ExprMember a s
+            '-' ->
+              anyChar >>= \case
+                '>' -> do
+                  _ <- lx1 identifier
+                  s <- newUnique
+                  pure $ ExprMemberPtr a s
+                '-' -> pure $ ExprPostDec a
+                _ -> failed
+            '+' ->
+              anyChar >>= \case
+                '+' -> pure $ ExprPostInc a
+                _ -> failed
+            _ -> failed
+    result <- option a (sfxop <|> compound)
+    if result == a
+      then pure result
+      else go result -- Recursively parse more postfix operators
 
 primary = ident <|> litexpr <|> paren <|> generic
 
-paren = inpar $ do
+paren = inpar do
   we <- runandgetspan expr_
-  withSpan (pure ()) $ \_ spn ->
+  withSpan (pure ()) \_ spn ->
     pure $ Expr $ WithSpan spn $ PrimParen we
 
 litexpr = do
   l <- literal
-  withSpan (pure ()) $ \_ spn ->
+  withSpan (pure ()) \_ spn ->
     pure $ Expr $ WithSpan spn $ PrimLit l
 
 ident = do
-  -- Use byteStringOf to capture the text
-  WithSpan s _ <- lx1 (runandgetspan identifier)
-  i <- byteStringOf identifier
-  pure $ Expr $ WithSpan s $ PrimId i
+  withSpan (lx1 $ byteStringOf identifier) \i s ->
+    pure $ Expr $ WithSpan s $ PrimId i
 
 generic = do
   lx1 _Generic'

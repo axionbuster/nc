@@ -50,8 +50,8 @@ module Language.NC.Internal.Lex.Type (
 
 import Data.List (intercalate)
 import Language.NC.Internal.Lex.Op
-import Language.NC.Internal.PrimTypes (PrimType)
 import Language.NC.Internal.Prelude
+import Language.NC.Internal.PrimTypes (PrimType)
 
 -- in this parser-lexer we parse type names.
 

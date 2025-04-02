@@ -17,6 +17,8 @@ import GHC.Integer.Logarithms (integerLog2#)
 import Language.NC.Internal.Prelude
 import Language.NC.Internal.PrimTypes qualified as PT
 
+-- unfortunately, floating point literals are not supported yet.
+
 data Lit
   = -- | Integer literal
     LitInteger IntegerLiteral
@@ -40,7 +42,7 @@ literal =
 -- only the first character of a punctuator is needed to detect a
 -- boundary. also includes whitespace and comments, which are not
 -- punctuators, but are needed for boundary detection.
-punct = skipSatisfyAscii (`elem` "!%&()*+,-./:;<=>?[]\\^{|}~") <|> ws1
+punct = skipSatisfyAscii (`elem` "!%&()*+,-./:;<=>?[]\\^{|}~")
 
 -- the reason why we take 'punct' into account here is that when we
 -- say "whitespace is required," what we almost certainly mean is that
@@ -63,7 +65,7 @@ ws_base nomat =
            "\r" -> ws0
            "\t" -> ws0
            "\v" -> ws0
-           _ -> punct <|> nomat
+           _ -> lookahead punct <|> nomat
          |]
    )
 {-# INLINE ws_base #-}
@@ -148,7 +150,11 @@ incur = between (lcur >> ws0) (ws0 >> rcur)
 
 -- Bitwise operators
 (ampersand, caret, bar, tilde) =
-  ($(char '&'), $(char '^'), $(char '|'), $(char '~'))
+  ( $(char '&') `notFollowedBy` $(char '&'),
+    $(char '^'),
+    $(char '|'),
+    $(char '~')
+  )
 
 -- Basic arithmetic operators
 (plus, minus, star, slash, percent) =
