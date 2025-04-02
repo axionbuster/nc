@@ -8,6 +8,7 @@ parsetype :: Parser Type
 data Type
 instance Eq Type
 instance Show Type
+instance Ord Type
 
 data BaseType
 instance Eq BaseType

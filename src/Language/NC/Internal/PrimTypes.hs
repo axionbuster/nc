@@ -50,7 +50,7 @@ data PrimType
     Float FloatType
   | -- | The @void@ type
     Void
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | If this is a @char@ then make it @signed char@. Otherwise, do nothing.
 char2schar :: PrimType -> PrimType
@@ -113,7 +113,7 @@ pattern ULongLong_ = Int Unsigned LongLong
 
 -- | Signed?
 data Signed = Signed | Unsigned
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | @int@, @short@, @long@, or @long long@
 data IntLen
@@ -126,7 +126,7 @@ data IntLen
 
 -- | Real or complex and what type?
 data FloatType = Real RealFloatType | Complex RealFloatType
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | @float@, @double@, or @long double@?
 data RealFloatType
@@ -136,4 +136,4 @@ data RealFloatType
   | RFDecimal128
   | RFDecimal32
   | RFDecimal64
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)

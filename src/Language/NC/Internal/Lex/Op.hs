@@ -37,17 +37,19 @@ data PrimExpr
     PrimLit Lit
   | -- | A string literal
     PrimStrLit Str
-  | -- | An expression in parentheses
-    PrimParen (WithSpan Expr)
+  | -- | An expression in parentheses. Don't count on the
+    -- parentheses being included in the span (or not being
+    -- included in the span).
+    PrimParen Expr
   | -- | A generic selection expression
     PrimGeneric Expr GenAssoc
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | A @Generic\_@ selection expression.
 data GenAssoc
   = -- | generic selection
     GenAssoc (Maybe Str) Expr
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | According to the C standard, an expression is an operator bound
 -- to operands, or a primary expression.
@@ -154,7 +156,7 @@ data Expr
     ExprAssignBitOr Expr Expr
   | -- | comma operator
     ExprComma Expr Expr
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 {- PEG grammar referenced; converted from C23 CFG grammar.
 # Expressions
@@ -400,15 +402,9 @@ postfix = go =<< primary
 
 primary = ident <|> litexpr <|> paren <|> generic
 
-paren = inpar do
-  we <- runandgetspan expr_
-  withSpan (pure ()) \_ spn ->
-    pure $ Expr $ WithSpan spn $ PrimParen we
+paren = Expr <$> runandgetspan (inpar (PrimParen <$> expr_))
 
-litexpr = do
-  l <- literal
-  withSpan (pure ()) \_ spn ->
-    pure $ Expr $ WithSpan spn $ PrimLit l
+litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
 ident = do
   withSpan (lx1 $ byteStringOf identifier) \i s ->

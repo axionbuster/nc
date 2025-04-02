@@ -45,6 +45,7 @@ module Language.NC.Internal.Lex.Type (
   ArrayType (..),
   ArraySize (..),
   QualifiedType (..),
+  Variadic (..),
 
   -- * Parsing an expression determining type
   parsetype,
@@ -132,7 +133,7 @@ data Alignment
     AlignAs Int
   | -- | @\_Alignas@ with type
     AlignAsType Type
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Source base types.
 data BaseType
@@ -152,7 +153,7 @@ data BaseType
     BTPointer QualifiedType
   | -- | An atomic type specifier (_Atomic(...))
     BTAtomic QualifiedType
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | A qualified type.
 data QualifiedType
@@ -160,29 +161,29 @@ data QualifiedType
   { qt_base :: BaseType,
     qt_qual :: TypeQual
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data Record
   = -- | A struct type.
     RecordStruct Symbol RecordInfo
   | -- | A union type.
     RecordUnion Symbol RecordInfo
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data EnumType
   = -- | An enumeration type.
     EnumType Symbol EnumInfo
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data FuncType
   = -- | A function type.
     FuncType Symbol FuncInfo
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data ArrayType
   = -- | An array type.
     ArrayType ArraySize Type
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data ArraySize
   = -- | A fixed size array.
@@ -191,7 +192,7 @@ data ArraySize
     ArraySizeVar Expr
   | -- | A flexible array member or unknown size.
     ArraySizeNone
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Monoid representing qualifier monoid.
 newtype TypeQual = TypeQual {untypequal :: Int}
@@ -224,6 +225,9 @@ tq_restrict = TypeQual 4
 tq_atomic = TypeQual 8
 
 -- | Source types.
+--
+-- We also include the storage class declaration for convenience in
+-- parsing and organization, though it is not part of the type itself.
 data Type = Type
   { ty_storclass :: StorageClass,
     ty_base :: BaseType,
@@ -231,31 +235,35 @@ data Type = Type
     ty_funcspec :: FuncSpec,
     ty_alignment :: Alignment
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Record information
 data RecordInfo = RecordDef [RecordField] | RecordDecl
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Record field
 data RecordField = RecordField Type Symbol (Maybe Int)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Enum information
 data EnumInfo = EnumDef [EnumConst] | EnumDecl
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- | Enum constant
 data EnumConst = EnumConst Symbol (Maybe Expr)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
+
+-- | Is a function variadic?
+data Variadic = Variadic | NotVariadic
+  deriving (Eq, Show, Ord)
 
 -- | Function information
-data FuncInfo = FuncDef [Param] Type | FuncDecl
-  deriving (Eq, Show)
+data FuncInfo = FuncDef [Param] Type Variadic | FuncDecl
+  deriving (Eq, Show, Ord)
 
 -- | Function parameter
 data Param = Param Type Symbol | ParamUnnamed Type
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 {- new info! C23 fragment (in PEG) of the type-name rule, which
 parsetype represents:

@@ -26,7 +26,7 @@ data Lit
     LitChar CharacterLiteral
   | -- | String literal
     LitString StringLiteral
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 literal =
   choice
@@ -570,7 +570,7 @@ _bindigit =
 
 data IntegerLiteral
   = IntegerLiteral Integer PT.PrimType
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 data ISFX_
   = -- occurrence counts
@@ -725,7 +725,7 @@ data CharacterLiteral
     CharacterLiteral Char PT.PrimType
   | -- | Specified in octal or hexadecimal.
     IntCharacterLiteral Integer PT.PrimType
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 char_encpfx =
   $( switch
@@ -791,13 +791,8 @@ character_constant_val = do
 --  - UTF-32 for four-byte-character strings
 data StringLiteral
   = -- | Interpreted value, type of each element.
-    StringLiteral Builder !PT.PrimType
-  deriving (Show)
-
-instance Eq StringLiteral where
-  -- ByteString.Builder doesn't have an Eq instance, so we'll just consider two StringLiterals
-  -- equal if they have the same type
-  StringLiteral _ t1 == StringLiteral _ t2 = t1 == t2
+    StringLiteral LazyByteString !PT.PrimType
+  deriving (Show, Eq, Ord)
 
 string_literal_val = do
   typ <-
@@ -812,7 +807,7 @@ string_literal_val = do
         | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
         | otherwise = err $ LiteralBadError BadChar
   val <- between dbquote dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
-  pure $ StringLiteral val typ
+  pure $ StringLiteral (BB.toLazyByteString val) typ
  where
   -- currently, no support for joining adjacent string literals, or
   -- writing a string literal across source lines using a backslash.

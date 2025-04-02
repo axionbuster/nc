@@ -59,6 +59,11 @@ data SymbolInfo = SymbolInfo
   }
   deriving (Eq, Show)
 
+instance Ord SymbolInfo where
+  SymbolInfo n1 t1 s1 `compare` SymbolInfo n2 t2 s2 =
+    compare n1 n2 <> compare t1 t2 <> cmpspans s1 s2
+  {-# INLINE compare #-}
+
 -- | Bit widths of primitive integers. Pay especially close attention to
 -- the bit width of @long@; on Windows, it's generally 32 bits, but on
 -- other platforms, it's generally 64 bits.
@@ -77,7 +82,7 @@ data IntegerSettings
     ist_doublebitwidth :: !Word8,
     ist_longdoublebitwidth :: !Word8
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 ain :: Parser IntegerSettings
 ain = psintset <$> ask
@@ -130,7 +135,7 @@ ist_precisebw (PT.Char _) = ist_charbitwidth <$> ain
 ist_precisebw t = ist_preciseposbw t
 
 data Endianness = LittleEndian | BigEndian
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
 
 -- i might consider adding methods (virtual functions) to CharSettings
 -- that encode integer character literals into a custom target encoding
@@ -200,7 +205,16 @@ type Parser = ParserIO ParserState Error
 -- | Data with span. Bogus span could exist if some construct was
 -- created in thin air by the parser. Bogus spans will be 0:0.
 data WithSpan a = WithSpan !Span a
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
+
+instance (Ord a) => Ord (WithSpan a) where
+  WithSpan s1 e1 `compare` WithSpan s2 e2 =
+    cmpspans s1 s2 <> compare e1 e2
+  {-# INLINE compare #-}
+
+cmpspans :: Span -> Span -> Ordering
+cmpspans (Span s1 e1) (Span s2 e2) = compare s1 s2 <> compare e1 e2
+{-# INLINE cmpspans #-}
 
 -- | Pure \"parser\" to return a 'WithSpan'.
 --
