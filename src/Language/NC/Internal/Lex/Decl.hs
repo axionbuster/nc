@@ -1,6 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-missing-signatures #-}
-
 -- | This module implements parsing of C23 declarations.
 --
 -- A declaration in C defines types, variables, functions, and type aliases.
