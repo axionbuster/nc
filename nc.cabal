@@ -37,6 +37,7 @@ library
                         Language.NC.Internal.Lex.Lex,
                         Language.NC.Internal.Lex.Op,
                         Language.NC.Internal.Lex.Type,
+                        Language.NC.Internal.Lex.Decl,
                         Language.NC.Internal.PrimTypes
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, hashable,

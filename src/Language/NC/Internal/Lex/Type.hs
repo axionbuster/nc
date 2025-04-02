@@ -9,6 +9,7 @@ module Language.NC.Internal.Lex.Type (
   tq_const,
   tq_volatile,
   tq_restrict,
+  tq_atomic,
 
   -- * Storage Classes
   StorageClass (..),
@@ -19,6 +20,7 @@ module Language.NC.Internal.Lex.Type (
   sc_extern,
   sc_threadlocal,
   sc_typedef,
+  sc_constexpr,
 
   -- * Function Specifiers
   FuncSpec (..),
@@ -73,7 +75,8 @@ instance Show StorageClass where
             if s .&. unstorclass sc_static /= 0 then "static" else "",
             if s .&. unstorclass sc_extern /= 0 then "extern" else "",
             if s .&. unstorclass sc_threadlocal /= 0 then "_Thread_local" else "",
-            if s .&. unstorclass sc_typedef /= 0 then "typedef" else ""
+            if s .&. unstorclass sc_typedef /= 0 then "typedef" else "",
+            if s .&. unstorclass sc_constexpr /= 0 then "constexpr" else ""
           ]
 
 instance Semigroup StorageClass where
@@ -88,10 +91,11 @@ sc_register = StorageClass 1
 sc_auto = StorageClass 2
 sc_static = StorageClass 4
 
-sc_extern, sc_threadlocal, sc_typedef :: StorageClass
+sc_extern, sc_threadlocal, sc_typedef, sc_constexpr :: StorageClass
 sc_extern = StorageClass 8
 sc_threadlocal = StorageClass 16
 sc_typedef = StorageClass 32
+sc_constexpr = StorageClass 64
 
 -- | Source function specifier monoid.
 newtype FuncSpec = FuncSpec {unfuncspec :: Int}
@@ -146,6 +150,8 @@ data BaseType
     BTArray ArrayType
   | -- | A pointer type.
     BTPointer QualifiedType
+  | -- | An atomic type specifier (_Atomic(...))
+    BTAtomic QualifiedType
   deriving (Eq, Show)
 
 -- | A qualified type.
@@ -200,7 +206,8 @@ instance Show TypeQual where
           (not . null)
           [ if q .&. untypequal tq_const /= 0 then "const" else "",
             if q .&. untypequal tq_volatile /= 0 then "volatile" else "",
-            if q .&. untypequal tq_restrict /= 0 then "restrict" else ""
+            if q .&. untypequal tq_restrict /= 0 then "restrict" else "",
+            if q .&. untypequal tq_atomic /= 0 then "_Atomic" else ""
           ]
 
 instance Semigroup TypeQual where
@@ -209,11 +216,12 @@ instance Semigroup TypeQual where
 instance Monoid TypeQual where
   mempty = TypeQual 0
 
-tq_none, tq_const, tq_volatile, tq_restrict :: TypeQual
+tq_none, tq_const, tq_volatile, tq_restrict, tq_atomic :: TypeQual
 tq_none = TypeQual 0
 tq_const = TypeQual 1
 tq_volatile = TypeQual 2
 tq_restrict = TypeQual 4
+tq_atomic = TypeQual 8
 
 -- | Source types.
 data Type = Type

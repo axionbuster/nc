@@ -41,7 +41,7 @@ type Str = ByteString
 
 -- | Symbol (without the actual name). Wrapper around 'Unique' with proper instances.
 newtype Symbol = Symbol Unique
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 instance Show Symbol where
   show _ = "(anonymous)"

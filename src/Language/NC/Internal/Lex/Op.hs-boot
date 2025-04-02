@@ -6,5 +6,3 @@ data Expr
 
 instance Eq Expr
 instance Show Expr
-
-assign :: Parser Expr
