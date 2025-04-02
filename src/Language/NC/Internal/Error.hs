@@ -30,8 +30,8 @@ data PrimTypeBadWhy
     TooManySpecifiers String
   | -- | Incompatible type combination (e.g. \"mixing void with float\")
     --
-    -- If the list of \"other types\" is empty, then say,
-    -- \"mixing [void] with other types\" (replace [void] with the type).
+    --     If the list of \"other types\" is empty, then say,
+    --     \"mixing [void] with other types\" (replace [void] with the type).
     IncompatibleTypes String [String]
   | -- | Unrecognized or invalid _BitInt width
     InvalidBitIntWidth Word8

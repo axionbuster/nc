@@ -1,43 +1,42 @@
 -- | Primitive non-derived pretypes.
-module Language.NC.Internal.PrimTypes
-  ( PrimType (..),
-    pattern Int_,
-    pattern Char_,
-    pattern SChar_,
-    pattern UChar_,
-    pattern Float_,
-    pattern Double_,
-    pattern LongDouble_,
-    pattern ComplexFloat_,
-    pattern ComplexDouble_,
-    pattern ComplexLongDouble_,
-    pattern Short_,
-    pattern Long_,
-    pattern LongLong_,
-    pattern UInt_,
-    pattern UShort_,
-    pattern ULong_,
-    pattern ULongLong_,
-    Signed (..),
-    IntLen (..),
-    FloatType (..),
-    RealFloatType (..),
-    char2schar,
-    _primsign,
-    _primsign2,
-  )
-where
+module Language.NC.Internal.PrimTypes (
+  PrimType (..),
+  pattern Int_,
+  pattern Char_,
+  pattern SChar_,
+  pattern UChar_,
+  pattern Float_,
+  pattern Double_,
+  pattern LongDouble_,
+  pattern ComplexFloat_,
+  pattern ComplexDouble_,
+  pattern ComplexLongDouble_,
+  pattern Short_,
+  pattern Long_,
+  pattern LongLong_,
+  pattern UInt_,
+  pattern UShort_,
+  pattern ULong_,
+  pattern ULongLong_,
+  Signed (..),
+  IntLen (..),
+  FloatType (..),
+  RealFloatType (..),
+  char2schar,
+  _primsign,
+  _primsign2,
+) where
 
 import Control.Lens.Setter
 import Data.Word
-import Prelude hiding
-  ( Bool,
-    Char,
-    Double,
-    Enum,
-    Float,
-    Int,
-  )
+import Prelude hiding (
+  Bool,
+  Char,
+  Double,
+  Enum,
+  Float,
+  Int,
+ )
 
 -- | Non-derived, primitive types
 data PrimType

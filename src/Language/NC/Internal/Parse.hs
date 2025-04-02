@@ -1,29 +1,29 @@
 -- | Parser type, error type
-module Language.NC.Internal.Parse
-  ( Parser,
-    ParserState (..),
-    WithSpan (..),
-    Symbol (..),
-    IntegerSettings (..),
-    CharSettings (..),
-    Str,
-    Seq (..),
-    RelatedInfo (..),
-    Endianness (..),
-    pwithspan,
-    cut,
-    mkstate0,
-    throwbasic,
-    ist_preciseposbw,
-    ist_precisebw,
-    int_canrepresent,
-    runandgetspan,
-  )
-where
+module Language.NC.Internal.Parse (
+  Parser,
+  ParserState (..),
+  WithSpan (..),
+  Symbol,
+  IntegerSettings (..),
+  CharSettings (..),
+  Str,
+  Seq (..),
+  RelatedInfo (..),
+  Endianness (..),
+  pwithspan,
+  cut,
+  mkstate0,
+  throwbasic,
+  ist_preciseposbw,
+  ist_precisebw,
+  int_canrepresent,
+  runandgetspan,
+) where
 
 import Data.ByteString.Short
 import Data.IORef
 import Data.Sequence (Seq ((:<|), (:|>)))
+import Data.Unique
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import Language.NC.Internal.Error
@@ -33,8 +33,23 @@ import Prelude
 -- | Unpinned memory used for short strings.
 type Str = ShortByteString
 
--- | Symbol
-data Symbol = Symbol
+-- anonymous structs, unions, etc. get a unique symbol to represent
+-- them even though they don't have a name.
+
+-- | Symbol (without the actual name). Currently a type alias for 'Unique'.
+type Symbol = Unique
+
+-- | Information about a symbol.
+data SymbolInfo = SymbolInfo
+  { -- | The symbol's name.
+    si_name :: Str,
+    -- | The symbol's type.
+    si_type :: PT.PrimType,
+    -- | The symbol's location in the source code.
+    --     In rare occasions this may be a bogus location, that is,
+    --     0:0, if the symbol was created in thin air for various reasons.
+    si_loc :: Span
+  }
   deriving (Eq, Show)
 
 -- | Bit widths of primitive integers. Pay especially close attention to
@@ -70,12 +85,12 @@ ist_preciseposbw (PT.Int _ (PT.BitInt n)) = pure n
 ist_preciseposbw (PT.Int s a) = do
   x <- ist_pbw' a
   pure $ x - fromIntegral (fromEnum (s == PT.Signed))
-  where
-    ist_pbw' PT.Short = ist_shortbitwidth <$> ain
-    ist_pbw' PT.IntLen = ist_intbitwidth <$> ain
-    ist_pbw' PT.Long = ist_longbitwidth <$> ain
-    ist_pbw' PT.LongLong = ist_longlongbitwidth <$> ain
-    ist_pbw' _ = error "ist_pbw' on _BitInt(N) ... impossible"
+ where
+  ist_pbw' PT.Short = ist_shortbitwidth <$> ain
+  ist_pbw' PT.IntLen = ist_intbitwidth <$> ain
+  ist_pbw' PT.Long = ist_longbitwidth <$> ain
+  ist_pbw' PT.LongLong = ist_longlongbitwidth <$> ain
+  ist_pbw' _ = error "ist_pbw' on _BitInt(N) ... impossible"
 ist_preciseposbw (PT.Char (Just PT.Unsigned)) = ist_charbitwidth <$> ain
 ist_preciseposbw (PT.Char (Just PT.Signed)) = pred . ist_charbitwidth <$> ain
 ist_preciseposbw (PT.Char Nothing) = do
@@ -125,7 +140,7 @@ data CharSettings = CharSettings
     -- | must be unsigned, too.
     cst_char32_type :: PT.PrimType,
     -- | Separate from integer endianness, we record
-    -- the endianness used for multi-byte Unicode encodings.
+    --     the endianness used for multi-byte Unicode encodings.
     cst_char_endian :: Endianness
   }
 
@@ -146,15 +161,15 @@ int_canrepresent i = \case
     s <- ist_charissigned <$> ain
     rep (if s then PT.Signed else PT.Unsigned) t
   _ -> err (InternalError "int_canrepresent called on a non-integral type")
-  where
-    rep PT.Signed t = do
-      bw <- ist_precisebw t
-      let rngtop = 2 ^ (bw - 1) - 1
-      let rngbot = negate $ 2 ^ (bw - 1)
-      pure $ rngbot <= i && i <= rngtop
-    rep PT.Unsigned t = do
-      bw <- ist_precisebw t
-      pure $ i <= 2 ^ bw
+ where
+  rep PT.Signed t = do
+    bw <- ist_precisebw t
+    let rngtop = 2 ^ (bw - 1) - 1
+    let rngbot = negate $ 2 ^ (bw - 1)
+    pure $ rngbot <= i && i <= rngtop
+  rep PT.Unsigned t = do
+    bw <- ist_precisebw t
+    pure $ i <= 2 ^ bw
 
 -- | Create a starter state.
 --

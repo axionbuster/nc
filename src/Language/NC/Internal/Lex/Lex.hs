@@ -154,19 +154,19 @@ incur = between (lcur >> ws0) (ws0 >> rcur)
 -- Basic arithmetic operators
 (plus, minus, star, slash, percent) =
   ($(char '+'), $(char '-'), $(char '*'), s, $(char '%'))
-  where
-    -- most operators do "clash" (share a prefix with another operator)
-    -- but the division operator clashes with comments so we will
-    -- check for that specifically
-    s =
-      $( switch
-           [|
-             case _ of
-               "//" -> failed
-               "/*" -> failed
-               "/" -> pure ()
-             |]
-       )
+ where
+  -- most operators do "clash" (share a prefix with another operator)
+  -- but the division operator clashes with comments so we will
+  -- check for that specifically
+  s =
+    $( switch
+         [|
+           case _ of
+             "//" -> failed
+             "/*" -> failed
+             "/" -> pure ()
+           |]
+     )
 
 -- this isn't an *operator* but sometimes it appears because a block
 -- comment wasn't closed properly
@@ -479,15 +479,15 @@ keyword =
 -- | Any identifier. This allows reserved identifiers like @__func__@
 -- to be used. For use in declarations, consider 'identifier_def' instead.
 identifier = id_head >> skipMany id_tail
-  where
-    id_head = nondigit <|> universal_character_name
-    id_tail = fullset <|> universal_character_name
-    nondigit = skipFusedSatisfy asciind xids xids xids
-    fullset = skipFusedSatisfy asciifull xidc xidc xidc
-    asciind = \c -> isLatinLetter c || c == '_'
-    asciifull = \c -> isDigit c || isLatinLetter c || c == '_'
-    xids = C.property C.XidStart
-    xidc = C.property C.XidContinue
+ where
+  id_head = nondigit <|> universal_character_name
+  id_tail = fullset <|> universal_character_name
+  nondigit = skipFusedSatisfy asciind xids xids xids
+  fullset = skipFusedSatisfy asciifull xidc xidc xidc
+  asciind = \c -> isLatinLetter c || c == '_'
+  asciifull = \c -> isDigit c || isLatinLetter c || c == '_'
+  xids = C.property C.XidStart
+  xidc = C.property C.XidContinue
 
 -- | A user-definable identifier. Currently, only @__func__@ is banned.
 identifier_def =
@@ -530,19 +530,19 @@ ucnam_val_word =
 --
 -- Require at least one digit be consumed, or else fail.
 asm b p sep = go 0 True
-  where
-    -- making sure separators can't appear in a row.
-    go n sepfresh = \case
-      (0 :: Int) -> pure n
-      i ->
-        branch
-          (sep >> guard sepfresh)
-          (go n False i)
-          ( do
-              d <- p
-              let m = n * b + d
-              go m True (i - 1) <|> pure m
-          )
+ where
+  -- making sure separators can't appear in a row.
+  go n sepfresh = \case
+    (0 :: Int) -> pure n
+    i ->
+      branch
+        (sep >> guard sepfresh)
+        (go n False i)
+        ( do
+            d <- p
+            let m = n * b + d
+            go m True (i - 1) <|> pure m
+        )
 
 _hexdigit =
   satisfyAscii isHexDigit <&> fromIntegral . \c ->
@@ -577,55 +577,55 @@ data ISFX_
 
 instance Semigroup ISFX_ where
   ISFX_ a b c <> ISFX_ x y z = ISFX_ (a ^^+ x) (b ^^+ y) (c ^^+ z)
-    where
-      -- carry with overflow guard
-      p ^^+ 0 = p
-      255 ^^+ 1 = 255
-      p ^^+ 1 = p + 1
-      _ ^^+ _ = error "ISFX_'s ^^+: impossible"
+   where
+    -- carry with overflow guard
+    p ^^+ 0 = p
+    255 ^^+ 1 = 255
+    p ^^+ 1 = p + 1
+    _ ^^+ _ = error "ISFX_'s ^^+: impossible"
 
 instance Monoid ISFX_ where
   mempty = ISFX_ 0 0 0
 
 -- find integral type that fits literal or else throw error.
 isfx_2inttyp wasdecimal = gated_go . integerneededbits
-  where
-    i_ = PT.Int_
-    l_ = PT.Long_
-    ll_ = PT.LongLong_
-    u_ = PT.UInt_
-    ul_ = PT.ULong_
-    ull_ = PT.ULongLong_
-    -- find: find first type that can contain the literal
-    find bw = go2
-      where
-        go2 [] = err $ LiteralBadError LiteralTooLarge
-        go2 (t : ts) = do
-          tw <- ist_preciseposbw t
-          if tw >= bw
-            then pure t
-            else go2 ts
-    gated_go bw
-      | bw > fromIntegral (maxBound :: Word8) =
-          const $ err $ LiteralBadError LiteralTooLarge
-      | otherwise = go (fromIntegral bw)
-    -- ISFX_ (u or U) (l or L) (wb or WB)
-    -- Table below is found in 6.4.4.1.6 (N3088)
-    go bw (ISFX_ 0 0 0)
-      | wasdecimal = find bw [i_, l_, ll_]
-      | otherwise = find bw [i_, u_, l_, ul_, ul_, ull_]
-    go bw (ISFX_ 1 0 0) = find bw [u_, ul_, ull_]
-    go bw (ISFX_ 0 1 0)
-      | wasdecimal = find bw [l_, ll_]
-      | otherwise = find bw [l_, ul_, ll_, ull_]
-    go bw (ISFX_ 1 1 0) = find bw [ul_, ull_]
-    go bw (ISFX_ 0 2 0)
-      | wasdecimal = find bw [ll_]
-      | otherwise = find bw [ll_, ull_]
-    go bw (ISFX_ 1 2 0) = find bw [ull_]
-    go bw (ISFX_ 0 0 1) = pure $ PT.Int PT.Signed $ PT.BitInt $ min 2 bw
-    go bw (ISFX_ 1 0 1) = pure $ PT.Int PT.Unsigned $ PT.BitInt bw
-    go _ _ = err $ LiteralBadError IncorrectIntSuffix
+ where
+  i_ = PT.Int_
+  l_ = PT.Long_
+  ll_ = PT.LongLong_
+  u_ = PT.UInt_
+  ul_ = PT.ULong_
+  ull_ = PT.ULongLong_
+  -- find: find first type that can contain the literal
+  find bw = go2
+   where
+    go2 [] = err $ LiteralBadError LiteralTooLarge
+    go2 (t : ts) = do
+      tw <- ist_preciseposbw t
+      if tw >= bw
+        then pure t
+        else go2 ts
+  gated_go bw
+    | bw > fromIntegral (maxBound :: Word8) =
+        const $ err $ LiteralBadError LiteralTooLarge
+    | otherwise = go (fromIntegral bw)
+  -- ISFX_ (u or U) (l or L) (wb or WB)
+  -- Table below is found in 6.4.4.1.6 (N3088)
+  go bw (ISFX_ 0 0 0)
+    | wasdecimal = find bw [i_, l_, ll_]
+    | otherwise = find bw [i_, u_, l_, ul_, ul_, ull_]
+  go bw (ISFX_ 1 0 0) = find bw [u_, ul_, ull_]
+  go bw (ISFX_ 0 1 0)
+    | wasdecimal = find bw [l_, ll_]
+    | otherwise = find bw [l_, ul_, ll_, ull_]
+  go bw (ISFX_ 1 1 0) = find bw [ul_, ull_]
+  go bw (ISFX_ 0 2 0)
+    | wasdecimal = find bw [ll_]
+    | otherwise = find bw [ll_, ull_]
+  go bw (ISFX_ 1 2 0) = find bw [ull_]
+  go bw (ISFX_ 0 0 1) = pure $ PT.Int PT.Signed $ PT.BitInt $ min 2 bw
+  go bw (ISFX_ 1 0 1) = pure $ PT.Int PT.Unsigned $ PT.BitInt bw
+  go _ _ = err $ LiteralBadError IncorrectIntSuffix
 
 -- used to compute bitwidth for _BitInt(N) literals.
 -- as an invariant, this is >= 1.
@@ -658,26 +658,26 @@ integer_constant_val =
          |]
    )
     >>= \(wasdecimal, n) -> IntegerLiteral n <$> sfx wasdecimal n
-  where
-    -- the (-1) indicates max number of digits (unrestricted)
-    hex = (False,) <$> asm 16 _hexdigit quote (-1)
-    oct = (False,) <$> asm 8 _octdigit quote (-1)
-    dec = (True,) <$> asm 10 _decdigit quote (-1)
-    bin = (False,) <$> asm 2 _bindigit quote (-1)
-    sfx wasdecimal n = do
-      let sfxchr =
-            $( switch
-                 [|
-                   case _ of
-                     "u" -> pure $ ISFX_ 1 0 0
-                     "U" -> pure $ ISFX_ 1 0 0
-                     "l" -> pure $ ISFX_ 0 1 0
-                     "L" -> pure $ ISFX_ 0 1 0
-                     "wb" -> pure $ ISFX_ 0 0 1
-                     "WB" -> pure $ ISFX_ 0 0 1
-                   |]
-             )
-      chainl (<>) (pure mempty) sfxchr >>= isfx_2inttyp wasdecimal n
+ where
+  -- the (-1) indicates max number of digits (unrestricted)
+  hex = (False,) <$> asm 16 _hexdigit quote (-1)
+  oct = (False,) <$> asm 8 _octdigit quote (-1)
+  dec = (True,) <$> asm 10 _decdigit quote (-1)
+  bin = (False,) <$> asm 2 _bindigit quote (-1)
+  sfx wasdecimal n = do
+    let sfxchr =
+          $( switch
+               [|
+                 case _ of
+                   "u" -> pure $ ISFX_ 1 0 0
+                   "U" -> pure $ ISFX_ 1 0 0
+                   "l" -> pure $ ISFX_ 0 1 0
+                   "L" -> pure $ ISFX_ 0 1 0
+                   "wb" -> pure $ ISFX_ 0 0 1
+                   "WB" -> pure $ ISFX_ 0 0 1
+                 |]
+           )
+    chainl (<>) (pure mempty) sfxchr >>= isfx_2inttyp wasdecimal n
 
 -- | Parse an integer constant; discard the value, if any.
 integer_constant = () <$ integer_constant_val
@@ -693,28 +693,28 @@ floating_constant =
   -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
   -- 2-page CFG down to like 3 PEG clauses.
   (hex <|> dec) >> optional_ sfx
-  where
-    -- floating-point suffix.
-    sfx = do
-      oneof_ascii "fFlLdD"
-      oneof_ascii "flFL"
-    exp e = do
-      oneof_ascii e
-      optional_ $ oneof_ascii "+-"
-      skipSome $ skipSatisfyAscii isDigit
-    -- "mantissa" ... which is the main part.
-    -- f scans a digit.
-    man f =
-      (skipSome f >> optional_ (period >> skipMany f))
-        <|> (period >> skipSome f)
-    dec =
-      man (skipSatisfyAscii isDigit) >> optional_ (exp "eE")
-    hex = do
-      $(char '0')
-      oneof_ascii "xX"
-      man $ skipSatisfyAscii isHexDigit
-      -- exponent. exponent is given in decimal.
-      exp "pP"
+ where
+  -- floating-point suffix.
+  sfx = do
+    oneof_ascii "fFlLdD"
+    oneof_ascii "flFL"
+  exp e = do
+    oneof_ascii e
+    optional_ $ oneof_ascii "+-"
+    skipSome $ skipSatisfyAscii isDigit
+  -- "mantissa" ... which is the main part.
+  -- f scans a digit.
+  man f =
+    (skipSome f >> optional_ (period >> skipMany f))
+      <|> (period >> skipSome f)
+  dec =
+    man (skipSatisfyAscii isDigit) >> optional_ (exp "eE")
+  hex = do
+    $(char '0')
+    oneof_ascii "xX"
+    man $ skipSatisfyAscii isHexDigit
+    -- exponent. exponent is given in decimal.
+    exp "pP"
 
 -- | Consume an integer character constant and then discard it.
 character_constant = () <$ character_constant_val
@@ -736,8 +736,8 @@ char_encpfx =
            "L" -> cst_wchar_type <$> charset
          |]
    )
-  where
-    charset = pscharset <$> ask
+ where
+  charset = pscharset <$> ask
 
 -- | Consume an integer character constant and then return its value.
 --
@@ -746,41 +746,41 @@ character_constant_val = do
   typ <- char_encpfx <|> pure PT.Int_
   val <- between quote quote value
   pure $ val typ
-  where
-    value =
-      $( switch
-           [|
-             case _ of
-               "\\" -> esc
-               "'" -> skipBack 1 >> failed
-               "\n" -> failed
-               "\r" -> failed
-               "\r\n" -> failed
-               _ -> CharacterLiteral <$> anyChar
-             |]
-       )
-    esc = choice [simple, octal, hex, skipBack 1 >> universal]
-      where
-        simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
-        universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
-        -- FIXME: currently we assume that the host and target have the
-        -- same integer endianness.
-        -- base parser digit_sep (max_digits or -1 to disable)
-        octal = IntCharacterLiteral <$> asm 8 _octdigit (pure ()) 3
-        hex =
-          IntCharacterLiteral <$> do
-            $(char 'x')
-            asm 16 _hexdigit (pure ()) (-1)
-        interpret =
-          CharacterLiteral . \case
-            'a' -> '\a'
-            'b' -> '\b'
-            'f' -> '\f'
-            'n' -> '\n'
-            'r' -> '\r'
-            't' -> '\t'
-            'v' -> '\v'
-            c -> c
+ where
+  value =
+    $( switch
+         [|
+           case _ of
+             "\\" -> esc
+             "'" -> skipBack 1 >> failed
+             "\n" -> failed
+             "\r" -> failed
+             "\r\n" -> failed
+             _ -> CharacterLiteral <$> anyChar
+           |]
+     )
+  esc = choice [simple, octal, hex, skipBack 1 >> universal]
+   where
+    simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
+    universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
+    -- FIXME: currently we assume that the host and target have the
+    -- same integer endianness.
+    -- base parser digit_sep (max_digits or -1 to disable)
+    octal = IntCharacterLiteral <$> asm 8 _octdigit (pure ()) 3
+    hex =
+      IntCharacterLiteral <$> do
+        $(char 'x')
+        asm 16 _hexdigit (pure ()) (-1)
+    interpret =
+      CharacterLiteral . \case
+        'a' -> '\a'
+        'b' -> '\b'
+        'f' -> '\f'
+        'n' -> '\n'
+        'r' -> '\r'
+        't' -> '\t'
+        'v' -> '\v'
+        c -> c
 
 -- | A string literal; escape sequences have been interpreted, but
 -- a NUL byte has NOT been inserted at the end. The encoding is:
@@ -807,38 +807,38 @@ string_literal_val = do
         | otherwise = err $ LiteralBadError BadChar
   val <- between dbquote dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
   pure $ StringLiteral val typ
-  where
-    -- currently, no support for joining adjacent string literals, or
-    -- writing a string literal across source lines using a backslash.
-    ch =
-      $( switch
-           [|
-             case _ of
-               "\\" -> esc
-               "\"" -> skipBack 1 >> failed
-               "\n" -> failed
-               "\r" -> failed
-               "\r\n" -> failed
-               _ -> fromIntegral . ord <$> anyChar
-             |]
-       )
-    esc = choice [simple, octal, hex, skipBack 1 >> universal]
-      where
-        simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
-        universal = fromIntegral <$> ucnam_val_word
-        -- base parser digit_sep (max_digits or -1 to disable)
-        octal = fromIntegral <$> asm 8 _octdigit (pure ()) 3
-        hex = do $(char 'x'); fromIntegral <$> asm 16 _hexdigit (pure ()) (-1)
-        interpret =
-          fromIntegral . ord . \case
-            'a' -> '\a'
-            'b' -> '\b'
-            'f' -> '\f'
-            'n' -> '\n'
-            'r' -> '\r'
-            't' -> '\t'
-            'v' -> '\v'
-            c -> c
+ where
+  -- currently, no support for joining adjacent string literals, or
+  -- writing a string literal across source lines using a backslash.
+  ch =
+    $( switch
+         [|
+           case _ of
+             "\\" -> esc
+             "\"" -> skipBack 1 >> failed
+             "\n" -> failed
+             "\r" -> failed
+             "\r\n" -> failed
+             _ -> fromIntegral . ord <$> anyChar
+           |]
+     )
+  esc = choice [simple, octal, hex, skipBack 1 >> universal]
+   where
+    simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
+    universal = fromIntegral <$> ucnam_val_word
+    -- base parser digit_sep (max_digits or -1 to disable)
+    octal = fromIntegral <$> asm 8 _octdigit (pure ()) 3
+    hex = do $(char 'x'); fromIntegral <$> asm 16 _hexdigit (pure ()) (-1)
+    interpret =
+      fromIntegral . ord . \case
+        'a' -> '\a'
+        'b' -> '\b'
+        'f' -> '\f'
+        'n' -> '\n'
+        'r' -> '\r'
+        't' -> '\t'
+        'v' -> '\v'
+        c -> c
 
 -- | Parse a string literal but discard the value.
 string_literal = () <$ string_literal_val

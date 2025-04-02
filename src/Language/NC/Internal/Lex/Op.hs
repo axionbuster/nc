@@ -4,7 +4,8 @@ module Language.NC.Internal.Lex.Op where
 
 import Control.Monad.Combinators.Expr
 import Language.NC.Internal.Lex.Lex
-import Language.NC.Internal.Prelude hiding (assign)
+import {-# SOURCE #-} Language.NC.Internal.Lex.Type
+import Language.NC.Internal.Prelude hiding (assign, shift)
 
 -- parsing C23 operators...
 --  - an expression is an operator bound to operands, or a primary expression
@@ -69,15 +70,15 @@ data Expr
   | -- | bitwise not (~)
     ExprBitNot Expr
   | -- | cast, type and value
-    ExprCast Expr Expr
+    ExprCast Type Expr
   | -- | dereference using (*)
     ExprDeref Expr
   | -- | address of using (&)
     ExprAddrOf Expr
   | -- | sizeof operator, either type or value
-    ExprSizeOf Expr
+    ExprSizeOf (Either Type Expr)
   | -- | alignof operator, either type or value
-    ExprAlignOf Expr
+    ExprAlignOf (Either Type Expr)
   | -- | multiplication
     ExprTimes Expr Expr
   | -- | division
@@ -151,7 +152,7 @@ assign =
     a <- lx0 unary
     op <- lx0 binasgnop
     b <- lx0 assign
-    op a b
+    pure $ op a b
 
 cond = do
   a <- lx0 logor
@@ -193,100 +194,109 @@ rel = do
   r <- relop
   b <- lx0 shift
   pure $ r a b
-  where
-    relop =
-      $( switch_ws0
-           [|
-             case _ of
-               "<" -> pure ExprLT
-               ">" -> pure ExprGT
-               "<=" -> pure ExprLE
-               ">=" -> pure ExprGE
-               "==" -> pure ExprEQ
-               "!=" -> pure ExprNE
-             |]
-       )
+ where
+  relop =
+    $( switch_ws0
+         [|
+           case _ of
+             "<" -> pure ExprLT
+             ">" -> pure ExprGT
+             "<=" -> pure ExprLE
+             ">=" -> pure ExprGE
+             "==" -> pure ExprEQ
+             "!=" -> pure ExprNE
+           |]
+     )
 
 shift = do
   a <- lx0 add
   s <- shiftop
   b <- lx0 add
   pure $ s a b
-  where
-    shiftop =
-      $( switch_ws0
-           [|
-             case _ of
-               "<<" -> pure ExprShiftL
-               ">>" -> pure ExprShiftR
-             |]
-       )
+ where
+  shiftop =
+    $( switch_ws0
+         [|
+           case _ of
+             "<<" -> pure ExprShiftL
+             ">>" -> pure ExprShiftR
+           |]
+     )
 
 add = do
   a <- lx0 mul
   s <- addop
   b <- lx0 mul
   pure $ s a b
-  where
-    addop =
-      $( switch_ws0
-           [|
-             case _ of
-               "+" -> pure ExprPlus
-               "-" -> pure ExprMinus
-             |]
-       )
+ where
+  addop =
+    $( switch_ws0
+         [|
+           case _ of
+             "+" -> pure ExprPlus
+             "-" -> pure ExprMinus
+           |]
+     )
 
 mul = do
   a <- lx0 cast_
   s <- mulop
   b <- lx0 cast_
   pure $ s a b
-  where
-    mulop =
-      $( switch_ws0
-           [|
-             case _ of
-               "*" -> pure ExprTimes
-               "/" -> pure ExprDiv
-               "%" -> pure ExprMod
-             |]
-       )
+ where
+  mulop =
+    $( switch_ws0
+         [|
+           case _ of
+             "*" -> pure ExprTimes
+             "/" -> pure ExprDiv
+             "%" -> pure ExprMod
+           |]
+     )
 
-cast_ = lx0 unary <|> ExprCast <$> lx0 (inpar (lx1 typeexpr)) <*> cast_
+cast_ =
+  choice
+    [ lx0 unary,
+      do
+        typ <- lx0 (inpar (lx1 parsetype))
+        val <- cast_
+        pure $ ExprCast typ val
+    ]
 
 unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
-  where
-    pfxpm =
-      $( switch_ws0
-           [|
-             case _ of "++" -> pure ExprPreInc; "--" -> pure ExprPreDec
-             |]
-       )
-        <*> unary
-    pfxcast =
-      $( switch_ws0
-           [|
-             case _ of
-               "&" -> pure ExprAddrOf
-               "*" -> pure ExprDeref
-               "+" -> pure ExprUnaryPlus
-               "~" -> pure ExprBitNot
-               "!" -> pure ExprNot
-               "-" -> pure ExprUnaryMinus
-             |]
-       )
-        <*> cast_
-    sizeof = do
-      lx1 sizeof'
-      unary <|> fmap ExprSizeOf (inpar (lx1 typeexpr))
-    alignof = do
-      lx1 alignof'
-      ExprAlignOf <$> inpar (lx1 typeexpr)
+ where
+  pfxpm =
+    $( switch_ws0
+         [|
+           case _ of "++" -> pure ExprPreInc; "--" -> pure ExprPreDec
+           |]
+     )
+      <*> unary
+  pfxcast =
+    $( switch_ws0
+         [|
+           case _ of
+             "&" -> pure ExprAddrOf
+             "*" -> pure ExprDeref
+             "+" -> pure ExprUnaryPlus
+             "~" -> pure ExprBitNot
+             "!" -> pure ExprNot
+             "-" -> pure ExprUnaryMinus
+           |]
+     )
+      <*> cast_
+  sizeof = do
+    lx1 sizeof'
+    (ExprSizeOf . Left <$> inpar (lx1 parsetype)) <|> (ExprSizeOf . Right <$> unary)
+  alignof = do
+    lx1 alignof'
+    ExprAlignOf . Left <$> inpar (lx1 parsetype)
 
-compound =
-  -- now literal in initializer list form.
-  err $ InternalError "compound literal not implemented yet"
+compound = do
+  -- For now, just handle the error since we need to refactor
+  -- the Expr and Type handling in the AST to properly implement
+  -- compound literals
+  lx0 (inpar (lx1 parsetype)) >> lx0 (incur anyChar) >> failed
 
 postfix = do
   a <- primary
@@ -324,11 +334,14 @@ generic = do
     lx0 comma
     b <- genassoc `sepBy1` lx0 comma
     pure $ ExprGeneric a b
-  where
-    genassoc = do
-      a <- lx1 (typeexpr <|> default')
-      lx0 colon
-      GenAssoc (Just a) <$> many (lx0 comma >> lx1 typeexpr)
+ where
+  genassoc = do
+    -- Temporarily handle only the default case since we need to
+    -- decide how to convert Type to Str or adjust the GenAssoc structure
+    lx1 default'
+    lx0 colon
+    b <- lx0 assign
+    pure $ GenAssoc Nothing b
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =
