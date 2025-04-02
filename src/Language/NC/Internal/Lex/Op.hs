@@ -1,33 +1,45 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 
-module Language.NC.Internal.Lex.Op where
+-- | This module implements parsing of C23 expressions and operators.
+--
+-- An expression in C can be either:
+--
+--   * An operator applied to operands
+--   * A primary expression (identifier, literal, string literal,
+--     parenthesized expression, or generic selection)
+--
+-- Implementation note:
+--
+-- Rather than directly translating the C grammar (which would produce
+-- a deep and unbalanced tree), this implementation constructs the AST
+-- directly without building an intermediate CST (Concrete Syntax Tree).
+module Language.NC.Internal.Lex.Op (
+  -- * Types
+  Expr (..),
+  PrimExpr (..),
+  GenAssoc (..),
+
+  -- * Parsers
+  expr,
+  expr_,
+) where
 
 import Language.NC.Internal.Lex.Lex
 import {-# SOURCE #-} Language.NC.Internal.Lex.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
 
--- parsing C23 operators...
---  - an expression is an operator bound to operands, or a primary expression
---  - a primary expression is an identifier, a literal, a string literal,
---    a parenthesized expression, or a generic selection
---
--- ... design notes ...
---  - not much to say except that it'll refrain from a deep or unbalanced
---    tree such as would occur with a literal implementation of the
---    C grammar. the CST isn't being constructed; the AST is
---    being directly constructed.
-
--- | A primary expression.
+-- | Represents a primary expression, which is the most basic form
+-- of expression in C.
 data PrimExpr
-  = -- | identifier
+  = -- | An identifier
     PrimId Str
-  | -- | literal, except string literal
+  | -- | A literal value (excluding string literals)
     PrimLit Lit
-  | -- | string literal
+  | -- | A string literal
     PrimStrLit Str
-  | -- | parenthesized expression
+  | -- | An expression in parentheses
     PrimParen (WithSpan Expr)
-  | -- | generic selection
+  | -- | A generic selection expression
     PrimGeneric Expr GenAssoc
   deriving (Eq, Show)
 
