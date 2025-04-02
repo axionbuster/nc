@@ -6,7 +6,20 @@ import Data.Text (Text)
 import Data.Word
 import FlatParse.Stateful (Span)
 import Text.Printf (printf)
-import Prelude (Eq, Show (..), mempty)
+import Prelude (Eq, Ord, Show (..), mempty)
+
+-- | Severity of a diagnostic message
+data Severity
+  = -- | Error stops compilation
+    SeverityError
+  | -- | Warning continues compilation
+    SeverityWarning
+  | -- | Note is informational only
+    SeverityNote
+  deriving (Eq, Show, Ord)
+
+-- | Function that determines the final severity for a given error and default severity
+type SeverityPolicy = Error -> Severity -> Severity
 
 -- | An error, warning, or message of any kind.
 --
@@ -22,6 +35,16 @@ data Error
     UnexpectedEOFError
   | -- | Internal error
     InternalError String
+  | -- | Symbol redefinition
+    SymbolRedefinitionError SymbolRedefinitionWhy
+  deriving (Eq, Show)
+
+-- | Reasons for symbol redefinition errors
+data SymbolRedefinitionWhy
+  = -- | Symbol already defined in current scope
+    AlreadyDefinedInScope
+  | -- | Type mismatch in redefinition
+    TypeMismatch
   deriving (Eq, Show)
 
 -- | Why a primitive type couldn't be parsed, or is incorrect.
@@ -84,17 +107,30 @@ instance Exception Error
 instance IsString Error where
   fromString = BasicError
 
--- | An error annotated with span and optional hints.
+-- | An error annotated with span, severity, and optional hints.
 data AnnotatedError = AnnotatedError
-  { aeerr :: Error,
-    aespn :: Span,
-    aerel :: [RelatedInfo]
+  { aeerr :: !Error,
+    aespn :: !Span,
+    aesev :: !Severity,
+    aerel :: ![RelatedInfo]
   }
   deriving (Eq, Show)
 
--- | Create a new empty annotated error with the given span.
-aenew :: Error -> Span -> AnnotatedError
-aenew e s = AnnotatedError e s mempty
+-- | Create a new empty annotated error with the given span and severity.
+aenew :: Error -> Span -> Severity -> AnnotatedError
+aenew e s sev = AnnotatedError e s sev mempty
+
+-- | Create a new error with Error severity.
+aenewerror :: Error -> Span -> AnnotatedError
+aenewerror e s = aenew e s SeverityError
+
+-- | Create a new warning with Warning severity.
+aenewwarning :: Error -> Span -> AnnotatedError
+aenewwarning e s = aenew e s SeverityWarning
+
+-- | Default severity policy (keeps original severity).
+defaultsevpolicy :: SeverityPolicy
+defaultsevpolicy _ s = s
 
 -- | Hints and other related info.
 data RelatedInfo = RelatedInfo

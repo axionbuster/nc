@@ -867,7 +867,7 @@ pcatch p q = do
   let h e = do
         en <- getPos
         es <- pserrors <$> ask
-        modifyIORef es (:|> aenew e (Span st en))
+        modifyIORef es (:|> aenew e (Span st en) SeverityError)
         q e
   withError p h
 

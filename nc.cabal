@@ -38,7 +38,8 @@ library
                         Language.NC.Internal.Lex.Op,
                         Language.NC.Internal.Lex.Type,
                         Language.NC.Internal.Lex.Decl,
-                        Language.NC.Internal.PrimTypes
+                        Language.NC.Internal.PrimTypes,
+                        Language.NC.Internal.Symbol
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, hashable,
                         bytestring, text, parser-combinators,

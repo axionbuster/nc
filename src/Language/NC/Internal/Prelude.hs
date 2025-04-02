@@ -23,6 +23,7 @@ module Language.NC.Internal.Prelude (
   module GHC.Generics,
   module Language.NC.Internal.Error,
   module Language.NC.Internal.Parse,
+  module Language.NC.Internal.Symbol,
   module Prelude,
   module Text.Printf,
   module UnliftIO.IORef,
@@ -59,6 +60,7 @@ import GHC.Float
 import GHC.Generics hiding (from, to)
 import Language.NC.Internal.Error
 import Language.NC.Internal.Parse
+import Language.NC.Internal.Symbol
 import Text.Printf (PrintfArg, PrintfType, printf)
 import UnliftIO.IORef
 import Prelude hiding (lex, take, unzip)

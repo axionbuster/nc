@@ -3,10 +3,8 @@ module Language.NC.Internal.Parse (
   Parser,
   ParserState (..),
   WithSpan (..),
-  Symbol,
   IntegerSettings (..),
   CharSettings (..),
-  Str,
   Seq (..),
   RelatedInfo (..),
   Endianness (..),
@@ -18,51 +16,23 @@ module Language.NC.Internal.Parse (
   ist_precisebw,
   int_canrepresent,
   runandgetspan,
-  newUnique,
+  cmpspans,
+  symcreate,
+  emiterror,
+  emitwarning,
 ) where
 
 import Control.Monad.IO.Class (liftIO)
-import Data.ByteString (ByteString)
+import Data.Functor
 import Data.IORef
-import Data.Sequence (Seq ((:<|), (:|>)))
-import Data.Unique hiding (newUnique)
-import Data.Unique qualified as U
+import Data.Sequence (Seq ((:<|), (:|>)), (|>))
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import Language.NC.Internal.Error
 import Language.NC.Internal.PrimTypes qualified as PT
+import Language.NC.Internal.Symbol (Str, Symbol, SymbolTable)
+import Language.NC.Internal.Symbol qualified as Sym
 import Prelude
-
--- | Memory used for strings.
-type Str = ByteString
-
--- anonymous structs, unions, etc. get a unique symbol to represent
--- them even though they don't have a name.
-
--- | Symbol (without the actual name). Wrapper around 'Unique' with proper instances.
-newtype Symbol = Symbol Unique
-  deriving (Eq, Ord)
-
-instance Show Symbol where
-  show _ = "(anonymous)"
-
--- | Information about a symbol.
-data SymbolInfo = SymbolInfo
-  { -- | The symbol's name.
-    si_name :: Str,
-    -- | The symbol's type.
-    si_type :: PT.PrimType,
-    -- | The symbol's location in the source code.
-    --     In rare occasions this may be a bogus location, that is,
-    --     0:0, if the symbol was created in thin air for various reasons.
-    si_loc :: Span
-  }
-  deriving (Eq, Show)
-
-instance Ord SymbolInfo where
-  SymbolInfo n1 t1 s1 `compare` SymbolInfo n2 t2 s2 =
-    compare n1 n2 <> compare t1 t2 <> cmpspans s1 s2
-  {-# INLINE compare #-}
 
 -- | Bit widths of primitive integers. Pay especially close attention to
 -- the bit width of @long@; on Windows, it's generally 32 bits, but on
@@ -156,11 +126,30 @@ data CharSettings = CharSettings
     cst_char_endian :: Endianness
   }
 
+-- | Compliance settings for controlling parser behavior.
+data ComplianceSettings = ComplianceSettings
+  { -- | Allow variable shadowing in block scope (non-standard, default on)
+    comp_allow_block_shadowing :: !Bool
+  }
+
+-- | Default compliance settings.
+defaultcompliancesettings :: ComplianceSettings
+defaultcompliancesettings =
+  ComplianceSettings
+    { comp_allow_block_shadowing = True
+    }
+
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
   { pserrors :: IORef (Seq AnnotatedError),
     psintset :: IntegerSettings,
-    pscharset :: CharSettings
+    pscharset :: CharSettings,
+    -- | Symbol table for name resolution
+    pssymtab :: SymbolTable,
+    -- | Compliance settings for language features
+    pscompliancesettings :: ComplianceSettings,
+    -- | Function that determines final severity of messages
+    pssevpolicy :: SeverityPolicy
   }
 
 -- | See if an integer constant can be represented by a given type.
@@ -192,12 +181,15 @@ int_canrepresent i = \case
 -- - @char@ is backed by @signed char@.
 -- - @wchar_t@ is currently represented by @int@.
 -- - Multi-byte characters are encoded in little-endian Unicode.
+-- - Allows block variable shadowing (non-standard).
+-- - Uses default severity policy for errors and warnings.
 mkstate0 :: IO ParserState
 mkstate0 = do
   e <- newIORef mempty
+  symtab <- Sym.newsymtable
   let is0 = IntegerSettings 8 16 32 64 64 True 32 64 64
   let cs0 = CharSettings PT.UInt_ PT.UChar_ PT.UShort_ PT.UInt_ LittleEndian
-  pure (ParserState e is0 cs0)
+  pure (ParserState e is0 cs0 symtab defaultcompliancesettings defaultsevpolicy)
 
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error
@@ -230,6 +222,46 @@ runandgetspan p = withSpan p pwithspan
 throwbasic :: String -> Parser a
 throwbasic = err . BasicError
 
--- | Create a new unique symbol.
-newUnique :: Parser Symbol
-newUnique = Symbol <$> liftIO U.newUnique
+-- | Helper for emitting diagnostics with appropriate severity.
+emitdiagnostic :: Error -> Span -> Severity -> Parser ()
+emitdiagnostic e s defaultsev = do
+  policy <- pssevpolicy <$> ask
+  let finalsev = policy e defaultsev
+  errs <- pserrors <$> ask
+  liftIO $ modifyIORef' errs (|> aenew e s finalsev)
+
+-- | Emit an error.
+emiterror :: Error -> Span -> Parser ()
+emiterror e s = emitdiagnostic e s SeverityError
+
+-- | Emit a warning.
+emitwarning :: Error -> Span -> Parser ()
+emitwarning e s = emitdiagnostic e s SeverityWarning
+
+-- | Define a symbol with compliance-based handling of redefinitions
+symdefine ::
+  SymbolTable -> Str -> PT.PrimType -> Span -> Parser Symbol
+symdefine st name typ loc = do
+  settings <- pscompliancesettings <$> ask
+  existingsym <- liftIO $ Sym.sympresent st name
+  case existingsym of
+    Just sym -> do
+      existingtyp <- liftIO $ Sym.symtype st sym
+      case existingtyp of
+        Just etyp
+          | etyp /= typ ->
+              emiterror (SymbolRedefinitionError TypeMismatch) loc $> sym
+          | comp_allow_block_shadowing settings -> do
+              emitwarning (SymbolRedefinitionError AlreadyDefinedInScope) loc
+              Sym.symdefine st name typ loc
+          | otherwise -> do
+              emiterror (SymbolRedefinitionError AlreadyDefinedInScope) loc
+              pure sym
+        Nothing -> Sym.symdefine st name typ loc
+    Nothing -> Sym.symdefine st name typ loc
+
+-- | Create a symbol in the current scope with appropriate error handling
+symcreate :: Str -> PT.PrimType -> Span -> Parser Symbol
+symcreate name typ loc = do
+  st <- pssymtab <$> ask
+  symdefine st name typ loc

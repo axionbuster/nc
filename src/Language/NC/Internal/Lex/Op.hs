@@ -27,6 +27,7 @@ module Language.NC.Internal.Lex.Op (
 import Language.NC.Internal.Lex.Lex
 import {-# SOURCE #-} Language.NC.Internal.Lex.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
+import Language.NC.Internal.PrimTypes qualified as PT
 
 -- | Represents a primary expression, which is the most basic form
 -- of expression in C.
@@ -378,15 +379,20 @@ postfix = go =<< primary
               lx0 rpar
               pure $ ExprCall a b
             '.' -> do
-              -- placeholder because we don't have a symbol table yet.
-              _ <- lx1 identifier
-              s <- newUnique
+              WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
+
+              -- Create a symbol for the member name
+              s <- symcreate idname PT.Void spn
+
               pure $ ExprMember a s
             '-' ->
               anyChar >>= \case
                 '>' -> do
-                  _ <- lx1 identifier
-                  s <- newUnique
+                  WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
+
+                  -- Create a symbol for the member name
+                  s <- symcreate idname PT.Void spn
+
                   pure $ ExprMemberPtr a s
                 '-' -> pure $ ExprPostDec a
                 _ -> failed
