@@ -27,6 +27,8 @@ module Language.NC.Internal.Lex.Decl (
   Attributes (..),
   Attribute (..),
   AttributeValue (..),
+  DesignatedInit (..),
+  Designator (..),
 
   -- * Optics
 
@@ -165,8 +167,6 @@ data AttributeValue
     AttrExpr Expr
   deriving (Eq, Show)
 
--- * Internal types (concrete syntax tree fragments, only for parsing)
-
 -- | An initializer with optional designator
 data DesignatedInit = DesignatedInit
   { _designator :: Maybe Designator,
@@ -181,6 +181,8 @@ data Designator
   | -- | Member designator .member
     MemberDesignator Symbol
   deriving (Eq, Show)
+
+-- * Internal types (concrete syntax tree fragments, only for parsing)
 
 -- | Intermediate representation for flexible parsing
 data DeclComponents = DeclComponents
