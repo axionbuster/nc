@@ -425,13 +425,70 @@ data TSTok
 
 -- Bitset for type specifier tokens
 newtype TSToks = TSToks {untstoks :: Word32}
-  deriving (Eq, Ord, Num, Bits, FiniteBits, Show)
+  deriving (Eq, Ord, Num, Bits, FiniteBits)
 
 instance Semigroup TSToks where
   TSToks i <> TSToks j = TSToks (i .|. j)
 
 instance Monoid TSToks where
   mempty = TSToks 0
+
+instance Show TSToks where
+  show toks =
+    case joinwords [storage, function, qualifiers, specifiers] of
+      "" -> "<no type specifiers or qualifiers>"
+      s -> s
+   where
+    ifonly b c
+      | (toks .&. b) /= 0 = c
+      | otherwise = ""
+    joinwords = unwords . filter (not . null)
+    storage =
+      joinwords
+        [ ifonly tst_register "register",
+          ifonly tst_auto "auto",
+          ifonly tst_static "static",
+          ifonly tst_extern "extern",
+          ifonly tst_threadlocal "_Thread_local",
+          ifonly tst_typedef "typedef",
+          ifonly tst_constexpr "constexpr"
+        ]
+    function =
+      joinwords
+        [ ifonly tst_inline "inline",
+          ifonly tst_noreturn "_Noreturn"
+        ]
+    qualifiers =
+      joinwords
+        [ ifonly tst_const "const",
+          ifonly tst_volatile "volatile",
+          ifonly tst_restrict "restrict",
+          ifonly tst_atomic "_Atomic"
+        ]
+    specifiers =
+      joinwords
+        [ -- Modifiers
+          ifonly tst_signed "signed",
+          ifonly tst_unsigned "unsigned",
+          -- Base types
+          ifonly tst_void "void",
+          ifonly tst_char "char",
+          ifonly tst_short "short",
+          case toks .&. (tst_long .|. tst_longlong) of
+            t
+              | t == tst_long -> "long"
+              | t == tst_longlong -> "long long"
+              | otherwise -> "",
+          ifonly tst_double "double",
+          ifonly tst_int "int",
+          ifonly tst_float "float",
+          ifonly tst_bool "_Bool",
+          ifonly tst_complex "_Complex",
+          ifonly tst_decimal32 "_Decimal32",
+          ifonly tst_decimal64 "_Decimal64",
+          ifonly tst_decimal128 "_Decimal128",
+          ifonly tst_bitint "_BitInt(...)"
+        ]
 
 -- long is treated separately
 tst_void, tst_char, tst_short, tst_int :: TSToks
@@ -513,28 +570,34 @@ tt2basic v =
     -- void
     0x0001 -> pure PT.Void
     -- char variants
-    0x0002 -> pure PT.Char_
-    0x0102 -> pure PT.SChar_
-    0x0202 -> pure PT.UChar_
-    -- short variants
-    0x0004 -> pure PT.Short_
-    0x0104 -> pure PT.Short_
-    0x0204 -> pure PT.UShort_
-    -- int variants
-    0x0008 -> pure PT.Int_
+    0x0002 -> pure PT.Char_ -- char
+    0x0102 -> pure PT.SChar_ -- signed char
+    0x0202 -> pure PT.UChar_ -- unsigned char
+    -- int variants (0x8)
+    0x0008 -> pure PT.Int_ -- (sim.)
     0x0108 -> pure PT.Int_
     0x0208 -> pure PT.UInt_
+    -- short variants
+    0x0004 -> pure PT.Short_ -- short
+    0x000c -> pure PT.Short_ -- short int
+    0x0104 -> pure PT.Short_ -- signed short
+    0x010c -> pure PT.Short_ -- signed short int
+    0x0204 -> pure PT.UShort_ -- (sim.)
+    0x020c -> pure PT.UShort_ -- (sim.)
     -- long variants
-    0x0010 -> pure PT.Long_
-    0x0018 -> pure PT.Long_
-    0x0110 -> pure PT.Long_
+    0x0010 -> pure PT.Long_ -- long
+    0x0018 -> pure PT.Long_ -- long int
+    0x0110 -> pure PT.Long_ -- (etc.)
     0x0118 -> pure PT.Long_
     0x0210 -> pure PT.ULong_
     0x0218 -> pure PT.ULong_
     -- long long variants
-    0x0030 -> pure PT.LongLong_
+    0x0030 -> pure PT.LongLong_ -- (sim.)
+    0x0038 -> pure PT.LongLong_
     0x0130 -> pure PT.LongLong_
+    0x0138 -> pure PT.LongLong_
     0x0230 -> pure PT.ULongLong_
+    0x0238 -> pure PT.ULongLong_
     -- floating point types
     0x0040 -> pure PT.Float_
     0x0080 -> pure PT.Double_
@@ -551,15 +614,14 @@ tt2basic v =
     0x4000 -> pure $ PT.Float (PT.Real PT.RFDecimal128)
     -- bit int types
     0x8000 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
-    0x9000 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
-    0xA000 -> pure $ PT.Int PT.Unsigned (PT.BitInt 0)
+    0x8100 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
+    0x8200 -> pure $ PT.Int PT.Unsigned (PT.BitInt 0)
     -- error case
-    t ->
+    _ ->
       err
         $ BasicError
-        $ printf
-          "Unknown type token combination 0x%04x"
-          (untstoks t)
+        $ "Unknown type token combination %s"
+        ++ show v
 
 -- add to the type token counts
 newtype SpecQual = SpecQual {runspecqual :: TypeTokens -> TypeTokens}
