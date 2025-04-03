@@ -766,17 +766,19 @@ typespecquals = do
   let tt = f $ TypeTokens mempty mempty 0
   checksanity tt
   bt0 <- tt2basic (_tt_mask tt)
-  bt1 <- case tt ^. tt_bitintwidth of
-    0 -> pure bt0 -- absent.
-    bw
-      | bw < 256 -> case bt0 of
-          BTPrim (PT.Int signed (PT.BitInt _)) ->
-            pure $ BTPrim $ PT.Int signed (PT.BitInt $ fromIntegral bw)
-          _ -> err $ InternalError "typespecquals: Nothing"
-      | otherwise ->
-          err
-            $ InternalError
-              ("typespecquals: bad _BitInt width " ++ show bw)
+  bt1 <- case tt ^. tt_mask .&. tst_bitint of
+    0 -> pure bt0 -- absent _BitInt(N) type specifier.
+    _ ->
+      let bw = tt ^. tt_bitintwidth
+       in if 0 < bw && bw < 256
+            then case bt0 of
+              BTPrim (PT.Int signed (PT.BitInt _)) ->
+                pure $ BTPrim $ PT.Int signed (PT.BitInt $ fromIntegral bw)
+              _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
+            else
+              err
+                $ BasicError
+                  ("typespecquals: bad _BitInt width " ++ show bw)
   -- Promote the BaseType into a Type, representing a fully qualified
   -- C type with storage duration annotations. Decorate this Type.
   let ty0 = Type mempty bt1 mempty mempty AlignNone
