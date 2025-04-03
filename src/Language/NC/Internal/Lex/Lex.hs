@@ -479,7 +479,7 @@ keyword =
 
 -- | Any identifier. This allows reserved identifiers like @__func__@
 -- to be used. For use in declarations, consider 'identifier_def' instead.
-identifier = id_head >> skipMany id_tail
+identifier = lookahead (fails keyword) >> id_head >> skipMany id_tail
  where
   id_head = nondigit <|> universal_character_name
   id_tail = fullset <|> universal_character_name

@@ -356,6 +356,10 @@ type-specifier-qualifier ←
   # Alignment specifiers
   alignment-specifier
 
+alignment-specifier ←
+  'alignas' '(' type-name ')' /
+  'alignas' '(' constant-expression ')'
+
 == Implementation strategy ==
 
 1. Parse all specifiers and qualifiers, building a base type and qualifier set
@@ -432,7 +436,7 @@ data TSTok
     TStDecimal32 -- _Decimal32
   | TStDecimal64 -- _Decimal64
   | TStDecimal128 -- _Decimal128
-  | TStBitInt -- _BitInt
+  | TStBitInt -- _BitInt(...)
   | -- Type qualifiers
     TStConst -- const
   | TStVolatile -- volatile
@@ -443,16 +447,23 @@ data TSTok
   | TStAuto -- auto
   | TStStatic -- static
   | TStExtern -- extern
-  | TStThreadLocal -- _Thread_local
+  | TStThreadLocal -- _Thread_local, thread_local
   | TStTypedef -- typedef
   | TStConstexpr -- constexpr
   | -- Function specifiers
     TStInline -- inline
   | TStNoreturn -- _Noreturn
+  | -- Compound type specifiers
+    TStStruct -- struct ...
+  | TStUnion -- union ...
+  | TStEnum -- enum ...
+  | TStTypedefName -- <identifier>
+  -- Alignment specifier
+  | TStAlignas -- _Alignas(...), alignas(...)
   deriving (Eq, Enum, Show, Ord)
 
 -- Bitset for type specifier tokens
-newtype TSToks = TSToks {untstoks :: Word32}
+newtype TSToks = TSToks {untstoks :: Word64}
   deriving (Eq, Ord, Num, Bits, FiniteBits)
 
 instance Semigroup TSToks where
@@ -515,7 +526,14 @@ instance Show TSToks where
           ifonly tst_decimal32 "_Decimal32",
           ifonly tst_decimal64 "_Decimal64",
           ifonly tst_decimal128 "_Decimal128",
-          ifonly tst_bitint "_BitInt(...)"
+          ifonly tst_bitint "_BitInt(...)",
+          -- Compound type specifiers
+          ifonly tst_struct "struct ...",
+          ifonly tst_union "union ...",
+          ifonly tst_enum "enum ...",
+          ifonly tst_typedefname "<typedef-name>",
+          -- Alignment specifiers
+          ifonly tst_alignas "alignas(...)"
         ]
 
 -- long is treated separately
@@ -574,6 +592,19 @@ tst_constexpr, tst_inline, tst_noreturn :: TSToks
 tst_constexpr = TSToks (1 .<<. 26)
 tst_inline = TSToks (1 .<<. 27)
 tst_noreturn = TSToks (1 .<<. 28)
+
+-- compound type specifiers
+
+tst_struct, tst_union, tst_enum, tst_typedefname :: TSToks
+tst_struct = TSToks (1 .<<. 29)
+tst_union = TSToks (1 .<<. 30)
+tst_enum = TSToks (1 .<<. 31)
+tst_typedefname = TSToks (1 .<<. 32)
+
+-- alignment specifiers
+
+tst_alignas :: TSToks
+tst_alignas = TSToks (1 .<<. 33)
 
 -- | Container for holding all information collected during type parsing
 data TypeTokens = TypeTokens

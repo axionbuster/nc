@@ -6,6 +6,7 @@ module Language.NC.Internal.Symbol (
   -- * Types
   Symbol (..),
   SymbolInfo (..),
+  SymbolKind (..),
   Str,
   SymbolTable,
   ScopeStack,
@@ -20,7 +21,7 @@ module Language.NC.Internal.Symbol (
   symlookup,
   symname,
   sympresent,
-  symtype,
+  symkind,
 ) where
 
 import Control.Monad.IO.Class (liftIO)
@@ -32,6 +33,7 @@ import Data.Unique hiding (newUnique)
 import Data.Unique qualified as U
 import FlatParse.Stateful (Span (..), err)
 import Language.NC.Internal.Error
+import {-# SOURCE #-} Language.NC.Internal.Lex.Type (Type)
 import {-# SOURCE #-} Language.NC.Internal.Parse (Parser, cmpspans)
 import Language.NC.Internal.PrimTypes qualified as PT
 import Prelude
@@ -52,13 +54,21 @@ instance Show Symbol where
 instance Hashable Symbol where
   hashWithSalt s (Symbol u) = hashWithSalt s (hashUnique u)
 
+-- | The kind of a symbol.
+data SymbolKind
+  = -- | The symbol is a typedef of an earlier symbol.
+    -- This is the symbol it's referring to.
+    SymTypedef Symbol
+  | -- | Symbol defines a type.
+    SymIsType Type
+
 -- | Information about a symbol.
--- This includes the symbol's name, type, and location.
+-- This includes the symbol's name, kind, and location.
 data SymbolInfo = SymbolInfo
   { -- | The symbol's name.
     si_name :: !Str,
-    -- | The symbol's type.
-    si_type :: !PT.PrimType,
+    -- | The symbol's kind.
+    si_kind :: !SymbolKind,
     -- | The symbol's location in the source code.
     --   In rare occasions this may be a bogus location, that is,
     --   0:0, if the symbol was created in thin air for various reasons.
@@ -82,8 +92,8 @@ type FastTable k v = H.BasicHashTable k v
 data ScopeInfo = ScopeInfo
   { -- | Symbol's name
     scope_name :: !Str,
-    -- | Symbol's type
-    scope_type :: !PT.PrimType
+    -- | Symbol's kind
+    scope_kind :: !SymbolKind
     -- Add other properties as needed
   }
 
@@ -99,8 +109,8 @@ data SymbolTable = SymbolTable
     symtab_names :: !(FastTable Symbol Str),
     -- | Current scope stack
     symtab_scopes :: !(IORef ScopeStack),
-    -- | Type definitions table
-    symtab_types :: !(FastTable Symbol PT.PrimType)
+    -- | Kind definitions table
+    symtab_kinds :: !(FastTable Symbol SymbolKind)
   }
 
 -- | Create a new empty symbol table
@@ -109,8 +119,8 @@ newsymtable = do
   names <- H.new
   globalScope <- H.new
   scopes <- newIORef (ScopeStack [globalScope])
-  types <- H.new
-  pure $ SymbolTable names scopes types
+  kinds <- H.new
+  pure $ SymbolTable names scopes kinds
 
 -- | Enter a new scope
 enterscope :: SymbolTable -> IO ()
@@ -128,7 +138,7 @@ exitscope st = do
       (_ : rest) -> ScopeStack rest
 
 -- | Define a symbol in the current scope with error handling
-symdefine :: SymbolTable -> Str -> PT.PrimType -> Span -> Parser Symbol
+symdefine :: SymbolTable -> Str -> SymbolKind -> Span -> Parser Symbol
 symdefine st name typ _loc = do
   sym <- liftIO newUnique
   scopes <- liftIO $ readIORef (symtab_scopes st)
@@ -137,7 +147,7 @@ symdefine st name typ _loc = do
     ScopeStack (currentScope : _) -> liftIO do
       H.insert currentScope name sym
       H.insert (symtab_names st) sym name
-      H.insert (symtab_types st) sym typ
+      H.insert (symtab_kinds st) sym typ
       pure sym
 
 -- | Check if a symbol exists in the current scope
@@ -148,12 +158,12 @@ sympresent st name = do
     [] -> pure Nothing
     (currentScope : _) -> H.lookup currentScope name
 
--- | Get the type of a symbol
-symtype :: SymbolTable -> Symbol -> IO (Maybe PT.PrimType)
-symtype st sym = H.lookup (symtab_types st) sym
+-- | Get the kind of a symbol
+symkind :: SymbolTable -> Symbol -> IO (Maybe SymbolKind)
+symkind st sym = H.lookup (symtab_kinds st) sym
 
 -- | Look up a symbol by name in scopes
-symlookup :: SymbolTable -> Str -> IO (Maybe (Symbol, PT.PrimType))
+symlookup :: SymbolTable -> Str -> IO (Maybe (Symbol, SymbolKind))
 symlookup st name = do
   ScopeStack scopes <- readIORef (symtab_scopes st)
   -- Search from innermost scope outward
@@ -164,12 +174,15 @@ symlookup st name = do
     result <- H.lookup scope name
     case result of
       Just sym -> do
-        typMaybe <- H.lookup (symtab_types st) sym
-        case typMaybe of
+        typmaybe <- H.lookup (symtab_kinds st) sym
+        case typmaybe of
           Just typ -> pure $ Just (sym, typ)
           Nothing -> pure Nothing -- Should never happen if tables consistent
       Nothing -> findsym rest
 
--- | Get name for a symbol if it exists
+-- | Get name for a symbol if it exists.
+--
+-- Note: it is perfectly reasonable for an anonymous symbol to exist
+-- in certain occasions (a few types such as structs can lack names).
 symname :: SymbolTable -> Symbol -> IO (Maybe Str)
 symname st sym = H.lookup (symtab_names st) sym
