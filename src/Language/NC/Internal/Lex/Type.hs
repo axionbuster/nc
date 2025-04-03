@@ -1,3 +1,8 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 module Language.NC.Internal.Lex.Type (
   -- * Types
   Type (..),
@@ -49,19 +54,30 @@ module Language.NC.Internal.Lex.Type (
 
   -- * Parsing an expression determining type
   parsetype,
+
+  -- * Debugging
+  typespecqual,
+  typespecquals,
+  SpecQual (..),
+  TypeTokens (..),
 ) where
 
 import Data.List (intercalate)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid
+import Language.NC.Internal.Lex.Lex
 import Language.NC.Internal.Lex.Op
 import Language.NC.Internal.Prelude
 import Language.NC.Internal.PrimTypes (PrimType)
+import Language.NC.Internal.PrimTypes qualified as PT
 
 -- in this parser-lexer we parse type names.
 
 -- we also define C types.
 
 -- | Source storage class monoid.
-newtype StorageClass = StorageClass {unstorclass :: Int}
+newtype StorageClass = StorageClass {unstorclass :: Int8}
   deriving (Eq, Ord, Bits, FiniteBits)
 
 instance Show StorageClass where
@@ -99,7 +115,7 @@ sc_typedef = StorageClass 32
 sc_constexpr = StorageClass 64
 
 -- | Source function specifier monoid.
-newtype FuncSpec = FuncSpec {unfuncspec :: Int}
+newtype FuncSpec = FuncSpec {unfuncspec :: Int8}
   deriving (Eq, Ord, Bits, FiniteBits)
 
 instance Show FuncSpec where
@@ -195,7 +211,7 @@ data ArraySize
   deriving (Eq, Show, Ord)
 
 -- | Monoid representing qualifier monoid.
-newtype TypeQual = TypeQual {untypequal :: Int}
+newtype TypeQual = TypeQual {untypequal :: Int8}
   deriving (Eq, Ord, Bits, FiniteBits)
 
 instance Show TypeQual where
@@ -265,16 +281,372 @@ data FuncInfo = FuncDef [Param] Type Variadic | FuncDecl
 data Param = Param Type Symbol | ParamUnnamed Type
   deriving (Eq, Show, Ord)
 
-{- new info! C23 fragment (in PEG) of the type-name rule, which
-parsetype represents:
+{- Optimized C23 fragment (in PEG) of the type-name rule for parsetype implementation:
 
-type-name ← specifier-qualifier-list abstract-declarator?
-abstract-declarator ← pointer tail? / tail
-tail ← '(' abstract-declarator ')' suffix* / array attribute-specifier-sequence? / func attribute-specifier-sequence?
-suffix ← '[' type-qualifier-list? assignment-expression? ']' / '[' 'static' type-qualifier-list? assignment-expression ']' / '[' type-qualifier-list 'static' assignment-expression ']' / '[' '*' ']' / '(' parameter-type-list? ')'
-array ← '[' type-qualifier-list? assignment-expression? ']' / '[' 'static' type-qualifier-list? assignment-expression ']' / '[' type-qualifier-list 'static' assignment-expression ']' / '[' '*' ']'
-func ← '(' parameter-type-list? ')'
+# Fully inlined and optimized for PEG parsing efficiency
+type-name ←
+  # Step 1: Parse all type specifiers and qualifiers - collect in a list/set
+  type-specifier-qualifier+
+
+  # Step 2: Parse optional abstract declarator which transforms the base type
+  (
+    # Pointer chain followed by optional direct part
+    ('*' type-qualifier* pointer? direct-abstract-declarator?) /
+
+    # Just direct part without pointer prefix
+    direct-abstract-declarator
+  )?
+
+# Optimized direct abstract declarator with declarator suffixes inlined for fewer productions
+direct-abstract-declarator ←
+  # Initial direct declarator fragment
+  (
+    # Case 1: Parenthesized abstract declarator
+    '(' abstract-declarator ')' /
+
+    # Case 2: Array declarator - all array forms inlined
+    '[' (
+      # Standard array form
+      type-qualifier* assignment-expression? /
+      # Static forms
+      'static' type-qualifier* assignment-expression /
+      type-qualifier+ 'static' assignment-expression /
+      # VLA marker
+      '*'
+    ) ']' /
+
+    # Case 3: Function declarator - parameter list inlined
+    '(' (
+      # Parameter list with optional variadic
+      (declaration-specifiers abstract-declarator?
+        (',' declaration-specifiers abstract-declarator?)*
+        (',' '...')?)
+      / '...'
+    )? ')'
+  )
+
+  # Followed by zero or more additional declarator operations
+  (
+    # Array suffix form - all forms inlined
+    '[' (
+      type-qualifier* assignment-expression? /
+      'static' type-qualifier* assignment-expression /
+      type-qualifier+ 'static' assignment-expression /
+      '*'
+    ) ']' /
+
+    # Function suffix form
+    '(' (
+      (declaration-specifiers abstract-declarator?
+        (',' declaration-specifiers abstract-declarator?)*
+        (',' '...')?)
+      / '...'
+    )? ')'
+  )*
+
+# Type specifier or qualifier - any component of specifier-qualifier-list
+type-specifier-qualifier ←
+  # Type specifiers (inlined key keywords)
+  'void' / 'char' / 'short' / 'int' / 'long' / 'float' / 'double' /
+  'signed' / 'unsigned' / '_Bool' / '_Complex' / '_Decimal32' / '_Decimal64' / '_Decimal128' /
+  # Compound type specifiers
+  struct-or-union-specifier / enum-specifier / atomic-type-specifier /
+  typeof-specifier / typedef-name /
+  # Type qualifiers (inlined)
+  'const' / 'restrict' / 'volatile' / '_Atomic' /
+  # Alignment specifiers
+  alignment-specifier
+
+== Implementation strategy ==
+
+1. Parse all specifiers and qualifiers, building a base type and qualifier set
+   - Collect all tokens that form valid type specifiers/qualifiers
+   - Merge them according to C type combination rules (e.g. unsigned + int)
+   - Build the initial Type node with these collected specifiers
+
+2. If an abstract declarator is present, transform the base type:
+   - For pointers: wrap the current type in BTPointer nodes for each level
+   - For arrays: wrap in BTArray with size information
+   - For functions: wrap in BTFunc with parameter information
+   - Apply in correct order from innermost to outermost
+
+3. Apply qualifiers at appropriate levels:
+   - Pointer qualifiers attach to the pointer level
+   - Array/function qualifiers attach to the respective type node
+
+4. Handle special case combinations:
+   - Atomic type expressions: _Atomic(int) vs _Atomic as a qualifier
+   - Function pointer types: building correct nesting structure
+   - Array of arrays: ensuring proper dimension ordering
+
+Key point: Rather than building a CST and then walking it, transform the Type node
+directly as parsing proceeds, from the base type outward.
 -}
 
+-- as you can see down here, quite a lot of effort was spent in
+-- the permutation parsing of type qualifiers and specifiers.
+
+-- Type specifier token - used to count occurrences in parsing
+data TSTok
+  = -- Type specifiers
+    TStVoid -- void
+  | TStChar -- char
+  | TStShort -- short
+  | TStInt -- int
+  | TStLong -- long
+  | TStFloat -- float
+  | TStDouble -- double
+  | TStSigned -- signed
+  | TStUnsigned -- unsigned
+  | TStBool -- _Bool
+  | TStComplex -- _Complex
+  | -- C23 types
+    TStDecimal32 -- _Decimal32
+  | TStDecimal64 -- _Decimal64
+  | TStDecimal128 -- _Decimal128
+  | TStBitInt -- _BitInt
+  | -- Type qualifiers
+    TStConst -- const
+  | TStVolatile -- volatile
+  | TStRestrict -- restrict
+  | TStAtomic -- _Atomic
+  | -- Storage class specifiers
+    TStRegister -- register
+  | TStAuto -- auto
+  | TStStatic -- static
+  | TStExtern -- extern
+  | TStThreadLocal -- _Thread_local
+  | TStTypedef -- typedef
+  | TStConstexpr -- constexpr
+  | -- Function specifiers
+    TStInline -- inline
+  | TStNoreturn -- _Noreturn
+  deriving (Eq, Enum, Show, Ord)
+
+-- Bitset for type specifier tokens
+newtype TSToks = TSToks {untstoks :: Word32}
+  deriving (Eq, Ord, Num, Bits, FiniteBits, Show)
+
+instance Semigroup TSToks where
+  TSToks i <> TSToks j = TSToks (i .|. j)
+
+instance Monoid TSToks where
+  mempty = TSToks 0
+
+-- long is treated separately
+tst_void, tst_char, tst_short, tst_int :: TSToks
+tst_void = TSToks (1 .<<. 0)
+tst_char = TSToks (1 .<<. 1)
+tst_short = TSToks (1 .<<. 2)
+tst_int = TSToks (1 .<<. 3)
+
+-- long long vs. long
+
+-- two longs may appear, so top two bits are used to indicate the number.
+--
+-- - 00: <nothing>
+-- - 01: long
+-- - 11: long long
+tst_long, tst_longlong :: TSToks
+tst_long = TSToks (1 .<<. 4)
+tst_longlong = TSToks (3 .<<. 4)
+
+tst_float, tst_double, tst_signed, tst_unsigned, tst_bool :: TSToks
+tst_float = TSToks (1 .<<. 6)
+tst_double = TSToks (1 .<<. 7)
+tst_signed = TSToks (1 .<<. 8)
+tst_unsigned = TSToks (1 .<<. 9)
+tst_bool = TSToks (1 .<<. 10)
+
+tst_complex, tst_decimal32, tst_decimal64, tst_decimal128 :: TSToks
+tst_complex = TSToks (1 .<<. 11)
+tst_decimal32 = TSToks (1 .<<. 12)
+tst_decimal64 = TSToks (1 .<<. 13)
+tst_decimal128 = TSToks (1 .<<. 14)
+
+tst_bitint :: TSToks
+tst_bitint = TSToks (1 .<<. 15)
+
+tst_const, tst_volatile, tst_restrict :: TSToks
+tst_const = TSToks (1 .<<. 16)
+tst_volatile = TSToks (1 .<<. 17)
+tst_restrict = TSToks (1 .<<. 18)
+
+tst_atomic, tst_register :: TSToks
+tst_atomic = TSToks (1 .<<. 19)
+tst_register = TSToks (1 .<<. 20)
+
+tst_auto, tst_static, tst_extern :: TSToks
+tst_auto = TSToks (1 .<<. 21)
+tst_static = TSToks (1 .<<. 22)
+tst_extern = TSToks (1 .<<. 23)
+
+tst_threadlocal, tst_typedef :: TSToks
+tst_threadlocal = TSToks (1 .<<. 24)
+tst_typedef = TSToks (1 .<<. 25)
+
+tst_constexpr, tst_inline, tst_noreturn :: TSToks
+tst_constexpr = TSToks (1 .<<. 26)
+tst_inline = TSToks (1 .<<. 27)
+tst_noreturn = TSToks (1 .<<. 28)
+
+-- | Container for holding all information collected during type parsing
+data TypeTokens = TypeTokens
+  { -- | Count of each token type.
+    -- This is for error reporting
+    -- if user uses too many specifiers and qualifiers.
+    _tt_counts :: !(Map TSTok Int),
+    -- | The real deal.
+    _tt_mask :: !TSToks,
+    -- | Bit width for _BitInt, if any
+    _tt_bitintwidth :: !(Maybe Int)
+  }
+  deriving (Eq, Show)
+
+makeLenses ''TypeTokens
+
+-- if type found, find base type. otherwise, report error.
+tt2basic :: TSToks -> Parser BaseType
+tt2basic v =
+  -- we shouldn't bother with other specifiers.
+  fmap BTPrim case ((1 .<<. 16) - 1) .&. v of
+    -- void
+    0x0001 -> pure PT.Void
+    -- char variants
+    0x0002 -> pure PT.Char_
+    0x0102 -> pure PT.SChar_
+    0x0202 -> pure PT.UChar_
+    -- short variants
+    0x0004 -> pure PT.Short_
+    0x0104 -> pure PT.Short_
+    0x0204 -> pure PT.UShort_
+    -- int variants
+    0x0008 -> pure PT.Int_
+    0x0108 -> pure PT.Int_
+    0x0208 -> pure PT.UInt_
+    -- long variants
+    0x0010 -> pure PT.Long_
+    0x0018 -> pure PT.Long_
+    0x0110 -> pure PT.Long_
+    0x0118 -> pure PT.Long_
+    0x0210 -> pure PT.ULong_
+    0x0218 -> pure PT.ULong_
+    -- long long variants
+    0x0030 -> pure PT.LongLong_
+    0x0130 -> pure PT.LongLong_
+    0x0230 -> pure PT.ULongLong_
+    -- floating point types
+    0x0040 -> pure PT.Float_
+    0x0080 -> pure PT.Double_
+    0x0090 -> pure PT.LongDouble_
+    -- complex types
+    0x0840 -> pure PT.ComplexFloat_
+    0x0880 -> pure PT.ComplexDouble_
+    0x0890 -> pure PT.ComplexLongDouble_
+    -- bool
+    0x0400 -> pure PT.Bool
+    -- decimal types
+    0x1000 -> pure $ PT.Float (PT.Real PT.RFDecimal32)
+    0x2000 -> pure $ PT.Float (PT.Real PT.RFDecimal64)
+    0x4000 -> pure $ PT.Float (PT.Real PT.RFDecimal128)
+    -- bit int types
+    0x8000 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
+    0x9000 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
+    0xA000 -> pure $ PT.Int PT.Unsigned (PT.BitInt 0)
+    -- error case
+    t ->
+      err
+        $ BasicError
+        $ printf
+          "Unknown type token combination 0x%04x"
+          (untstoks t)
+
+-- add to the type token counts
+newtype SpecQual = SpecQual {runspecqual :: TypeTokens -> TypeTokens}
+  deriving (Monoid, Semigroup) via (Endo TypeTokens)
+
+-- | Parse the "type-specifier-qualifier" rule
+typespecqual :: Parser SpecQual
+typespecqual = do
+  $( switch_ws1
+       [|
+         case _ of
+           "void" -> push TStVoid tst_void
+           "char" -> push TStChar tst_char
+           "short" -> push TStShort tst_short
+           "int" -> push TStInt tst_int
+           "long" -> handlelong
+           "float" -> push TStFloat tst_float
+           "double" -> push TStDouble tst_double
+           "signed" -> push TStSigned tst_signed
+           "unsigned" -> push TStUnsigned tst_unsigned
+           "_Bool" -> push TStBool tst_bool
+           "_Complex" -> push TStComplex tst_complex
+           "_Decimal32" -> push TStDecimal32 tst_decimal32
+           "_Decimal64" -> push TStDecimal64 tst_decimal64
+           "_Decimal128" -> push TStDecimal128 tst_decimal128
+           "_BitInt" -> lx0 (inpar $ decimal) >>= push_bitint
+           "const" -> push TStConst tst_const
+           "volatile" -> push TStVolatile tst_volatile
+           "restrict" -> push TStRestrict tst_restrict
+           "_Atomic" -> push TStAtomic tst_atomic
+           "register" -> push TStRegister tst_register
+           "auto" -> push TStAuto tst_auto
+           "static" -> push TStStatic tst_static
+           "extern" -> push TStExtern tst_extern
+           "_Thread_local" -> push TStThreadLocal tst_threadlocal
+           "typedef" -> push TStTypedef tst_typedef
+           "constexpr" -> push TStConstexpr tst_constexpr
+           "inline" -> push TStInline tst_inline
+           "_Noreturn" -> push TStNoreturn tst_noreturn
+         |]
+   )
+ where
+  decimal =
+    integer_constant_val >>= \case
+      IntegerLiteral n _ -> pure $ fromIntegral n
+  prepush token mask =
+    over tt_counts (Map.insertWith (+) token 1)
+      . over tt_mask (<> mask)
+  push token mask = pure $ SpecQual $ prepush token mask
+  push_bitint width =
+    pure
+      $ SpecQual (prepush TStBitInt tst_bitint)
+      <> SpecQual (set tt_bitintwidth (Just width))
+  handlelong = pure $ SpecQual \tt ->
+    -- if we pushed it before then we use a different bit.
+    case Map.lookup TStLong (_tt_counts tt) of
+      Nothing -> prepush TStLong tst_long tt
+      Just _ -> prepush TStLong tst_longlong tt
+
+typespecquals :: Parser BaseType
+typespecquals = do
+  SpecQual f <- chainl (<>) typespecqual typespecqual
+  let tt = f $ TypeTokens mempty mempty Nothing
+  checksanity tt
+  bt <- tt2basic (_tt_mask tt)
+  case tt ^. tt_bitintwidth of
+    Nothing -> pure bt
+    Just bw
+      | 0 < bw && bw < 256 -> case bt of
+          -- as of writing, no profunctor for this yet.
+          -- FIXME: add validation.
+          BTPrim (PT.Int signed (PT.BitInt _)) ->
+            pure $ BTPrim $ PT.Int signed (PT.BitInt $ fromIntegral bw)
+          _ -> err $ InternalError "typespecquals: Nothing"
+      | otherwise ->
+          err
+            $ InternalError
+              ("typespecquals: bad _BitInt width " ++ show bw)
+ where
+  badcondition TStLong c = c > 2
+  badcondition _ c = c > 1
+  checksanity tt = case tt ^. tt_counts of
+    cc -> case Map.filterWithKey badcondition cc of
+      map2
+        | Map.null map2 -> pure ()
+        | otherwise -> err $ BasicError "too many specifiers"
+
+-- | Parse types
 parsetype :: Parser Type
-parsetype = error "parsetype: not implemented"
+parsetype = err $ InternalError "parsetype not implemented yet"

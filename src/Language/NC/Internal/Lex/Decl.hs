@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 -- | This module implements parsing of C23 declarations.
 --
 -- A declaration in C defines types, variables, functions, and type aliases.
@@ -247,15 +250,16 @@ rdattrs,
 
 -- | Convert set of specifiers to appropriate type and storage information
 resolvespecifiers :: Set DeclSpecifier -> (Type, StorageClass, FuncSpec)
-resolvespecifiers specs = error "resolvespecifiers: Not implemented yet"
+resolvespecifiers _specs = error "resolvespecifiers: Not implemented yet"
 
 -- | Convert raw declarator to processed Declarator
 processdeclarator :: RawDeclarator -> Type -> Declarator
-processdeclarator raw baseType = error "processdeclarator: Not implemented yet"
+processdeclarator _raw _baseType =
+  error "processdeclarator: Not implemented yet"
 
 -- | Create final declaration from components
 makedeclaration :: DeclComponents -> Either [Error] [Declaration]
-makedeclaration comps = error "makedeclaration: Not implemented yet"
+makedeclaration _comps = error "makedeclaration: Not implemented yet"
 
 -- | Empty attributes container
 emptyattrs :: Attributes

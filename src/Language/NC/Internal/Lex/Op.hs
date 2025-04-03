@@ -48,8 +48,8 @@ data PrimExpr
 
 -- | A @Generic\_@ selection expression.
 data GenAssoc
-  = -- | generic selection
-    GenAssoc (Maybe Str) Expr
+  = -- | generic selection. if missing, default case.
+    GenAssoc (Maybe Type) Expr
   deriving (Eq, Show, Ord)
 
 -- | According to the C standard, an expression is an operator bound

@@ -1,5 +1,12 @@
 # NC Project Guidelines
 
+## General
+
+- Try not to produce code unless directed.
+- Discussion is encouraged before writing code.
+- Pay attention to style.
+- If you get errors while building, don't try to fix them. Report them instead. An exception is made if the fix is obvious or trivial.
+
 ## Build Commands
 - Build project: `cabal build`
 - Run REPL: `cabal repl`
