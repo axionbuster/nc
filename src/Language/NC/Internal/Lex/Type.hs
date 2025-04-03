@@ -32,7 +32,6 @@ module Language.NC.Internal.Lex.Type (
   fs_none,
   fs_inline,
   fs_noreturn,
-  fs_atomic,
 
   -- * Alignment
   Alignment (..),
@@ -126,8 +125,7 @@ instance Show FuncSpec where
         $ filter
           (not . null)
           [ if f .&. unfuncspec fs_inline /= 0 then "inline" else "",
-            if f .&. unfuncspec fs_noreturn /= 0 then "_Noreturn" else "",
-            if f .&. unfuncspec fs_atomic /= 0 then "_Atomic" else ""
+            if f .&. unfuncspec fs_noreturn /= 0 then "_Noreturn" else ""
           ]
 
 instance Semigroup FuncSpec where
@@ -136,11 +134,10 @@ instance Semigroup FuncSpec where
 instance Monoid FuncSpec where
   mempty = FuncSpec 0
 
-fs_none, fs_inline, fs_noreturn, fs_atomic :: FuncSpec
+fs_none, fs_inline, fs_noreturn :: FuncSpec
 fs_none = FuncSpec 0
 fs_inline = FuncSpec 1
 fs_noreturn = FuncSpec 2
-fs_atomic = FuncSpec 4
 
 -- | Source alignment specifier
 data Alignment
@@ -245,11 +242,11 @@ tq_atomic = TypeQual 8
 -- We also include the storage class declaration for convenience in
 -- parsing and organization, though it is not part of the type itself.
 data Type = Type
-  { ty_storclass :: StorageClass,
-    ty_base :: BaseType,
-    ty_qual :: TypeQual,
-    ty_funcspec :: FuncSpec,
-    ty_alignment :: Alignment
+  { _ty_storclass :: StorageClass,
+    _ty_base :: BaseType,
+    _ty_qual :: TypeQual,
+    _ty_funcspec :: FuncSpec,
+    _ty_alignment :: Alignment
   }
   deriving (Eq, Show, Ord)
 
@@ -280,6 +277,8 @@ data FuncInfo = FuncDef [Param] Type Variadic | FuncDecl
 -- | Function parameter
 data Param = Param Type Symbol | ParamUnnamed Type
   deriving (Eq, Show, Ord)
+
+makeLenses ''Type
 
 {- Optimized C23 fragment (in PEG) of the type-name rule for parsetype implementation:
 
@@ -385,6 +384,35 @@ directly as parsing proceeds, from the base type outward.
 
 -- as you can see down here, quite a lot of effort was spent in
 -- the permutation parsing of type qualifiers and specifiers.
+
+-- | Type Parsing System Overview
+--
+--   This module implements C-style type parsing with these
+--   key components:
+--
+--   1. Token Collection
+--     - We collect tokens into bitsets (TSToks) where each
+--       bit represents a token
+--     - Tokens can appear in any order (e.g., "extern const
+--       long" or "long const extern")
+--     - Token counts are tracked separately for error reporting
+--       (e.g., "int int" is invalid)
+--
+--   2. Type Construction Process
+--     - First phase: Collect all tokens using `SpecQual`
+--       transformations
+--     - Second phase: Convert tokens to a base type (e.g.,
+--       "unsigned long int" → ULong_)
+--     - Third phase: Apply decorators using `TSChangeType`
+--       transformations
+--
+--   3. Composition Order
+--     - Type transformations use `Dual (Endo Type)` to apply in
+--       reverse parsing order
+--     - This handles C's inside-out declarations like "int
+--       *(*foo[10])(void)"
+--     - The innermost type (int) is modified by each operation
+--       working outward
 
 -- Type specifier token - used to count occurrences in parsing
 data TSTok
@@ -555,12 +583,21 @@ data TypeTokens = TypeTokens
     _tt_counts :: !(Map TSTok Int),
     -- | The real deal.
     _tt_mask :: !TSToks,
-    -- | Bit width for _BitInt, if any
-    _tt_bitintwidth :: !(Maybe Int)
+    -- | Bit width for _BitInt, if any (/= 0), or none (== 0).
+    _tt_bitintwidth :: !Int
   }
   deriving (Eq, Show)
 
 makeLenses ''TypeTokens
+
+_unktyptokcombo :: String -> TSToks -> Parser a
+_unktyptokcombo name v =
+  err
+    $ BasicError
+    $ printf
+      "%sunknown type token combination %s"
+      (if null name then "" else name ++ ": ")
+      (show v)
 
 -- if type found, find base type. otherwise, report error.
 tt2basic :: TSToks -> Parser BaseType
@@ -617,11 +654,39 @@ tt2basic v =
     0x8100 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
     0x8200 -> pure $ PT.Int PT.Unsigned (PT.BitInt 0)
     -- error case
-    _ ->
-      err
-        $ BasicError
-        $ "Unknown type token combination %s"
-        ++ show v
+    _ -> _unktyptokcombo "tt2basic" v
+
+-- decorate types ... why Dual? because if you have something like:
+--  int *(*foo[10])(void)
+-- the declarations read inside out. the innermost type (int) is
+-- modified by the successive operations, so we need to produce
+-- transformations in the opposite order of appearance.
+newtype TSChangeType = TSChangeType {apchgtyp :: Type -> Type}
+  deriving (Monoid, Semigroup) via (Dual (Endo Type))
+
+tt2storage :: TSToks -> Parser TSChangeType
+tt2storage v =
+  -- bit range for formal storage class specifiers:
+  --  - register, auto, static, extern, thread_local, typedef, constexpr
+  fmap (TSChangeType . set ty_storclass) case v .&. 0x07F0_0000 of
+    0x0000_0000 -> pure $ sc_none
+    0x0010_0000 -> pure $ sc_none
+    0x0020_0000 -> pure $ sc_auto
+    0x0040_0000 -> pure $ sc_static
+    0x0080_0000 -> pure $ sc_extern
+    0x0100_0000 -> pure $ sc_threadlocal
+    0x0200_0000 -> pure $ sc_typedef
+    0x0400_0000 -> pure $ sc_constexpr
+    _ -> _unktyptokcombo "tt2storage" v
+
+tt2funcspec :: TSToks -> Parser TSChangeType
+tt2funcspec v =
+  -- inline and _Noreturn, respectively.
+  fmap (TSChangeType . set ty_funcspec) case v .&. 0x1800_0000 of
+    0x0000_0000 -> pure $ fs_none
+    0x0800_0000 -> pure $ fs_inline
+    0x1000_0000 -> pure $ fs_noreturn
+    _ -> _unktyptokcombo "tt2funcspec" v
 
 -- add to the type token counts
 newtype SpecQual = SpecQual {runspecqual :: TypeTokens -> TypeTokens}
@@ -674,25 +739,37 @@ typespecqual = do
   push_bitint width =
     pure
       $ SpecQual (prepush TStBitInt tst_bitint)
-      <> SpecQual (set tt_bitintwidth (Just width))
+      <> SpecQual (set tt_bitintwidth width)
   handlelong = pure $ SpecQual \tt ->
     -- if we pushed it before then we use a different bit.
     case Map.lookup TStLong (_tt_counts tt) of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
 
-typespecquals :: Parser BaseType
+-- parse the 'type-specifier-qualifier+' rule, part of the type-name rule.
+--
+-- Parse all type specifiers/qualifiers and combine them into a single type
+-- with proper storage class, base type, and qualifiers.
+typespecquals :: Parser Type
 typespecquals = do
+  -- Implemented:
+  --  - Type specifiers
+  --  - Type qualifiers
+  -- Not Implemented Yet:
+  --  - Compound type specifiers
+  --  - Typedef specifier, typedef name
+  --  - Alignment specifiers
+  --
+  -- Build specifier-qualifier transformations (SpecQual);
+  -- construct a BaseType (bt1).
   SpecQual f <- chainl (<>) typespecqual typespecqual
-  let tt = f $ TypeTokens mempty mempty Nothing
+  let tt = f $ TypeTokens mempty mempty 0
   checksanity tt
-  bt <- tt2basic (_tt_mask tt)
-  case tt ^. tt_bitintwidth of
-    Nothing -> pure bt
-    Just bw
-      | 0 < bw && bw < 256 -> case bt of
-          -- as of writing, no profunctor for this yet.
-          -- FIXME: add validation.
+  bt0 <- tt2basic (_tt_mask tt)
+  bt1 <- case tt ^. tt_bitintwidth of
+    0 -> pure bt0 -- absent.
+    bw
+      | bw < 256 -> case bt0 of
           BTPrim (PT.Int signed (PT.BitInt _)) ->
             pure $ BTPrim $ PT.Int signed (PT.BitInt $ fromIntegral bw)
           _ -> err $ InternalError "typespecquals: Nothing"
@@ -700,6 +777,11 @@ typespecquals = do
           err
             $ InternalError
               ("typespecquals: bad _BitInt width " ++ show bw)
+  -- Promote the BaseType into a Type, representing a fully qualified
+  -- C type with storage duration annotations. Decorate this Type.
+  let ty0 = Type mempty bt1 mempty mempty AlignNone
+  chgtyp0 <- (<>) <$> tt2storage tt._tt_mask <*> tt2funcspec tt._tt_mask
+  pure $ apchgtyp chgtyp0 ty0
  where
   badcondition TStLong c = c > 2
   badcondition _ c = c > 1
