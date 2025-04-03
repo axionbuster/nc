@@ -4,53 +4,6 @@
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Language.NC.Internal.Lex.Type (
-  -- * Types
-  Type (..),
-  BaseType (..),
-
-  -- * Type Qualifiers
-  TypeQual (..),
-  tq_none,
-  tq_const,
-  tq_volatile,
-  tq_restrict,
-  tq_atomic,
-
-  -- * Storage Classes
-  StorageClass (..),
-  sc_none,
-  sc_register,
-  sc_auto,
-  sc_static,
-  sc_extern,
-  sc_threadlocal,
-  sc_typedef,
-  sc_constexpr,
-
-  -- * Function Specifiers
-  FuncSpec (..),
-  fs_none,
-  fs_inline,
-  fs_noreturn,
-
-  -- * Alignment
-  Alignment (..),
-
-  -- * Supplemental information
-  Record (..),
-  RecordInfo (..),
-  RecordField (..),
-  EnumType (..),
-  EnumInfo (..),
-  EnumConst (..),
-  FuncType (..),
-  FuncInfo (..),
-  Param (..),
-  ArrayType (..),
-  ArraySize (..),
-  QualifiedType (..),
-  Variadic (..),
-
   -- * Parsing an expression determining type
   parsetype,
 
@@ -61,224 +14,15 @@ module Language.NC.Internal.Lex.Type (
   TypeTokens (..),
 ) where
 
-import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid
 import Language.NC.Internal.Lex.Lex
-import Language.NC.Internal.Lex.Op
 import Language.NC.Internal.Prelude
-import Language.NC.Internal.PrimTypes (PrimType)
-import Language.NC.Internal.PrimTypes qualified as PT
 
 -- in this parser-lexer we parse type names.
 
 -- we also define C types.
-
--- | Source storage class monoid.
-newtype StorageClass = StorageClass {unstorclass :: Int8}
-  deriving (Eq, Ord, Bits, FiniteBits)
-
-instance Show StorageClass where
-  show (StorageClass s) = case s of
-    0 -> "none"
-    _ ->
-      intercalate " "
-        $ filter
-          (not . null)
-          [ if s .&. unstorclass sc_register /= 0 then "register" else "",
-            if s .&. unstorclass sc_auto /= 0 then "auto" else "",
-            if s .&. unstorclass sc_static /= 0 then "static" else "",
-            if s .&. unstorclass sc_extern /= 0 then "extern" else "",
-            if s .&. unstorclass sc_threadlocal /= 0 then "_Thread_local" else "",
-            if s .&. unstorclass sc_typedef /= 0 then "typedef" else "",
-            if s .&. unstorclass sc_constexpr /= 0 then "constexpr" else ""
-          ]
-
-instance Semigroup StorageClass where
-  StorageClass i <> StorageClass j = StorageClass (i .|. j)
-
-instance Monoid StorageClass where
-  mempty = StorageClass 0
-
-sc_none, sc_register, sc_auto, sc_static :: StorageClass
-sc_none = StorageClass 0
-sc_register = StorageClass 1
-sc_auto = StorageClass 2
-sc_static = StorageClass 4
-
-sc_extern, sc_threadlocal, sc_typedef, sc_constexpr :: StorageClass
-sc_extern = StorageClass 8
-sc_threadlocal = StorageClass 16
-sc_typedef = StorageClass 32
-sc_constexpr = StorageClass 64
-
--- | Source function specifier monoid.
-newtype FuncSpec = FuncSpec {unfuncspec :: Int8}
-  deriving (Eq, Ord, Bits, FiniteBits)
-
-instance Show FuncSpec where
-  show (FuncSpec f) = case f of
-    0 -> "none"
-    _ ->
-      intercalate " "
-        $ filter
-          (not . null)
-          [ if f .&. unfuncspec fs_inline /= 0 then "inline" else "",
-            if f .&. unfuncspec fs_noreturn /= 0 then "_Noreturn" else ""
-          ]
-
-instance Semigroup FuncSpec where
-  FuncSpec i <> FuncSpec j = FuncSpec (i .|. j)
-
-instance Monoid FuncSpec where
-  mempty = FuncSpec 0
-
-fs_none, fs_inline, fs_noreturn :: FuncSpec
-fs_none = FuncSpec 0
-fs_inline = FuncSpec 1
-fs_noreturn = FuncSpec 2
-
--- | Source alignment specifier
-data Alignment
-  = AlignNone
-  | -- | @\_Alignas@ with constant expression
-    AlignAs Int
-  | -- | @\_Alignas@ with type
-    AlignAsType Type
-  deriving (Eq, Show, Ord)
-
--- | Source base types.
-data BaseType
-  = -- | Primitive, non-derived type.
-    BTPrim PrimType
-  | -- | A record type, such as a struct or union.
-    BTRecord Record
-  | -- | An enumeration type.
-    BTEnum EnumType
-  | -- | A typedef name.
-    BTTypeName Symbol
-  | -- | A function type.
-    BTFunc FuncType
-  | -- | An array type.
-    BTArray ArrayType
-  | -- | A pointer type.
-    BTPointer QualifiedType
-  | -- | An atomic type specifier (_Atomic(...))
-    BTAtomic QualifiedType
-  deriving (Eq, Show, Ord)
-
--- | A qualified type.
-data QualifiedType
-  = QualifiedType
-  { qt_base :: BaseType,
-    qt_qual :: TypeQual
-  }
-  deriving (Eq, Show, Ord)
-
-data Record
-  = -- | A struct type.
-    RecordStruct Symbol RecordInfo
-  | -- | A union type.
-    RecordUnion Symbol RecordInfo
-  deriving (Eq, Show, Ord)
-
-data EnumType
-  = -- | An enumeration type.
-    EnumType Symbol EnumInfo
-  deriving (Eq, Show, Ord)
-
-data FuncType
-  = -- | A function type.
-    FuncType Symbol FuncInfo
-  deriving (Eq, Show, Ord)
-
-data ArrayType
-  = -- | An array type.
-    ArrayType ArraySize Type
-  deriving (Eq, Show, Ord)
-
-data ArraySize
-  = -- | A fixed size array.
-    ArraySize Int
-  | -- | A variable length array.
-    ArraySizeVar Expr
-  | -- | A flexible array member or unknown size.
-    ArraySizeNone
-  deriving (Eq, Show, Ord)
-
--- | Monoid representing qualifier monoid.
-newtype TypeQual = TypeQual {untypequal :: Int8}
-  deriving (Eq, Ord, Bits, FiniteBits)
-
-instance Show TypeQual where
-  show (TypeQual q) = case q of
-    0 -> "none"
-    _ ->
-      intercalate " "
-        $ filter
-          (not . null)
-          [ if q .&. untypequal tq_const /= 0 then "const" else "",
-            if q .&. untypequal tq_volatile /= 0 then "volatile" else "",
-            if q .&. untypequal tq_restrict /= 0 then "restrict" else "",
-            if q .&. untypequal tq_atomic /= 0 then "_Atomic" else ""
-          ]
-
-instance Semigroup TypeQual where
-  TypeQual i <> TypeQual j = TypeQual (i .|. j)
-
-instance Monoid TypeQual where
-  mempty = TypeQual 0
-
-tq_none, tq_const, tq_volatile, tq_restrict, tq_atomic :: TypeQual
-tq_none = TypeQual 0
-tq_const = TypeQual 1
-tq_volatile = TypeQual 2
-tq_restrict = TypeQual 4
-tq_atomic = TypeQual 8
-
--- | Source types.
---
--- We also include the storage class declaration for convenience in
--- parsing and organization, though it is not part of the type itself.
-data Type = Type
-  { _ty_storclass :: StorageClass,
-    _ty_base :: BaseType,
-    _ty_qual :: TypeQual,
-    _ty_funcspec :: FuncSpec,
-    _ty_alignment :: Alignment
-  }
-  deriving (Eq, Show, Ord)
-
--- | Record information
-data RecordInfo = RecordDef [RecordField] | RecordDecl
-  deriving (Eq, Show, Ord)
-
--- | Record field
-data RecordField = RecordField Type Symbol (Maybe Int)
-  deriving (Eq, Show, Ord)
-
--- | Enum information
-data EnumInfo = EnumDef [EnumConst] | EnumDecl
-  deriving (Eq, Show, Ord)
-
--- | Enum constant
-data EnumConst = EnumConst Symbol (Maybe Expr)
-  deriving (Eq, Show, Ord)
-
--- | Is a function variadic?
-data Variadic = Variadic | NotVariadic
-  deriving (Eq, Show, Ord)
-
--- | Function information
-data FuncInfo = FuncDef [Param] Type Variadic | FuncDecl
-  deriving (Eq, Show, Ord)
-
--- | Function parameter
-data Param = Param Type Symbol | ParamUnnamed Type
-  deriving (Eq, Show, Ord)
-
-makeLenses ''Type
 
 {- Optimized C23 fragment (in PEG) of the type-name rule for parsetype implementation:
 
@@ -636,54 +380,54 @@ tt2basic v =
   -- we shouldn't bother with other specifiers.
   fmap BTPrim case ((1 .<<. 16) - 1) .&. v of
     -- void
-    0x0001 -> pure PT.Void
+    0x0001 -> pure PTVoid
     -- char variants
-    0x0002 -> pure PT.Char_ -- char
-    0x0102 -> pure PT.SChar_ -- signed char
-    0x0202 -> pure PT.UChar_ -- unsigned char
+    0x0002 -> pure Char_ -- char
+    0x0102 -> pure SChar_ -- signed char
+    0x0202 -> pure UChar_ -- unsigned char
     -- int variants (0x8)
-    0x0008 -> pure PT.Int_ -- (sim.)
-    0x0108 -> pure PT.Int_
-    0x0208 -> pure PT.UInt_
+    0x0008 -> pure Int_ -- (sim.)
+    0x0108 -> pure Int_
+    0x0208 -> pure UInt_
     -- short variants
-    0x0004 -> pure PT.Short_ -- short
-    0x000c -> pure PT.Short_ -- short int
-    0x0104 -> pure PT.Short_ -- signed short
-    0x010c -> pure PT.Short_ -- signed short int
-    0x0204 -> pure PT.UShort_ -- (sim.)
-    0x020c -> pure PT.UShort_ -- (sim.)
+    0x0004 -> pure Short_ -- short
+    0x000c -> pure Short_ -- short int
+    0x0104 -> pure Short_ -- signed short
+    0x010c -> pure Short_ -- signed short int
+    0x0204 -> pure UShort_ -- (sim.)
+    0x020c -> pure UShort_ -- (sim.)
     -- long variants
-    0x0010 -> pure PT.Long_ -- long
-    0x0018 -> pure PT.Long_ -- long int
-    0x0110 -> pure PT.Long_ -- (etc.)
-    0x0118 -> pure PT.Long_
-    0x0210 -> pure PT.ULong_
-    0x0218 -> pure PT.ULong_
+    0x0010 -> pure Long_ -- long
+    0x0018 -> pure Long_ -- long int
+    0x0110 -> pure Long_ -- (etc.)
+    0x0118 -> pure Long_
+    0x0210 -> pure ULong_
+    0x0218 -> pure ULong_
     -- long long variants
-    0x0030 -> pure PT.LongLong_ -- (sim.)
-    0x0038 -> pure PT.LongLong_
-    0x0130 -> pure PT.LongLong_
-    0x0138 -> pure PT.LongLong_
-    0x0230 -> pure PT.ULongLong_
-    0x0238 -> pure PT.ULongLong_
+    0x0030 -> pure LongLong_ -- (sim.)
+    0x0038 -> pure LongLong_
+    0x0130 -> pure LongLong_
+    0x0138 -> pure LongLong_
+    0x0230 -> pure ULongLong_
+    0x0238 -> pure ULongLong_
     -- floating point types
-    0x0040 -> pure PT.Float_
-    0x0080 -> pure PT.Double_
-    0x0090 -> pure PT.LongDouble_
+    0x0040 -> pure Float_
+    0x0080 -> pure Double_
+    0x0090 -> pure LongDouble_
     -- complex types
-    0x0840 -> pure PT.ComplexFloat_
-    0x0880 -> pure PT.ComplexDouble_
-    0x0890 -> pure PT.ComplexLongDouble_
+    0x0840 -> pure ComplexFloat_
+    0x0880 -> pure ComplexDouble_
+    0x0890 -> pure ComplexLongDouble_
     -- bool
-    0x0400 -> pure PT.Bool
+    0x0400 -> pure Bool_
     -- decimal types
-    0x1000 -> pure $ PT.Float (PT.Real PT.RFDecimal32)
-    0x2000 -> pure $ PT.Float (PT.Real PT.RFDecimal64)
-    0x4000 -> pure $ PT.Float (PT.Real PT.RFDecimal128)
+    0x1000 -> pure Decimal32_
+    0x2000 -> pure Decimal64_
+    0x4000 -> pure Decimal128_
     -- bit int types
-    0x8000 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
-    0x8100 -> pure $ PT.Int PT.Signed (PT.BitInt 0)
-    0x8200 -> pure $ PT.Int PT.Unsigned (PT.BitInt 0)
+    0x8000 -> pure $ BitInt_ 0
+    0x8100 -> pure $ BitInt_ 0
+    0x8200 -> pure $ BitInt_ 0
     -- error case
     _ -> _unktyptokcombo "tt2basic" v
 
@@ -801,10 +545,10 @@ typespecquals = do
     0 -> pure bt0 -- absent _BitInt(N) type specifier.
     _ ->
       let bw = tt ^. tt_bitintwidth
-       in if 0 < bw && bw < 256
+       in if 0 < bw && bw < fromIntegral (maxBound :: Word16)
             then case bt0 of
-              BTPrim (PT.Int signed (PT.BitInt _)) ->
-                pure $ BTPrim $ PT.Int signed (PT.BitInt $ fromIntegral bw)
+              BTPrim (PTInt signed (ILBitInt _)) ->
+                pure $ BTPrim $ PTInt signed (ILBitInt $ fromIntegral bw)
               _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
             else
               err

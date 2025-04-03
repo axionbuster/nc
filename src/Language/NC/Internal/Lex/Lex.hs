@@ -15,18 +15,6 @@ import Data.Text.ICU.Char qualified as C
 import GHC.Int (Int (..))
 import GHC.Integer.Logarithms (integerLog2#)
 import Language.NC.Internal.Prelude
-import Language.NC.Internal.PrimTypes qualified as PT
-
--- unfortunately, floating point literals are not supported yet.
-
-data Lit
-  = -- | Integer literal
-    LitInteger IntegerLiteral
-  | -- | Character constant
-    LitChar CharacterLiteral
-  | -- | String literal
-    LitString StringLiteral
-  deriving (Eq, Show, Ord)
 
 literal =
   choice
@@ -568,10 +556,6 @@ _bindigit =
          |]
    )
 
-data IntegerLiteral
-  = IntegerLiteral Integer PT.PrimType
-  deriving (Eq, Show, Ord)
-
 data ISFX_
   = -- occurrence counts
   ISFX_ {isfxu :: !Word8, isfxl :: !Word8, isfxbw :: !Word8}
@@ -591,12 +575,12 @@ instance Monoid ISFX_ where
 -- find integral type that fits literal or else throw error.
 isfx_2inttyp wasdecimal = gated_go . integerneededbits
  where
-  i_ = PT.Int_
-  l_ = PT.Long_
-  ll_ = PT.LongLong_
-  u_ = PT.UInt_
-  ul_ = PT.ULong_
-  ull_ = PT.ULongLong_
+  i_ = Int_
+  l_ = Long_
+  ll_ = LongLong_
+  u_ = UInt_
+  ul_ = ULong_
+  ull_ = ULongLong_
   -- find: find first type that can contain the literal
   find bw = go2
    where
@@ -624,8 +608,8 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
     | wasdecimal = find bw [ll_]
     | otherwise = find bw [ll_, ull_]
   go bw (ISFX_ 1 2 0) = find bw [ull_]
-  go bw (ISFX_ 0 0 1) = pure $ PT.Int PT.Signed $ PT.BitInt $ min 2 bw
-  go bw (ISFX_ 1 0 1) = pure $ PT.Int PT.Unsigned $ PT.BitInt bw
+  go bw (ISFX_ 0 0 1) = pure $ BitInt_ $ min 2 bw
+  go bw (ISFX_ 1 0 1) = pure $ UBitInt_ bw
   go _ _ = err $ LiteralBadError IncorrectIntSuffix
 
 -- used to compute bitwidth for _BitInt(N) literals.
@@ -720,13 +704,6 @@ floating_constant =
 -- | Consume an integer character constant and then discard it.
 character_constant = () <$ character_constant_val
 
-data CharacterLiteral
-  = -- | Literal character or universal character name, encoding choice delayed.
-    CharacterLiteral Char PT.PrimType
-  | -- | Specified in octal or hexadecimal.
-    IntCharacterLiteral Integer PT.PrimType
-  deriving (Eq, Show, Ord)
-
 char_encpfx =
   $( switch
        [|
@@ -744,7 +721,7 @@ char_encpfx =
 --
 -- The range is NOT checked.
 character_constant_val = do
-  typ <- char_encpfx <|> pure PT.Int_
+  typ <- char_encpfx <|> pure Int_
   val <- between quote quote value
   pure $ val typ
  where
@@ -783,17 +760,6 @@ character_constant_val = do
         'v' -> '\v'
         c -> c
 
--- | A string literal; escape sequences have been interpreted, but
--- a NUL byte has NOT been inserted at the end. The encoding is:
---
---  - UTF-8 for single-byte-character strings
---  - UTF-16 for two-byte-character strings
---  - UTF-32 for four-byte-character strings
-data StringLiteral
-  = -- | Interpreted value, type of each element.
-    StringLiteral LazyByteString !PT.PrimType
-  deriving (Show, Eq, Ord)
-
 string_literal_val = do
   typ <-
     ( char_encpfx
@@ -802,7 +768,7 @@ string_literal_val = do
               "string literals except regular literals not supported yet"
           )
     )
-      <|> pure PT.Char_
+      <|> pure Char_
   let enc c
         | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
         | otherwise = err $ LiteralBadError BadChar

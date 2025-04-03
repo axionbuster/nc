@@ -14,150 +14,14 @@
 -- a deep and unbalanced tree), this implementation constructs the AST
 -- directly without building an intermediate CST (Concrete Syntax Tree).
 module Language.NC.Internal.Lex.Op (
-  -- * Types
-  Expr (..),
-  PrimExpr (..),
-  GenAssoc (..),
-
   -- * Parsers
   expr,
   expr_,
 ) where
 
 import Language.NC.Internal.Lex.Lex
-import {-# SOURCE #-} Language.NC.Internal.Lex.Type
+import Language.NC.Internal.Lex.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
-import Language.NC.Internal.PrimTypes qualified as PT
-
--- | Represents a primary expression, which is the most basic form
--- of expression in C.
-data PrimExpr
-  = -- | An identifier
-    PrimId Str
-  | -- | A literal value (excluding string literals)
-    PrimLit Lit
-  | -- | A string literal
-    PrimStrLit Str
-  | -- | An expression in parentheses. Don't count on the
-    -- parentheses being included in the span (or not being
-    -- included in the span).
-    PrimParen Expr
-  | -- | A generic selection expression
-    PrimGeneric Expr GenAssoc
-  deriving (Eq, Show, Ord)
-
--- | A @Generic\_@ selection expression.
-data GenAssoc
-  = -- | generic selection. if missing, default case.
-    GenAssoc (Maybe Type) Expr
-  deriving (Eq, Show, Ord)
-
--- | According to the C standard, an expression is an operator bound
--- to operands, or a primary expression.
-data Expr
-  = -- | primary expression
-    Expr (WithSpan PrimExpr)
-  | -- | postfix increment (++)
-    ExprPostInc Expr
-  | -- | postfix decrement (--)
-    ExprPostDec Expr
-  | -- | function call
-    ExprCall Expr [Expr]
-  | -- | array subscript
-    ExprArray Expr Expr
-  | -- | member access using dot (.)
-    ExprMember Expr Symbol
-  | -- | member access using arrow (->)
-    ExprMemberPtr Expr Symbol
-  | -- | compound literal, type and value
-    ExprCompoundLiteral Expr Expr
-  | -- | generic selection
-    ExprGeneric Expr [GenAssoc]
-  | -- | prefix increment (++)
-    ExprPreInc Expr
-  | -- | prefix decrement (--)
-    ExprPreDec Expr
-  | -- | unary plus (+)
-    ExprUnaryPlus Expr
-  | -- | unary minus (-)
-    ExprUnaryMinus Expr
-  | -- | logical not (!)
-    ExprNot Expr
-  | -- | bitwise not (~)
-    ExprBitNot Expr
-  | -- | cast, type and value
-    ExprCast Type Expr
-  | -- | dereference using (*)
-    ExprDeref Expr
-  | -- | address of using (&)
-    ExprAddrOf Expr
-  | -- | sizeof operator, either type or value
-    ExprSizeOf (Either Type Expr)
-  | -- | alignof operator, either type or value
-    ExprAlignOf (Either Type Expr)
-  | -- | multiplication
-    ExprTimes Expr Expr
-  | -- | division
-    ExprDiv Expr Expr
-  | -- | modulus
-    ExprMod Expr Expr
-  | -- | addition
-    ExprPlus Expr Expr
-  | -- | subtraction
-    ExprMinus Expr Expr
-  | -- | left shift
-    ExprShiftL Expr Expr
-  | -- | right shift
-    ExprShiftR Expr Expr
-  | -- | less than
-    ExprLT Expr Expr
-  | -- | greater than
-    ExprGT Expr Expr
-  | -- | less than or equal to
-    ExprLE Expr Expr
-  | -- | greater than or equal to
-    ExprGE Expr Expr
-  | -- | equal to
-    ExprEQ Expr Expr
-  | -- | not equal to
-    ExprNE Expr Expr
-  | -- | bitwise and
-    ExprBitAnd Expr Expr
-  | -- | bitwise xor
-    ExprBitXor Expr Expr
-  | -- | bitwise or
-    ExprBitOr Expr Expr
-  | -- | logical and
-    ExprAnd Expr Expr
-  | -- | logical or
-    ExprOr Expr Expr
-  | -- | conditional operator (?:)
-    ExprConditional Expr Expr Expr
-  | -- | assignment operator
-    ExprAssign Expr Expr
-  | -- | assignment operator (+=)
-    ExprAssignPlus Expr Expr
-  | -- | assignment operator (-=)
-    ExprAssignMinus Expr Expr
-  | -- | assignment operator (*=)
-    ExprAssignTimes Expr Expr
-  | -- | assignment operator (/=)
-    ExprAssignDiv Expr Expr
-  | -- | assignment operator (%=)
-    ExprAssignMod Expr Expr
-  | -- | assignment operator (<<=)
-    ExprAssignShiftL Expr Expr
-  | -- | assignment operator (>>=)
-    ExprAssignShiftR Expr Expr
-  | -- | assignment operator (&=)
-    ExprAssignBitAnd Expr Expr
-  | -- | assignment operator (^=)
-    ExprAssignBitXor Expr Expr
-  | -- | assignment operator (|=)
-    ExprAssignBitOr Expr Expr
-  | -- | comma operator
-    ExprComma Expr Expr
-  deriving (Eq, Show, Ord)
 
 {- PEG grammar referenced; converted from C23 CFG grammar.
 # Expressions
@@ -382,7 +246,7 @@ postfix = go =<< primary
               WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
 
               -- Create a symbol for the member name
-              s <- symcreate idname PT.Void spn
+              s <- symcreate idname (SymIsType (primtype2type Void_)) spn
 
               pure $ ExprMember a s
             '-' ->
@@ -391,7 +255,7 @@ postfix = go =<< primary
                   WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
 
                   -- Create a symbol for the member name
-                  s <- symcreate idname PT.Void spn
+                  s <- symcreate idname (SymIsType (primtype2type Void_)) spn
 
                   pure $ ExprMemberPtr a s
                 '-' -> pure $ ExprPostDec a

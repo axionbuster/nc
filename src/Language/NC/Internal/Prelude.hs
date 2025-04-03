@@ -16,14 +16,13 @@ module Language.NC.Internal.Prelude (
   module Data.Functor,
   module Data.Hashable,
   module Data.Int,
+  module Data.Sequence,
   module Data.Unique,
   module Data.Word,
   module FlatParse.Stateful,
   module GHC.Float,
   module GHC.Generics,
-  module Language.NC.Internal.Error,
-  module Language.NC.Internal.Parse,
-  module Language.NC.Internal.Symbol,
+  module Language.NC.Internal.Types.Parse,
   module Prelude,
   module Text.Printf,
   module UnliftIO.IORef,
@@ -52,15 +51,14 @@ import Data.Function
 import Data.Functor
 import Data.Hashable
 import Data.Int
+import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Text (Text)
-import Data.Unique hiding (newUnique)
+import Data.Unique
 import Data.Word
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics hiding (from, to)
-import Language.NC.Internal.Error
-import Language.NC.Internal.Parse
-import Language.NC.Internal.Symbol
+import Language.NC.Internal.Types.Parse
 import Text.Printf (PrintfArg, PrintfType, printf)
 import UnliftIO.IORef
 import Prelude hiding (lex, take, unzip)

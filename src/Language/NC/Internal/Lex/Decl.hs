@@ -51,12 +51,12 @@ module Language.NC.Internal.Lex.Decl (
 ) where
 
 import Control.Lens
-import Data.Map (Map)
-import Data.Map qualified as Map
-import Data.Set (Set)
-import Data.Set qualified as Set
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HashMap
+import Data.HashSet (HashSet)
+import Data.HashSet qualified as HashSet
 import Language.NC.Internal.Lex.Lex
-import Language.NC.Internal.Lex.Op (Expr)
+import Language.NC.Internal.Lex.Op
 import Language.NC.Internal.Lex.Type
 import Language.NC.Internal.Prelude
 
@@ -143,8 +143,8 @@ data ParamDecl = ParamDecl
 
 -- | A collection of attributes applied to a declaration
 newtype Attributes = Attributes
-  { -- | Map of attribute names to values
-    _attrvals :: Map Symbol AttributeValue
+  { -- | HashMap of attribute names to values
+    _attrvals :: HashMap Symbol AttributeValue
   }
   deriving (Eq, Show)
 
@@ -187,7 +187,7 @@ data Designator
 -- | Intermediate representation for flexible parsing
 data DeclComponents = DeclComponents
   { -- | Declaration specifiers in any order
-    _dcspecs :: Set DeclSpecifier,
+    _dcspecs :: HashSet DeclSpecifier,
     -- | Raw declarators before processing
     _dcdeclarators :: [RawDeclarator],
     -- | Attributes in raw form
@@ -249,7 +249,7 @@ rdattrs,
 -}
 
 -- | Convert set of specifiers to appropriate type and storage information
-resolvespecifiers :: Set DeclSpecifier -> (Type, StorageClass, FuncSpec)
+resolvespecifiers :: HashSet DeclSpecifier -> (Type, StorageClass, FuncSpec)
 resolvespecifiers _specs = error "resolvespecifiers: Not implemented yet"
 
 -- | Convert raw declarator to processed Declarator
@@ -263,12 +263,12 @@ makedeclaration _comps = error "makedeclaration: Not implemented yet"
 
 -- | Empty attributes container
 emptyattrs :: Attributes
-emptyattrs = Attributes Map.empty
+emptyattrs = Attributes HashMap.empty
 
 -- | Add an attribute to an Attributes container
 addattr :: Attribute -> Attributes -> Attributes
 addattr (Attribute name val) (Attributes attrs) =
-  Attributes $ Map.insert name val attrs
+  Attributes $ HashMap.insert name val attrs
 
 -- | Create an attribute from name and value
 mkattr :: Symbol -> AttributeValue -> Attribute
@@ -295,7 +295,7 @@ attributes :: Parser Attributes
 attributes = error "attributes: Not implemented yet"
 
 -- | Placeholder: Parse declaration specifiers into a set
-declspecs :: Parser (Set DeclSpecifier)
+declspecs :: Parser (HashSet DeclSpecifier)
 declspecs = error "declspecs: Not implemented yet"
 
 -- | Placeholder: Parse a parameter declaration
