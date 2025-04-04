@@ -17,6 +17,7 @@ module Language.NC.Internal.Lex.Op (
   -- * Parsers
   expr,
   expr_,
+  assign,
 ) where
 
 import Language.NC.Internal.Lex.Lex
@@ -49,75 +50,77 @@ expr = runandgetspan expr_
 expr_ :: Parser Expr
 expr_ = chainl ExprComma assign (lx0 comma >> assign)
 
+-- | Parse an assignment expression.
+assign :: Parser Expr
 assign = assignop <|> cond
  where
   assignop = do
-    a <- lx0 unary
-    operator <- lx0 binasgnop
-    b <- lx0 assign
+    a <- unary
+    operator <- binasgnop
+    b <- assign
     pure $ operator a b
 
 cond = do
-  a <- lx0 logor
+  a <- logor
   option a do
     lx0 questionmark
-    b <- lx0 expr_
+    b <- expr_
     lx0 colon
     c <- assign
     pure $ ExprConditional a b c
 
 logor = do
-  a <- lx0 logand
+  a <- logand
   go a
  where
   go a = option a do
     lx0 doublebar
-    b <- lx0 logand
+    b <- logand
     go (ExprOr a b)
 
 logand = do
-  a <- lx0 bitor
+  a <- bitor
   go a
  where
   go a = option a do
     lx0 doubleamp
-    b <- lx0 bitor
+    b <- bitor
     go (ExprAnd a b)
 
 bitor = do
-  a <- lx0 bitxor
+  a <- bitxor
   go a
  where
   go a = option a do
     lx0 bar
-    b <- lx0 bitxor
+    b <- bitxor
     go (ExprBitOr a b)
 
 bitxor = do
-  a <- lx0 bitand
+  a <- bitand
   go a
  where
   go a = option a do
     lx0 caret
-    b <- lx0 bitand
+    b <- bitand
     go (ExprBitXor a b)
 
 bitand = do
-  a <- lx0 rel
+  a <- rel
   go a
  where
   go a = option a do
     lx0 ampersand
-    b <- lx0 rel
+    b <- rel
     go (ExprBitAnd a b)
 
 rel = do
-  a <- lx0 shift
+  a <- shift
   go a
  where
   go a = option a do
     r <- relop
-    b <- lx0 shift
+    b <- shift
     go (r a b)
   relop =
     $( switch_ws0
@@ -133,12 +136,12 @@ rel = do
      )
 
 shift = do
-  a <- lx0 add
+  a <- add
   go a
  where
   go a = option a do
     s <- shiftop
-    b <- lx0 add
+    b <- add
     go (s a b)
   shiftop =
     $( switch_ws0
@@ -150,12 +153,12 @@ shift = do
      )
 
 add = do
-  a <- lx0 mul
+  a <- mul
   go a
  where
   go a = option a do
     s <- addop
-    b <- lx0 mul
+    b <- mul
     go (s a b)
   addop =
     $( switch_ws0
@@ -167,12 +170,12 @@ add = do
      )
 
 mul = do
-  a <- lx0 cast_
+  a <- cast_
   go a
  where
   go a = option a do
     s <- mulop
-    b <- lx0 cast_
+    b <- cast_
     go (s a b)
   mulop =
     $( switch_ws0
@@ -186,9 +189,9 @@ mul = do
 
 cast_ =
   choice
-    [ lx0 unary,
+    [ unary,
       do
-        typ <- lx0 (inpar (lx1 parsetype))
+        typ <- lx0 (inpar (parsetype))
         val <- cast_
         pure $ ExprCast typ val
     ]
@@ -217,47 +220,37 @@ unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
       <*> cast_
   sizeof = do
     lx1 sizeof'
-    (ExprSizeOf . Left <$> inpar (lx1 parsetype))
+    (ExprSizeOf . Left <$> inpar (parsetype))
       <|> (ExprSizeOf . Right <$> unary)
   alignof = do
     lx1 alignof'
-    ExprAlignOf . Left <$> inpar (lx1 parsetype)
+    ExprAlignOf . Left <$> inpar (parsetype)
 
 compound = do
   -- For now, just handle the error since we need to refactor
   -- the Expr and Type handling in the AST to properly implement
   -- compound literals
-  lx0 (inpar (lx1 parsetype)) >> lx0 (incur anyChar) >> failed
+  lx0 (inpar (parsetype)) >> lx0 (incur anyChar) >> failed
 
-postfix = go =<< primary
+postfix = primary >>= go
  where
   go a = do
-    let sfxop =
+    let getid = lx1 (runandgetspan (byteStringOf identifier))
+        mksym (WithSpan s i) = symcreate i (SymIsType (primtype2type Void_)) s
+        sfxop =
           anyChar >>= \case
             '[' -> do
-              b <- lx0 expr_
+              b <- expr_
               lx0 rsqb
               pure $ ExprArray a b
             '(' -> do
               b <- assign `sepBy` lx0 comma
               lx0 rpar
               pure $ ExprCall a b
-            '.' -> do
-              WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
-
-              -- Create a symbol for the member name
-              s <- symcreate idname (SymIsType (primtype2type Void_)) spn
-
-              pure $ ExprMember a s
+            '.' -> ExprMember a <$> (getid >>= mksym)
             '-' ->
               anyChar >>= \case
-                '>' -> do
-                  WithSpan spn idname <- lx1 (runandgetspan (byteStringOf identifier))
-
-                  -- Create a symbol for the member name
-                  s <- symcreate idname (SymIsType (primtype2type Void_)) spn
-
-                  pure $ ExprMemberPtr a s
+                '>' -> ExprMember a <$> (getid >>= mksym)
                 '-' -> pure $ ExprPostDec a
                 _ -> failed
             '+' ->
@@ -283,7 +276,7 @@ ident = do
 generic = do
   lx1 _Generic'
   inpar do
-    a <- lx0 assign
+    a <- assign
     lx0 comma
     b <- genassoc `sepBy1` lx0 comma
     pure $ ExprGeneric a b
@@ -293,7 +286,7 @@ generic = do
     -- decide how to convert Type to Str or adjust the GenAssoc structure
     lx1 default'
     lx0 colon
-    b <- lx0 assign
+    b <- assign
     pure $ GenAssoc Nothing b
 
 binasgnop :: Parser (Expr -> Expr -> Expr)

@@ -530,9 +530,8 @@ type Str = ByteString
 
 -- | The kind of a symbol.
 data SymbolKind
-  = -- | The symbol is a typedef of an earlier symbol.
-    -- This is the symbol it's referring to.
-    SymIsTypedef Symbol
+  = -- | The symbol is a typedef of another type.
+    SymIsTypedef Type
   | -- | Symbol defines a type.
     SymIsType Type
   deriving (Show, Eq)
@@ -629,8 +628,11 @@ data ComplianceSettings = ComplianceSettings
 
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
-  { pserrors :: IORef (Seq AnnotatedError),
+  { -- | List of all messages, not just errors as the name might suggest.
+    pserrors :: IORef (Seq AnnotatedError),
+    -- | Settings for integers.
     psintset :: IntegerSettings,
+    -- | Settings for character types and character and string literals.
     pscharset :: CharSettings,
     -- | Symbol table for name resolution
     pssymtab :: SymbolTable,

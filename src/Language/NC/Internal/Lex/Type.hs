@@ -18,6 +18,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid
 import Language.NC.Internal.Lex.Lex
+import {-# SOURCE #-} Language.NC.Internal.Lex.Op
 import Language.NC.Internal.Prelude
 
 -- in this parser-lexer we parse type names.
@@ -165,45 +166,87 @@ directly as parsing proceeds, from the base type outward.
 -- Type specifier token - used to count occurrences in parsing
 data TSTok
   = -- Type specifiers
-    TStVoid -- void
-  | TStChar -- char
-  | TStShort -- short
-  | TStInt -- int
-  | TStLong -- long
-  | TStFloat -- float
-  | TStDouble -- double
-  | TStSigned -- signed
-  | TStUnsigned -- unsigned
-  | TStBool -- _Bool
-  | TStComplex -- _Complex
-  | -- C23 types
-    TStDecimal32 -- _Decimal32
-  | TStDecimal64 -- _Decimal64
-  | TStDecimal128 -- _Decimal128
-  | TStBitInt -- _BitInt(...)
+
+    -- | @void@
+    TStVoid
+  | -- | @char@
+    TStChar
+  | -- | @short@
+    TStShort
+  | -- | @int@
+    TStInt
+  | -- | @long@
+    TStLong
+  | -- | @float@
+    TStFloat
+  | -- | @double@
+    TStDouble
+  | -- | @signed@
+    TStSigned
+  | -- | @unsigned@
+    TStUnsigned
+  | -- | @_Bool@
+    TStBool
+  | -- | @_Complex@
+    TStComplex
+  | -- | @_Decimal32@
+    TStDecimal32
+  | -- | @_Decimal64@
+    TStDecimal64
+  | -- | @_Decimal128@
+    TStDecimal128
+  | -- | @_BitInt(...)@
+    TStBitInt
   | -- Type qualifiers
-    TStConst -- const
-  | TStVolatile -- volatile
-  | TStRestrict -- restrict
-  | TStAtomic -- _Atomic
+
+    -- | @const@
+    TStConst
+  | -- | @volatile@
+    TStVolatile
+  | -- | @restrict@
+    TStRestrict
+  | -- | @\_Atomic@
+    TStAtomic
   | -- Storage class specifiers
-    TStRegister -- register
-  | TStAuto -- auto
-  | TStStatic -- static
-  | TStExtern -- extern
-  | TStThreadLocal -- _Thread_local, thread_local
-  | TStTypedef -- typedef
-  | TStConstexpr -- constexpr
+
+    -- | @register@
+    TStRegister
+  | -- | @auto@
+    TStAuto
+  | -- | @static@
+    TStStatic
+  | -- | @extern@
+    TStExtern
+  | -- | @\_Thread\_local@, thread\_local
+    TStThreadLocal
+  | -- | @typedef@
+    TStTypedef
+  | -- | @constexpr@
+    TStConstexpr
   | -- Function specifiers
-    TStInline -- inline
-  | TStNoreturn -- _Noreturn
+
+    -- | @inline@
+    TStInline
+  | -- | @\_Noreturn@
+    TStNoreturn
   | -- Compound type specifiers
-    TStStruct -- struct ...
-  | TStUnion -- union ...
-  | TStEnum -- enum ...
-  | TStTypedefName -- <identifier>
-  -- Alignment specifier
-  | TStAlignas -- _Alignas(...), alignas(...)
+
+    -- | @struct@ ...
+    TStStruct
+  | -- | @union@ ...
+    TStUnion
+  | -- | @enum@ ...
+    TStEnum
+  | -- | \<identifier\>
+    -- Alignment specifier
+    TStTypedefName
+  | -- | @\_Alignas(...)@, alignas(...)
+    -- @typeof@ specifiers
+    TStAlignas
+  | -- | @typeof@
+    TStTypeof
+  | -- | @typeof\_unqual@
+    TStTypeofUnqual
   deriving (Eq, Enum, Show, Ord)
 
 -- Bitset for type specifier tokens
@@ -350,6 +393,32 @@ tst_typedefname = TSToks (1 .<<. 32)
 tst_alignas :: TSToks
 tst_alignas = TSToks (1 .<<. 33)
 
+-- typeof specifiers
+
+tst_typeof, tst_typeof_unqual :: TSToks
+tst_typeof = TSToks (1 .<<. 34)
+tst_typeof_unqual = TSToks (1 .<<. 35)
+
+-- | Content behind an @alignas@ specification.
+data AlignAsSpec
+  = -- | No `alignas` directive
+    AASNone
+  | -- | Align as &lt;@type-name@&gt;
+    AASTypeName Type
+  | -- | Align as &lt;@constant-expression@&gt;
+    AASConstExpr Expr
+  deriving (Eq, Show)
+
+-- | Content behind an @typeof@ or @typeof\_unqual@ specification.
+data TypeOfSpec
+  = -- | No typeof-specifier
+    TOSNone
+  | -- | Use type
+    TOSTypeName Type
+  | -- | From expression, compute type. Use type.
+    TOSExpr Expr
+  deriving (Eq, Show)
+
 -- | Container for holding all information collected during type parsing
 data TypeTokens = TypeTokens
   { -- | Count of each token type.
@@ -358,13 +427,22 @@ data TypeTokens = TypeTokens
     _tt_counts :: !(Map TSTok Int),
     -- | The real deal.
     _tt_mask :: !TSToks,
-    -- | Bit width for _BitInt, if any (/= 0), or none (== 0).
-    _tt_bitintwidth :: !Int
+    -- | Bit width for @\_BitInt@, if any (/= 0), or none (== 0).
+    _tt_bitintwidth :: !Int,
+    -- | Specifications for alignment, if any given.
+    _tt_alignspec :: !AlignAsSpec,
+    -- | Specifications for @typeof@ or @typeof\_unqual@.
+    _tt_typeofspec :: !TypeOfSpec,
+    -- | Possibly, a single unqualified type under @\_Atomic@.
+    _tt_atomictype :: !(Maybe Type),
+    -- | Possibly, a type definition
+    _tt_typedef :: !(Maybe Type)
   }
   deriving (Eq, Show)
 
 makeLenses ''TypeTokens
 
+-- | Throw an error citing an unknown combination of type tokens.
 _unktyptokcombo :: String -> TSToks -> Parser a
 _unktyptokcombo name v =
   err
@@ -431,8 +509,10 @@ tt2basic v =
     -- error case
     _ -> _unktyptokcombo "tt2basic" v
 
--- decorate types ... why Dual? because if you have something like:
---  int *(*foo[10])(void)
+-- | decorate types ... why 'Dual'? because if you have something like:
+--
+--  @int *(*foo[10])(void)@
+--
 -- the declarations read inside out. the innermost type (int) is
 -- modified by the successive operations, so we need to produce
 -- transformations in the opposite order of appearance.
@@ -491,16 +571,21 @@ typespecqual = do
            "const" -> push TStConst tst_const
            "volatile" -> push TStVolatile tst_volatile
            "restrict" -> push TStRestrict tst_restrict
-           "_Atomic" -> push TStAtomic tst_atomic
+           "_Atomic" -> handleatomic
            "register" -> push TStRegister tst_register
            "auto" -> push TStAuto tst_auto
            "static" -> push TStStatic tst_static
            "extern" -> push TStExtern tst_extern
            "_Thread_local" -> push TStThreadLocal tst_threadlocal
+           "thread_local" -> push TStThreadLocal tst_threadlocal
            "typedef" -> push TStTypedef tst_typedef
            "constexpr" -> push TStConstexpr tst_constexpr
            "inline" -> push TStInline tst_inline
            "_Noreturn" -> push TStNoreturn tst_noreturn
+           "_Alignas" -> handlealignas
+           "alignas" -> handlealignas
+           "typeof" -> handletypeof False
+           "typeof_unqual" -> handletypeof True
          |]
    )
  where
@@ -511,13 +596,40 @@ typespecqual = do
     over tt_counts (Map.insertWith (+) token 1)
       . over tt_mask (<> mask)
   push token mask = pure $ SpecQual $ prepush token mask
+  handleatomic =
+    choice
+      [ inpar $ parsetype <&> \ty ->
+          SpecQual (prepush TStAtomic tst_atomic)
+            <> SpecQual (set tt_atomictype (Just ty)),
+        push TStAtomic tst_atomic
+      ]
+  handlealignas =
+    inpar
+      $ choice
+        [ parsetype <&> \ty ->
+            SpecQual (prepush TStAlignas tst_alignas)
+              <> SpecQual (set tt_alignspec (AASTypeName ty)),
+          expr_ <&> \ex ->
+            SpecQual (prepush TStAlignas tst_alignas)
+              <> SpecQual (set tt_alignspec (AASConstExpr ex))
+        ]
+  handletypeof unqual =
+    let (tok, tokbit)
+          | unqual = (TStTypeof, tst_typeof)
+          | otherwise = (TStTypeofUnqual, tst_typeof_unqual)
+        f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
+     in inpar
+          $ choice
+            [ parsetype <&> f . TOSTypeName,
+              expr_ <&> f . TOSExpr
+            ]
   push_bitint width =
     pure
       $ SpecQual (prepush TStBitInt tst_bitint)
       <> SpecQual (set tt_bitintwidth width)
   handlelong = pure $ SpecQual \tt ->
     -- if we pushed it before then we use a different bit.
-    case Map.lookup TStLong (_tt_counts tt) of
+    case Map.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
 
@@ -538,7 +650,7 @@ typespecquals = do
   -- Build specifier-qualifier transformations (SpecQual);
   -- construct a BaseType (bt1).
   SpecQual f <- chainl (<>) typespecqual typespecqual
-  let tt = f $ TypeTokens mempty mempty 0
+  let tt = f $ TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing
   checksanity tt
   bt0 <- tt2basic (_tt_mask tt)
   bt1 <- case tt ^. tt_mask .&. tst_bitint of
