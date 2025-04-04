@@ -45,7 +45,7 @@
 
 > question. what are some good reasons to build a CST vs. not (as done right now)? find passionate arguments for both sides, and be contrived if you need to be.
 
-*pointing at `Language.NC.Internal.Lex.Op`, which, as of writing, was responsible for parsing expressions (not just operators as the name suggests). It avoids CSTs and builds the AST directly, which is a common approach in many parsers. But I imagined there could be good reasons to build a CST instead, and I wanted to see if Claude could come up with some passionate arguments for both sides.*
+*pointing at `Language.NC.Internal.Parse.Op`, which, as of writing, was responsible for parsing expressions (not just operators as the name suggests). It avoids CSTs and builds the AST directly, which is a common approach in many parsers. But I imagined there could be good reasons to build a CST instead, and I wanted to see if Claude could come up with some passionate arguments for both sides.*
 
 ### CST Advocate:
 > "Direct AST construction is DANGEROUS! You're throwing away vital source information that could be crucial for future tooling. What if you need to do source-to-source transformation? What if you need to preserve comments for documentation? You're making assumptions about what information is 'irrelevant' - that's future technical debt waiting to happen!"

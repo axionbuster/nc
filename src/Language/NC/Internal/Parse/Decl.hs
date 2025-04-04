@@ -12,7 +12,7 @@
 -- 2. Flexible parsing using container-based approaches
 -- 3. Strong integration with the type system
 -- 4. Convenient access using optics (lenses, prisms)
-module Language.NC.Internal.Lex.Decl (
+module Language.NC.Internal.Parse.Decl (
   -- * Core Declaration Types
   Declaration (..),
   Declarator (..),
@@ -55,9 +55,9 @@ import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.HashSet (HashSet)
 import Data.HashSet qualified as HashSet
-import Language.NC.Internal.Lex.Lex
-import Language.NC.Internal.Lex.Op
-import Language.NC.Internal.Lex.Type
+import Language.NC.Internal.Lex
+import Language.NC.Internal.Parse.Op
+import Language.NC.Internal.Parse.Type
 import Language.NC.Internal.Prelude
 
 -- * Exported types

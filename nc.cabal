@@ -33,10 +33,9 @@ library
     exposed-modules:    Language.NC
     other-modules:      Language.NC.Internal.Prelude,
                         Language.NC.Internal.Lex,
-                        Language.NC.Internal.Lex.Lex,
-                        Language.NC.Internal.Lex.Op,
-                        Language.NC.Internal.Lex.Type,
-                        Language.NC.Internal.Lex.Decl,
+                        Language.NC.Internal.Parse.Op,
+                        Language.NC.Internal.Parse.Type,
+                        Language.NC.Internal.Parse.Decl,
                         Language.NC.Internal.Types.Parse,
                         Language.NC.Internal.Types.PrimTypes
     default-extensions: NoImplicitPrelude

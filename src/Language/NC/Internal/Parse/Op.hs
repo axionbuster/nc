@@ -13,15 +13,15 @@
 -- Rather than directly translating the C grammar (which would produce
 -- a deep and unbalanced tree), this implementation constructs the AST
 -- directly without building an intermediate CST (Concrete Syntax Tree).
-module Language.NC.Internal.Lex.Op (
+module Language.NC.Internal.Parse.Op (
   -- * Parsers
   expr,
   expr_,
   assign,
 ) where
 
-import Language.NC.Internal.Lex.Lex
-import Language.NC.Internal.Lex.Type
+import Language.NC.Internal.Lex
+import Language.NC.Internal.Parse.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
 
 {- PEG grammar referenced; converted from C23 CFG grammar.

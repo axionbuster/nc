@@ -1,4 +1,4 @@
-module Language.NC.Internal.Lex.Op where
+module Language.NC.Internal.Parse.Op where
 
 import Language.NC.Internal.Prelude
 

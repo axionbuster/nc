@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
-module Language.NC.Internal.Lex.Type (
+module Language.NC.Internal.Parse.Type (
   -- * Parsing an expression determining type
   parsetype,
 
@@ -17,8 +17,8 @@ module Language.NC.Internal.Lex.Type (
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid
-import Language.NC.Internal.Lex.Lex
-import {-# SOURCE #-} Language.NC.Internal.Lex.Op
+import Language.NC.Internal.Lex
+import {-# SOURCE #-} Language.NC.Internal.Parse.Op
 import Language.NC.Internal.Prelude
 
 -- in this parser-lexer we parse type names.
