@@ -106,6 +106,56 @@ alignment-specifier ←
   'alignas' '(' type-name ')' /
   'alignas' '(' constant-expression ')'
 
+# Struct or union specifier - optimized for PEG parsing efficiency
+struct-or-union-specifier ←
+  # Type keyword (struct vs union)
+  ('struct' / 'union')
+  
+  # Optional attribute specifier sequence (inlined)
+  ('[' '[' attribute-list ']' ']')*
+  
+  # Two forms: with body definition or reference by identifier
+  (
+    # Form 1: Definition with body (optional identifier + body)
+    identifier? '{' 
+      # One or more member declarations
+      (
+        # Regular member declaration
+        ('[' '[' attribute-list ']' ']')* type-specifier-qualifier+
+          # Optional member declarator list
+          (
+            # Bit field declarators
+            declarator? ':' constant-expression 
+              (',' declarator? ':' constant-expression)* /
+              
+            # Standard declarators
+            declarator (',' declarator)* /
+            
+            # Empty (just type declaration, no members)
+            ε
+          )
+        ';' /
+        
+        # static_assert declaration
+        'static_assert' '(' constant-expression (',' string-literal)? ')' ';'
+      )+
+    '}' /
+    
+    # Form 2: Reference to existing struct/union by identifier
+    identifier
+  )
+
+# Member declaration - simplified reference only, implementation inlined above
+member-declaration ←
+  attribute-specifier-sequence? type-specifier-qualifier+
+    member-declarator-list? ';' /
+  static_assert-declaration
+
+# Member declarator - simplified reference only, implementation inlined above
+member-declarator ←
+  declarator /
+  declarator? ':' constant-expression
+
 == Implementation strategy ==
 
 1. Parse all specifiers and qualifiers, building a base type and qualifier set
@@ -617,8 +667,8 @@ typespecqual = do
         ]
   handletypeof unqual =
     let (tok, tokbit)
-          | unqual = (TStTypeof, tst_typeof)
-          | otherwise = (TStTypeofUnqual, tst_typeof_unqual)
+          | unqual = (TStTypeofUnqual, tst_typeof_unqual)
+          | otherwise = (TStTypeof, tst_typeof)
         f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
      in inpar
           $ choice
