@@ -66,6 +66,12 @@ module Language.NC.Internal.Types.Parse (
   ArraySize (..),
   QualifiedType (..),
   Variadic (..),
+  Attribute (..),
+  recinfo_def,
+  attr_clause,
+  rec_attrs,
+  rec_info,
+  rec_sym,
 
   -- * Error types
   Error (..),
@@ -89,7 +95,7 @@ module Language.NC.Internal.Types.Parse (
   ScopeStack (..),
   ScopeInfo (..),
   Str,
-  newSymbol,
+  newsymbol,
   newsymtable,
   enterscope,
   exitscope,
@@ -352,17 +358,59 @@ data BaseType
 -- | A qualified type.
 data QualifiedType
   = QualifiedType
-  { qt_base :: BaseType,
-    qt_qual :: TypeQual
+  { -- | Unqualified base type
+    qt_base :: BaseType,
+    -- | Qualifications, if any
+    qt_qual :: TypeQual,
+    -- | Attributes, if any
+    qt_attr :: [Attribute]
   }
   deriving (Eq, Show)
 
+-- | A @struct@ or @union@, with body or without.
 data Record
   = -- | A struct type.
-    RecordStruct Symbol RecordInfo
+    RecordStruct { _rec_sym :: Symbol,
+      _rec_info :: RecordInfo, _rec_attrs :: [Attribute]}
   | -- | A union type.
-    RecordUnion Symbol RecordInfo
+    RecordUnion { _rec_sym :: Symbol,
+      _rec_info :: RecordInfo, _rec_attrs :: [Attribute]}
   deriving (Eq, Show)
+
+-- | Prism for the body of a record.
+recinfo_def :: Prism' RecordInfo [RecordField]
+recinfo_def = prism' builder matcher
+  where
+    builder = RecordDef
+    matcher = \case
+      RecordDef f -> Just f
+      RecordDecl -> Nothing
+
+-- | Record information
+data RecordInfo = RecordDef [RecordField] | RecordDecl
+  deriving (Eq, Show)
+
+-- | Record field
+data RecordField
+  = -- | Optional attributes; type, symbol, optional bit width.
+    RecordField [Attribute] Type Symbol (Maybe Int)
+  | RecordStaticAssertion StaticAssertion -- ^ static assertion member
+  deriving (Eq, Show)
+
+-- | Attribute
+data Attribute
+  = StandardAttribute Str Str -- ^ unprefixed name; clauses, uninterpreted.
+  | PrefixedAttribute Str Str Str -- ^ prefix, name, uninterpreted clauses.
+  deriving (Eq, Show)
+
+-- | Lens for the clause part of an 'Attribute'
+attr_clause :: Lens' Attribute Str
+attr_clause = lens getter setter
+  where
+    getter (StandardAttribute _ c) = c
+    getter (PrefixedAttribute _ _ c) = c
+    setter (StandardAttribute n _) c = StandardAttribute n c
+    setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
 
 data EnumType
   = -- | An enumeration type.
@@ -388,6 +436,10 @@ data ArraySize
     ArraySizeNone
   deriving (Eq, Show)
 
+data StaticAssertion
+  = StaticAssertion Expr (Maybe StringLiteral)
+  deriving (Eq, Show)
+
 -- | Monoid representing qualifier monoid.
 newtype TypeQual = TypeQual {untypequal :: Int8}
   deriving (Eq, Num, Bits, FiniteBits)
@@ -404,14 +456,6 @@ data Type = Type
     _ty_funcspec :: FuncSpec,
     _ty_alignment :: Alignment
   }
-  deriving (Eq, Show)
-
--- | Record information
-data RecordInfo = RecordDef [RecordField] | RecordDecl
-  deriving (Eq, Show)
-
--- | Record field
-data RecordField = RecordField Type Symbol (Maybe Int)
   deriving (Eq, Show)
 
 -- | Enum information
@@ -768,8 +812,8 @@ instance Hashable Symbol where
   hashWithSalt s (Symbol u) = hashWithSalt s (hashUnique u)
 
 -- | Create a new unique symbol.
-newSymbol :: IO Symbol
-newSymbol = Symbol <$> newUnique
+newsymbol :: IO Symbol
+newsymbol = Symbol <$> newUnique
 
 -- | Create a new empty symbol table
 newsymtable :: IO SymbolTable
@@ -818,7 +862,7 @@ symdefine st name kind loc = do
     Nothing -> help
  where
   help = do
-    sym <- liftIO newSymbol
+    sym <- liftIO newsymbol
     scopes <- liftIO $ readIORef (symtab_scopes st)
     case scopes of
       ScopeStack [] -> err $ InternalError "symdefine: no scope available"
@@ -999,3 +1043,5 @@ emitwarning :: Error -> Span -> Parser ()
 emitwarning e s = emitdiagnostic e s SeverityWarning
 
 makeLenses ''Type
+
+makeLenses ''Record

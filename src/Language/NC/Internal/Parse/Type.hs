@@ -29,132 +29,114 @@ import Language.NC.Internal.Prelude
 {- Optimized C23 fragment (in PEG) of the type-name rule for parsetype implementation:
 
 # Fully inlined and optimized for PEG parsing efficiency
+# Type name - entry point for parsing C types
 type-name ←
-  # Step 1: Parse all type specifiers and qualifiers - collect in a list/set
-  type-specifier-qualifier+
-
-  # Step 2: Parse optional abstract declarator which transforms the base type
+  # First collect all type specifiers and qualifiers
+  type-specifier-qualifier+ attribute-specifier-sequence?
+  # Then optionally parse abstract declarator
   (
-    # Pointer chain followed by optional direct part
-    ('*' type-qualifier* pointer? direct-abstract-declarator?) /
-
-    # Just direct part without pointer prefix
-    direct-abstract-declarator
+    # Case 1: Pointer chain followed by optional direct part
+    ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)* 
+    (
+      # Direct abstract declarator (parenthesized or array/function)
+      (
+        # Parenthesized abstract declarator
+        '(' (
+          # Either a full abstract declarator inside parentheses
+          ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)* 
+           (direct-abstract-declarator)?) / 
+          # Or just a direct abstract declarator
+          direct-abstract-declarator
+        ) ')' /
+        
+        # Array form with all variations in priority order
+        '[' (
+          'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
+          ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
+          ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
+          ('const'/'restrict'/'volatile'/'_Atomic')* '*'
+        ) ']' attribute-specifier-sequence? /
+        
+        # Function form
+        '(' (
+          # Parameter list with variadic option
+          parameter-declaration (',' parameter-declaration)* (',' '...')? /
+          '...'
+        )? ')' attribute-specifier-sequence?
+      )
+      
+      # Suffix decorators (array or function)
+      (
+        # Array suffix
+        '[' (
+          'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
+          ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
+          ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
+          ('const'/'restrict'/'volatile'/'_Atomic')* '*'
+        ) ']' attribute-specifier-sequence? /
+        
+        # Function suffix
+        '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
+         attribute-specifier-sequence?
+      )*
+    )?
   )?
 
-# Optimized direct abstract declarator with declarator suffixes inlined for fewer productions
+# Direct abstract declarator - factored out due to mutual recursion
 direct-abstract-declarator ←
-  # Initial direct declarator fragment
-  (
-    # Case 1: Parenthesized abstract declarator
-    '(' abstract-declarator ')' /
+  # Parenthesized abstract declarator
+  '(' abstract-declarator ')' /
+  
+  # Array form
+  '[' (
+    'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
+    ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
+    ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
+    ('const'/'restrict'/'volatile'/'_Atomic')* '*'
+  ) ']' attribute-specifier-sequence? /
+  
+  # Function form
+  '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
+   attribute-specifier-sequence?
 
-    # Case 2: Array declarator - all array forms inlined
-    '[' (
-      # Standard array form
-      type-qualifier* assignment-expression? /
-      # Static forms
-      'static' type-qualifier* assignment-expression /
-      type-qualifier+ 'static' assignment-expression /
-      # VLA marker
-      '*'
-    ) ']' /
+# Abstract declarator - needed for parenthesized expressions
+abstract-declarator ←
+  ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)*)+ direct-abstract-declarator? /
+  direct-abstract-declarator
 
-    # Case 3: Function declarator - parameter list inlined
-    '(' (
-      # Parameter list with optional variadic
-      (declaration-specifiers abstract-declarator?
-        (',' declaration-specifiers abstract-declarator?)*
-        (',' '...')?)
-      / '...'
-    )? ')'
-  )
-
-  # Followed by zero or more additional declarator operations
-  (
-    # Array suffix form - all forms inlined
-    '[' (
-      type-qualifier* assignment-expression? /
-      'static' type-qualifier* assignment-expression /
-      type-qualifier+ 'static' assignment-expression /
-      '*'
-    ) ']' /
-
-    # Function suffix form
-    '(' (
-      (declaration-specifiers abstract-declarator?
-        (',' declaration-specifiers abstract-declarator?)*
-        (',' '...')?)
-      / '...'
-    )? ')'
-  )*
-
-# Type specifier or qualifier - any component of specifier-qualifier-list
+# Type specifier or qualifier - consolidated into one rule
 type-specifier-qualifier ←
-  # Type specifiers (inlined key keywords)
+  # Built-in types (ordered for quick recognition)
   'void' / 'char' / 'short' / 'int' / 'long' / 'float' / 'double' /
   'signed' / 'unsigned' / '_Bool' / '_Complex' / '_Decimal32' / '_Decimal64' / '_Decimal128' /
-  # Compound type specifiers
-  struct-or-union-specifier / enum-specifier / atomic-type-specifier /
-  typeof-specifier / typedef-name /
-  # Type qualifiers (inlined)
+  '_BitInt' '(' constant-expression ')' /
+  # Type qualifiers (very common, parse early)
   'const' / 'restrict' / 'volatile' / '_Atomic' /
-  # Alignment specifiers
-  alignment-specifier
-
-alignment-specifier ←
-  'alignas' '(' type-name ')' /
-  'alignas' '(' constant-expression ')'
-
-# Struct or union specifier - optimized for PEG parsing efficiency
-struct-or-union-specifier ←
-  # Type keyword (struct vs union)
-  ('struct' / 'union')
-  
-  # Optional attribute specifier sequence (inlined)
-  ('[' '[' attribute-list ']' ']')*
-  
-  # Two forms: with body definition or reference by identifier
-  (
-    # Form 1: Definition with body (optional identifier + body)
-    identifier? '{' 
-      # One or more member declarations
-      (
-        # Regular member declaration
-        ('[' '[' attribute-list ']' ']')* type-specifier-qualifier+
-          # Optional member declarator list
-          (
-            # Bit field declarators
-            declarator? ':' constant-expression 
-              (',' declarator? ':' constant-expression)* /
-              
-            # Standard declarators
-            declarator (',' declarator)* /
-            
-            # Empty (just type declaration, no members)
-            ε
-          )
-        ';' /
-        
-        # static_assert declaration
-        'static_assert' '(' constant-expression (',' string-literal)? ')' ';'
-      )+
-    '}' /
-    
-    # Form 2: Reference to existing struct/union by identifier
+  # Compound type specifiers (more complex, parse later)
+  ('struct' / 'union') attribute-specifier-sequence? (
+    identifier? '{' (
+      attribute-specifier-sequence? type-specifier-qualifier+ (
+        (declarator? ':' constant-expression (',' declarator? ':' constant-expression)*) /
+        (declarator (',' declarator)*) / 
+        ε
+      ) ';' / 
+      'static_assert' '(' constant-expression (',' string-literal)? ')' ';'
+    )+ '}' / 
     identifier
-  )
+  ) /
+  'enum' attribute-specifier-sequence? identifier? ('{' enumerator-list ','? '}')? /
+  '_Atomic' '(' type-name ')' /
+  ('typeof' / 'typeof_unqual') '(' (type-name / expression) ')' /
+  'alignas' '(' (type-name / constant-expression) ')' /
+  typedef-name  # Check last to avoid conflicts with identifiers
 
-# Member declaration - simplified reference only, implementation inlined above
-member-declaration ←
-  attribute-specifier-sequence? type-specifier-qualifier+
-    member-declarator-list? ';' /
-  static_assert-declaration
+# Attribute specifier sequence - simplified
+attribute-specifier-sequence ←
+  ('[' '[' attribute? (',' attribute?)* ']' ']')*
 
-# Member declarator - simplified reference only, implementation inlined above
-member-declarator ←
-  declarator /
-  declarator? ':' constant-expression
+# Parameter declaration - simplified for type-name context
+parameter-declaration ←
+  attribute-specifier-sequence? type-specifier-qualifier+ (declarator / abstract-declarator)?
 
 == Implementation strategy ==
 
@@ -470,6 +452,24 @@ data TypeOfSpec
   | -- | From expression, compute type. Use type.
     TOSExpr Expr
   deriving (Eq, Show)
+
+-- | Construction of a record data structure such as a @struct@ or
+-- a @union@. Notice how it doesn't say if its a @struct@ *or* a
+-- @union@.
+data RecordSpec
+  = RecordSpec
+    { -- | Attributes, if any.
+      _rs_attrs :: ![Attribute],
+      -- | Body (declaration or has body).
+      _rs_body :: !RecordInfo,
+      -- | Tag, if it is given.
+      _rs_name :: !(Maybe Str),
+      -- | Symbol.
+      _rs_symbol :: !Symbol
+    }
+    deriving (Eq, Show)
+
+makeLenses ''RecordSpec
 
 -- | Container for holding all information collected during type parsing
 data TypeTokens = TypeTokens
