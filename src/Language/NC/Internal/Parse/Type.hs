@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -14,8 +15,8 @@ module Language.NC.Internal.Parse.Type (
   TypeTokens (..),
 ) where
 
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HashMap
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
@@ -247,11 +248,12 @@ data TSTok
     TStTypeof
   | -- | @typeof\_unqual@
     TStTypeofUnqual
-  deriving (Eq, Enum, Show, Ord)
+  deriving (Eq, Enum, Show, Generic)
+  deriving anyclass (Hashable)
 
 -- Bitset for type specifier tokens
 newtype TSToks = TSToks {untstoks :: Word64}
-  deriving (Eq, Ord, Num, Bits, FiniteBits)
+  deriving newtype (Eq, Num, Bits, FiniteBits)
 
 instance Semigroup TSToks where
   TSToks i <> TSToks j = TSToks (i .|. j)
@@ -424,7 +426,7 @@ data TypeTokens = TypeTokens
   { -- | Count of each token type.
     -- This is for error reporting
     -- if user uses too many specifiers and qualifiers.
-    _tt_counts :: !(Map TSTok Int),
+    _tt_counts :: !(HashMap TSTok Int),
     -- | The real deal.
     _tt_mask :: !TSToks,
     -- | Bit width for @\_BitInt@, if any (/= 0), or none (== 0).
@@ -593,7 +595,7 @@ typespecqual = do
     integer_constant_val >>= \case
       IntegerLiteral n _ -> pure $ fromIntegral n
   prepush token mask =
-    over tt_counts (Map.insertWith (+) token 1)
+    over tt_counts (HashMap.insertWith (+) token 1)
       . over tt_mask (<> mask)
   push token mask = pure $ SpecQual $ prepush token mask
   handleatomic =
@@ -629,7 +631,7 @@ typespecqual = do
       <> SpecQual (set tt_bitintwidth width)
   handlelong = pure $ SpecQual \tt ->
     -- if we pushed it before then we use a different bit.
-    case Map.lookup TStLong tt._tt_counts of
+    case HashMap.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
 
@@ -675,9 +677,9 @@ typespecquals = do
   badcondition TStLong c = c > 2
   badcondition _ c = c > 1
   checksanity tt = case tt ^. tt_counts of
-    cc -> case Map.filterWithKey badcondition cc of
+    cc -> case HashMap.filterWithKey badcondition cc of
       map2
-        | Map.null map2 -> pure ()
+        | HashMap.null map2 -> pure ()
         | otherwise -> err $ BasicError "too many specifiers"
 
 -- | Parse types

@@ -56,7 +56,7 @@ data PrimType
     PTFloat FloatType
   | -- | The @void@ type
     PTVoid
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show)
 
 -- | If this is a @char@ then make it @signed char@. Otherwise, do nothing.
 char2schar :: PrimType -> PrimType
@@ -135,7 +135,7 @@ pattern Decimal128_ = PTFloat (FTReal RFDecimal128)
 
 -- | Signed?
 data Signed = Signed | Unsigned
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show)
 
 -- | @int@, @short@, @long@, or @long long@
 data IntLen
@@ -144,11 +144,11 @@ data IntLen
   | ILLong
   | ILLongLong
   | ILBitInt Word16
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show)
 
 -- | Real or complex and what type?
 data FloatType = FTReal RealFloatType | FTComplex RealFloatType
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show)
 
 -- | @float@, @double@, or @long double@?
 data RealFloatType
@@ -158,4 +158,4 @@ data RealFloatType
   | RFDecimal128
   | RFDecimal32
   | RFDecimal64
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show)
