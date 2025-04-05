@@ -99,8 +99,8 @@ module Language.NC.Internal.Types.Parse (
   newsymtable,
   enterscope,
   exitscope,
+  symassoc,
   symdefine,
-  symcreate,
   symlookup,
   symname,
   sympresent,
@@ -135,7 +135,7 @@ import Data.ByteString.Lazy (LazyByteString)
 import Data.Functor
 import Data.HashTable.IO qualified as H
 import Data.Hashable (Hashable (..))
-import Data.IORef
+import UnliftIO.IORef
 import Data.Int (Int8)
 import Data.List (intercalate)
 import Data.Monoid
@@ -575,9 +575,9 @@ type Str = ByteString
 -- | The kind of a symbol.
 data SymbolKind
   = -- | The symbol is a typedef of another type.
-    SymIsTypedef Type
+    SymIsTypedef
   | -- | Symbol defines a type.
-    SymIsType Type
+    SymIsType
   deriving (Show, Eq)
 
 -- | Information about a symbol.
@@ -812,8 +812,8 @@ instance Hashable Symbol where
   hashWithSalt s (Symbol u) = hashWithSalt s (hashUnique u)
 
 -- | Create a new unique symbol.
-newsymbol :: IO Symbol
-newsymbol = Symbol <$> newUnique
+newsymbol :: Parser Symbol
+newsymbol = liftIO $ Symbol <$> newUnique
 
 -- | Create a new empty symbol table
 newsymtable :: IO SymbolTable
@@ -839,74 +839,78 @@ exitscope st = do
       [] -> ScopeStack [] -- Should never happen if used correctly
       (_ : rest) -> ScopeStack rest
 
+-- | Associate an existing symbol with some information
+symassoc ::
+  Maybe Str -> -- ^ new name. if 'Nothing', then ignored (not erased).
+    SymbolKind -> -- ^ new kind
+      Symbol -> -- ^ symbol
+        Parser ()
+symassoc name kind sym = do
+  st <- pssymtab <$> ask
+  readIORef (symtab_scopes st) >>= \case
+    ScopeStack [] -> err $ InternalError "symdefine: no scope available"
+    ScopeStack (scope : _) -> liftIO do
+      case name of
+        Just n -> do
+          H.insert scope n sym
+          H.insert (symtab_names st) sym n
+        Nothing -> pure ()
+      H.insert (symtab_kinds st) sym kind
+
 -- | Define a symbol in the current scope with error handling
 symdefine ::
-  SymbolTable -> Str -> SymbolKind -> Span -> Parser Symbol
-symdefine st name kind loc = do
+  Maybe Str -> -- ^ name, if given
+    SymbolKind -> -- ^ kind of symbol
+      Span -> -- ^ span of symbol
+        Parser Symbol
+symdefine name kind loc = do
   settings <- pscompliancesettings <$> ask
-  existingsym <- liftIO $ sympresent st name
-  case existingsym of
-    Just sym -> do
-      existingkind <- liftIO $ symkind st sym
-      case existingkind of
-        Just ekind
-          | ekind /= kind ->
-              emiterror (SymbolRedefinitionError TypeMismatch) loc $> sym
-          | comp_allow_block_shadowing settings -> do
-              emitwarning (SymbolRedefinitionError AlreadyDefinedInScope) loc
-              help
-          | otherwise -> do
-              emiterror (SymbolRedefinitionError AlreadyDefinedInScope) loc
-              pure sym
-        Nothing -> help
-    Nothing -> help
+  maybe (pure Nothing) symlookup name >>= \case
+    Just (sym, ekind)
+      | ekind /= kind ->
+          emiterror (SymbolRedefinitionError TypeMismatch) loc $> sym
+      | comp_allow_block_shadowing settings -> do
+          emitwarning (SymbolRedefinitionError AlreadyDefinedInScope) loc
+          make
+      | otherwise ->
+          emiterror (SymbolRedefinitionError AlreadyDefinedInScope) loc $> sym
+    Nothing -> make
  where
-  help = do
-    sym <- liftIO newsymbol
-    scopes <- liftIO $ readIORef (symtab_scopes st)
-    case scopes of
-      ScopeStack [] -> err $ InternalError "symdefine: no scope available"
-      ScopeStack (currentScope : _) -> liftIO do
-        H.insert currentScope name sym
-        H.insert (symtab_names st) sym name
-        H.insert (symtab_kinds st) sym kind
-        pure sym
+  make = newsymbol >>= \s -> symassoc name kind s $> s
 
 -- | Check if a symbol exists in the current scope
-sympresent :: SymbolTable -> Str -> IO (Maybe Symbol)
-sympresent st name = do
+sympresent :: Str -> Parser (Maybe Symbol)
+sympresent name = do
+  st <- pssymtab <$> ask
   ScopeStack scopes <- readIORef (symtab_scopes st)
-  case scopes of
+  liftIO $ case scopes of
     [] -> pure Nothing
-    (currentScope : _) -> H.lookup currentScope name
+    (scope : _) -> H.lookup scope name
 
 -- | Get the kind of a symbol
-symkind :: SymbolTable -> Symbol -> IO (Maybe SymbolKind)
-symkind st sym = H.lookup (symtab_kinds st) sym
+symkind :: Symbol -> Parser (Maybe SymbolKind)
+symkind sym = do
+  st <- pssymtab <$> ask
+  liftIO $ H.lookup (symtab_kinds st) sym
 
 -- | Look up a symbol by name in scopes
-symlookup :: SymbolTable -> Str -> IO (Maybe (Symbol, SymbolKind))
-symlookup st name = do
+symlookup :: Str -> Parser (Maybe (Symbol, SymbolKind))
+symlookup name = do
+  st <- pssymtab <$> ask
   ScopeStack scopes <- readIORef (symtab_scopes st)
   -- Search from innermost scope outward
-  findsym scopes
- where
-  findsym [] = pure Nothing
-  findsym (scope : rest) = do
-    result <- H.lookup scope name
-    case result of
-      Just sym -> do
-        kindmaybe <- H.lookup (symtab_kinds st) sym
-        case kindmaybe of
-          Just kind -> pure $ Just (sym, kind)
-          Nothing -> pure Nothing -- Should never happen if tables consistent
-      Nothing -> findsym rest
-
--- | Create a symbol in the current scope with appropriate error handling
-symcreate :: Str -> SymbolKind -> Span -> Parser Symbol
-symcreate name kind loc = do
-  st <- pssymtab <$> ask
-  symdefine st name kind loc
+  let
+    findsym [] = pure Nothing
+    findsym (scope : rest) = do
+      result <- H.lookup scope name
+      case result of
+        Just sym -> do
+          kindmaybe <- H.lookup (symtab_kinds st) sym
+          case kindmaybe of
+            Just kind -> pure $ Just (sym, kind)
+            Nothing -> pure Nothing -- Should never happen if tables consistent
+        Nothing -> findsym rest
+  liftIO $ findsym scopes
 
 -- | Get name for a symbol if it exists.
 --

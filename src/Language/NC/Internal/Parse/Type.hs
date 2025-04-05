@@ -453,24 +453,6 @@ data TypeOfSpec
     TOSExpr Expr
   deriving (Eq, Show)
 
--- | Construction of a record data structure such as a @struct@ or
--- a @union@. Notice how it doesn't say if its a @struct@ *or* a
--- @union@.
-data RecordSpec
-  = RecordSpec
-    { -- | Attributes, if any.
-      _rs_attrs :: ![Attribute],
-      -- | Body (declaration or has body).
-      _rs_body :: !RecordInfo,
-      -- | Tag, if it is given.
-      _rs_name :: !(Maybe Str),
-      -- | Symbol.
-      _rs_symbol :: !Symbol
-    }
-    deriving (Eq, Show)
-
-makeLenses ''RecordSpec
-
 -- | Container for holding all information collected during type parsing
 data TypeTokens = TypeTokens
   { -- | Count of each token type.
@@ -488,7 +470,9 @@ data TypeTokens = TypeTokens
     -- | Possibly, a single unqualified type under @\_Atomic@.
     _tt_atomictype :: !(Maybe Type),
     -- | Possibly, a type definition
-    _tt_typedef :: !(Maybe Type)
+    _tt_typedef :: !(Maybe Type),
+    -- | Actual record
+    _tt_recorddef :: !(Maybe Record)
   }
   deriving (Eq, Show)
 
@@ -702,7 +686,7 @@ typespecquals = do
   -- Build specifier-qualifier transformations (SpecQual);
   -- construct a BaseType (bt1).
   SpecQual f <- chainl (<>) typespecqual typespecqual
-  let tt = f $ TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing
+  let tt = f $ TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing Nothing
   checksanity tt
   bt0 <- tt2basic (_tt_mask tt)
   bt1 <- case tt ^. tt_mask .&. tst_bitint of
@@ -731,6 +715,55 @@ typespecquals = do
       map2
         | HashMap.null map2 -> pure ()
         | otherwise -> err $ BasicError "too many specifiers"
+
+-- | Parse the attribute-specifier-sequence rule
+attrspecs :: Parser [Attribute]
+attrspecs = indbsqb $ attribute `sepBy` lx0 comma
+  where attribute = attrtok <*> inpar baltoks
+        idstr = byteStringOf identifier
+        notdelim = (`notElem` "(){}[]")
+        baltoks = byteStringOf $ skipSatisfy notdelim
+        attrtok = do
+          tok1 <- idstr
+          option (StandardAttribute tok1)
+            (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 idstr)
+
+declarator :: Parser a
+declarator = error "declarator: not implemented yet"
+
+-- structorunion :: Parser Record
+-- structorunion = do
+--   ctor <- (struct' $> RecordStruct) <|> (union' $> RecordUnion)
+--   tag <- optional (byteStringOf identifier_def)
+--   sym <- symdefine tag
+--   _
+
+-- -- structorunion :: Parser Record
+-- -- structorunion = do
+-- --   ctor <- (struct' $> RecordStruct) <|> (union' $> RecordUnion)
+-- --   _ <- choice $
+-- --     [ incur do
+-- --         recordtag <- do
+-- --           WithSpan sp na <-
+-- --             runandgetspan $ optional $ byteStringOf $ lx1 identifier_def
+-- --           pure \ty -> symdefine na (SymIsType ty) sp
+-- --         _  <- some $ choice
+-- --             [
+-- --               do  attrs <- attrspecs
+-- --                   types <- typespecquals
+-- --                   withOption declarator option1 option2 <* lx0 semicolon,
+-- --               do  static_assert'
+-- --                   inpar do
+-- --                     cexpr <- expr_
+-- --                     withOption
+-- --                       (lx0 comma >> string_literal_val)
+-- --                       (option3 cexpr) (option4 cexpr) <* lx0 semicolon
+-- --             ]
+-- --         _ _,
+-- --         do  idstr <- byteStringOf identifier_def
+-- --             _
+-- --     ]
+-- --   pure _
 
 -- | Parse types
 parsetype :: Parser Type

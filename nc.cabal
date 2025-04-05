@@ -35,7 +35,6 @@ library
                         Language.NC.Internal.Lex,
                         Language.NC.Internal.Parse.Op,
                         Language.NC.Internal.Parse.Type,
-                        Language.NC.Internal.Parse.Decl,
                         Language.NC.Internal.Types.Parse,
                         Language.NC.Internal.Types.PrimTypes
     default-extensions: NoImplicitPrelude
