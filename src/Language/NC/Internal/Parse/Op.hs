@@ -235,8 +235,10 @@ compound = do
 postfix = primary >>= go
  where
   go a = do
-    let getid = lx1 (runandgetspan (byteStringOf identifier))
-        mksym (WithSpan s i) = symcreate i (SymIsType (primtype2type Void_)) s
+    let getid = byteStringOf identifier
+        mksym i = do
+          s <- newsymbol
+          symgivename s i $> s
         sfxop =
           anyChar >>= \case
             '[' -> do

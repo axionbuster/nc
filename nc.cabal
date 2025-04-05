@@ -39,7 +39,7 @@ library
                         Language.NC.Internal.Types.PrimTypes
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, unordered-containers,
-                        hashable,
+                        hashable, data-fix,
                         bytestring, text, parser-combinators,
                         template-haskell, hashtables, unliftio, primitive,
                         lens, text-icu

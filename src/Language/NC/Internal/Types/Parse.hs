@@ -67,6 +67,7 @@ module Language.NC.Internal.Types.Parse (
   QualifiedType (..),
   Variadic (..),
   Attribute (..),
+  StaticAssertion (..),
   recinfo_def,
   attr_clause,
   rec_attrs,
@@ -96,15 +97,10 @@ module Language.NC.Internal.Types.Parse (
   ScopeInfo (..),
   Str,
   newsymbol,
-  newsymtable,
   enterscope,
   exitscope,
-  symassoc,
-  symdefine,
-  symlookup,
-  symname,
-  sympresent,
-  symkind,
+  symgivename,
+  symassoctype,
 
   -- * Parser types and functions
   Parser,
@@ -135,9 +131,9 @@ import Data.ByteString.Lazy (LazyByteString)
 import Data.Functor
 import Data.HashTable.IO qualified as H
 import Data.Hashable (Hashable (..))
-import UnliftIO.IORef
 import Data.Int (Int8)
 import Data.List (intercalate)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Monoid
 import Data.Semigroup
 import Data.Sequence (Seq)
@@ -148,6 +144,7 @@ import Data.Word
 import FlatParse.Stateful (ParserIO, Span (..), ask, err, withSpan)
 import Language.NC.Internal.Types.PrimTypes
 import Text.Printf (printf)
+import UnliftIO.IORef
 import Prelude
 
 -- | Represents a primary expression, which is the most basic form
@@ -370,21 +367,27 @@ data QualifiedType
 -- | A @struct@ or @union@, with body or without.
 data Record
   = -- | A struct type.
-    RecordStruct { _rec_sym :: Symbol,
-      _rec_info :: RecordInfo, _rec_attrs :: [Attribute]}
+    RecordStruct
+      { _rec_sym :: Symbol,
+        _rec_info :: RecordInfo,
+        _rec_attrs :: [Attribute]
+      }
   | -- | A union type.
-    RecordUnion { _rec_sym :: Symbol,
-      _rec_info :: RecordInfo, _rec_attrs :: [Attribute]}
+    RecordUnion
+      { _rec_sym :: Symbol,
+        _rec_info :: RecordInfo,
+        _rec_attrs :: [Attribute]
+      }
   deriving (Eq, Show)
 
 -- | Prism for the body of a record.
 recinfo_def :: Prism' RecordInfo [RecordField]
 recinfo_def = prism' builder matcher
-  where
-    builder = RecordDef
-    matcher = \case
-      RecordDef f -> Just f
-      RecordDecl -> Nothing
+ where
+  builder = RecordDef
+  matcher = \case
+    RecordDef f -> Just f
+    RecordDecl -> Nothing
 
 -- | Record information
 data RecordInfo = RecordDef [RecordField] | RecordDecl
@@ -394,23 +397,26 @@ data RecordInfo = RecordDef [RecordField] | RecordDecl
 data RecordField
   = -- | Optional attributes; type, symbol, optional bit width.
     RecordField [Attribute] Type Symbol (Maybe Int)
-  | RecordStaticAssertion StaticAssertion -- ^ static assertion member
+  | -- | static assertion member
+    RecordStaticAssertion StaticAssertion
   deriving (Eq, Show)
 
 -- | Attribute
 data Attribute
-  = StandardAttribute Str Str -- ^ unprefixed name; clauses, uninterpreted.
-  | PrefixedAttribute Str Str Str -- ^ prefix, name, uninterpreted clauses.
+  = -- | unprefixed name; clauses, uninterpreted.
+    StandardAttribute Str Str
+  | -- | prefix, name, uninterpreted clauses.
+    PrefixedAttribute Str Str Str
   deriving (Eq, Show)
 
 -- | Lens for the clause part of an 'Attribute'
 attr_clause :: Lens' Attribute Str
 attr_clause = lens getter setter
-  where
-    getter (StandardAttribute _ c) = c
-    getter (PrefixedAttribute _ _ c) = c
-    setter (StandardAttribute n _) c = StandardAttribute n c
-    setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
+ where
+  getter (StandardAttribute _ c) = c
+  getter (PrefixedAttribute _ _ c) = c
+  setter (StandardAttribute n _) c = StandardAttribute n c
+  setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
 
 data EnumType
   = -- | An enumeration type.
@@ -618,8 +624,8 @@ data SymbolTable = SymbolTable
     symtab_names :: !(FastTable Symbol Str),
     -- | Current scope stack
     symtab_scopes :: !(IORef ScopeStack),
-    -- | Kind definitions table
-    symtab_kinds :: !(FastTable Symbol SymbolKind)
+    -- | Types
+    symtab_types :: !(FastTable Symbol Type)
   }
 
 -- | Bit widths of primitive integers. Pay especially close attention to
@@ -642,6 +648,7 @@ data IntegerSettings
   }
   deriving (Eq, Show)
 
+-- | Endianness for multiple purposes (mostly for integers).
 data Endianness = LittleEndian | BigEndian
   deriving (Eq, Show)
 
@@ -815,110 +822,49 @@ instance Hashable Symbol where
 newsymbol :: Parser Symbol
 newsymbol = liftIO $ Symbol <$> newUnique
 
--- | Create a new empty symbol table
-newsymtable :: IO SymbolTable
-newsymtable = do
-  names <- H.new
-  globalScope <- H.new
-  scopes <- newIORef (ScopeStack [globalScope])
-  kinds <- H.new
-  pure $ SymbolTable names scopes kinds
+-- | Ask for the global symbol table.
+asktab :: Parser SymbolTable
+asktab = pssymtab <$> ask
+
+-- | Associate an existing symbol with a name. Replace the name if needed.
+-- Also, associate the name in the current scope stack.
+symgivename :: Symbol -> Str -> Parser ()
+symgivename sym name = do
+  st <- asktab
+  liftIO $ H.insert st.symtab_names sym name
+  (s :| _) <- symlatestscope "symgivename"
+  liftIO $ H.insert s name sym
+
+-- | Associate a symbol with a type.
+symassoctype :: Symbol -> Type -> Parser ()
+symassoctype sym ty = do
+  st <- asktab
+  liftIO $ H.insert st.symtab_types sym ty
+
+-- | Get the latest scope as a list or error out.
+symlatestscope :: String -> Parser (NonEmpty (FastTable Str Symbol))
+symlatestscope procname = do
+  s <- symtab_scopes <$> asktab
+  readIORef s >>= \case
+    ScopeStack [] -> err $ InternalError $ procname ++ ": empty stack"
+    ScopeStack (t : ts) -> pure (t :| ts)
 
 -- | Enter a new scope
-enterscope :: SymbolTable -> IO ()
-enterscope st = do
-  newScope <- H.new
-  modifyIORef' (symtab_scopes st) $ \(ScopeStack scopes) ->
-    ScopeStack (newScope : scopes)
+enterscope :: Parser ()
+enterscope = do
+  st <- asktab
+  newscope <- liftIO H.new
+  modifyIORef' (symtab_scopes st) \(ScopeStack scopes) ->
+    ScopeStack (newscope : scopes)
 
 -- | Exit the current scope
-exitscope :: SymbolTable -> IO ()
-exitscope st = do
-  modifyIORef' (symtab_scopes st) $ \(ScopeStack scopes) ->
-    case scopes of
-      [] -> ScopeStack [] -- Should never happen if used correctly
-      (_ : rest) -> ScopeStack rest
+exitscope :: Parser ()
+exitscope = do
+  st <- asktab
+  (_ :| s) <- symlatestscope "exitscope"
+  writeIORef st.symtab_scopes (ScopeStack s)
 
--- | Associate an existing symbol with some information
-symassoc ::
-  Maybe Str -> -- ^ new name. if 'Nothing', then ignored (not erased).
-    SymbolKind -> -- ^ new kind
-      Symbol -> -- ^ symbol
-        Parser ()
-symassoc name kind sym = do
-  st <- pssymtab <$> ask
-  readIORef (symtab_scopes st) >>= \case
-    ScopeStack [] -> err $ InternalError "symdefine: no scope available"
-    ScopeStack (scope : _) -> liftIO do
-      case name of
-        Just n -> do
-          H.insert scope n sym
-          H.insert (symtab_names st) sym n
-        Nothing -> pure ()
-      H.insert (symtab_kinds st) sym kind
-
--- | Define a symbol in the current scope with error handling
-symdefine ::
-  Maybe Str -> -- ^ name, if given
-    SymbolKind -> -- ^ kind of symbol
-      Span -> -- ^ span of symbol
-        Parser Symbol
-symdefine name kind loc = do
-  settings <- pscompliancesettings <$> ask
-  maybe (pure Nothing) symlookup name >>= \case
-    Just (sym, ekind)
-      | ekind /= kind ->
-          emiterror (SymbolRedefinitionError TypeMismatch) loc $> sym
-      | comp_allow_block_shadowing settings -> do
-          emitwarning (SymbolRedefinitionError AlreadyDefinedInScope) loc
-          make
-      | otherwise ->
-          emiterror (SymbolRedefinitionError AlreadyDefinedInScope) loc $> sym
-    Nothing -> make
- where
-  make = newsymbol >>= \s -> symassoc name kind s $> s
-
--- | Check if a symbol exists in the current scope
-sympresent :: Str -> Parser (Maybe Symbol)
-sympresent name = do
-  st <- pssymtab <$> ask
-  ScopeStack scopes <- readIORef (symtab_scopes st)
-  liftIO $ case scopes of
-    [] -> pure Nothing
-    (scope : _) -> H.lookup scope name
-
--- | Get the kind of a symbol
-symkind :: Symbol -> Parser (Maybe SymbolKind)
-symkind sym = do
-  st <- pssymtab <$> ask
-  liftIO $ H.lookup (symtab_kinds st) sym
-
--- | Look up a symbol by name in scopes
-symlookup :: Str -> Parser (Maybe (Symbol, SymbolKind))
-symlookup name = do
-  st <- pssymtab <$> ask
-  ScopeStack scopes <- readIORef (symtab_scopes st)
-  -- Search from innermost scope outward
-  let
-    findsym [] = pure Nothing
-    findsym (scope : rest) = do
-      result <- H.lookup scope name
-      case result of
-        Just sym -> do
-          kindmaybe <- H.lookup (symtab_kinds st) sym
-          case kindmaybe of
-            Just kind -> pure $ Just (sym, kind)
-            Nothing -> pure Nothing -- Should never happen if tables consistent
-        Nothing -> findsym rest
-  liftIO $ findsym scopes
-
--- | Get name for a symbol if it exists.
---
--- Note: it is perfectly reasonable for an anonymous symbol to exist
--- in certain occasions (a few types such as structs can lack names).
-symname :: SymbolTable -> Symbol -> IO (Maybe Str)
-symname st sym = H.lookup (symtab_names st) sym
-
+-- internal function to get integer settings
 ain :: Parser IntegerSettings
 ain = psintset <$> ask
 
@@ -1015,6 +961,14 @@ mkstate0 = do
   let is0 = IntegerSettings 8 16 32 64 64 True 32 64 64
   let cs0 = CharSettings UInt_ UChar_ UShort_ UInt_ LittleEndian
   pure (ParserState e is0 cs0 symtab defaultcompliancesettings defaultsevpolicy)
+ where
+  newsymtable = liftIO do
+    -- create a new symbol table and also the initial (global)
+    -- stack scope.
+    n <- H.new
+    s <- ScopeStack . pure <$> H.new >>= newIORef
+    t <- H.new
+    pure $ SymbolTable n s t
 
 -- | Pure \"parser\" to return a 'WithSpan'.
 --

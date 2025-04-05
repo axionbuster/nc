@@ -15,12 +15,13 @@ module Language.NC.Internal.Parse.Type (
   TypeTokens (..),
 ) where
 
+import Data.Fix
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
-import Language.NC.Internal.Prelude
+import Language.NC.Internal.Prelude hiding (L1)
 
 -- in this parser-lexer we parse type names.
 
@@ -36,19 +37,19 @@ type-name ←
   # Then optionally parse abstract declarator
   (
     # Case 1: Pointer chain followed by optional direct part
-    ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)* 
+    ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)*
     (
       # Direct abstract declarator (parenthesized or array/function)
       (
         # Parenthesized abstract declarator
         '(' (
           # Either a full abstract declarator inside parentheses
-          ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)* 
-           (direct-abstract-declarator)?) / 
+          ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)*
+           (direct-abstract-declarator)?) /
           # Or just a direct abstract declarator
           direct-abstract-declarator
         ) ')' /
-        
+
         # Array form with all variations in priority order
         '[' (
           'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
@@ -56,7 +57,7 @@ type-name ←
           ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
           ('const'/'restrict'/'volatile'/'_Atomic')* '*'
         ) ']' attribute-specifier-sequence? /
-        
+
         # Function form
         '(' (
           # Parameter list with variadic option
@@ -64,7 +65,7 @@ type-name ←
           '...'
         )? ')' attribute-specifier-sequence?
       )
-      
+
       # Suffix decorators (array or function)
       (
         # Array suffix
@@ -74,7 +75,7 @@ type-name ←
           ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
           ('const'/'restrict'/'volatile'/'_Atomic')* '*'
         ) ']' attribute-specifier-sequence? /
-        
+
         # Function suffix
         '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
          attribute-specifier-sequence?
@@ -86,7 +87,7 @@ type-name ←
 direct-abstract-declarator ←
   # Parenthesized abstract declarator
   '(' abstract-declarator ')' /
-  
+
   # Array form
   '[' (
     'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
@@ -94,7 +95,7 @@ direct-abstract-declarator ←
     ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
     ('const'/'restrict'/'volatile'/'_Atomic')* '*'
   ) ']' attribute-specifier-sequence? /
-  
+
   # Function form
   '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
    attribute-specifier-sequence?
@@ -117,11 +118,11 @@ type-specifier-qualifier ←
     identifier? '{' (
       attribute-specifier-sequence? type-specifier-qualifier+ (
         (declarator? ':' constant-expression (',' declarator? ':' constant-expression)*) /
-        (declarator (',' declarator)*) / 
+        (declarator (',' declarator)*) /
         ε
-      ) ';' / 
+      ) ';' /
       'static_assert' '(' constant-expression (',' string-literal)? ')' ';'
-    )+ '}' / 
+    )+ '}' /
     identifier
   ) /
   'enum' attribute-specifier-sequence? identifier? ('{' enumerator-list ','? '}')? /
@@ -719,51 +720,67 @@ typespecquals = do
 -- | Parse the attribute-specifier-sequence rule
 attrspecs :: Parser [Attribute]
 attrspecs = indbsqb $ attribute `sepBy` lx0 comma
-  where attribute = attrtok <*> inpar baltoks
-        idstr = byteStringOf identifier
-        notdelim = (`notElem` "(){}[]")
-        baltoks = byteStringOf $ skipSatisfy notdelim
-        attrtok = do
-          tok1 <- idstr
-          option (StandardAttribute tok1)
-            (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 idstr)
+ where
+  attribute = attrtok <*> inpar baltoks
+  idstr = byteStringOf identifier
+  notdelim = (`notElem` "(){}[]")
+  baltoks = byteStringOf $ skipSatisfy notdelim
+  attrtok = do
+    tok1 <- idstr
+    option
+      (StandardAttribute tok1)
+      (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 idstr)
 
 declarator :: Parser a
 declarator = error "declarator: not implemented yet"
 
--- structorunion :: Parser Record
--- structorunion = do
---   ctor <- (struct' $> RecordStruct) <|> (union' $> RecordUnion)
---   tag <- optional (byteStringOf identifier_def)
---   sym <- symdefine tag
---   _
+-- | Base type for skippable list.
+data List2' a f
+  = -- | End.
+    L0
+  | -- | One item.
+    L1 a f
+  | -- | Skip.
+    L' f
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
--- -- structorunion :: Parser Record
--- -- structorunion = do
--- --   ctor <- (struct' $> RecordStruct) <|> (union' $> RecordUnion)
--- --   _ <- choice $
--- --     [ incur do
--- --         recordtag <- do
--- --           WithSpan sp na <-
--- --             runandgetspan $ optional $ byteStringOf $ lx1 identifier_def
--- --           pure \ty -> symdefine na (SymIsType ty) sp
--- --         _  <- some $ choice
--- --             [
--- --               do  attrs <- attrspecs
--- --                   types <- typespecquals
--- --                   withOption declarator option1 option2 <* lx0 semicolon,
--- --               do  static_assert'
--- --                   inpar do
--- --                     cexpr <- expr_
--- --                     withOption
--- --                       (lx0 comma >> string_literal_val)
--- --                       (option3 cexpr) (option4 cexpr) <* lx0 semicolon
--- --             ]
--- --         _ _,
--- --         do  idstr <- byteStringOf identifier_def
--- --             _
--- --     ]
--- --   pure _
+-- | List with skips.
+type List2 a = Fix (List2' a)
+
+-- | Convert a skippable list into a regular list.
+l2_list :: List2 a -> [a]
+l2_list = foldFix \case
+  L0 -> []
+  L1 i l -> i : l
+  L' l -> l
+
+-- | Construct the body of a record type, which may be a struct or a union.
+--
+-- This parser can parse either a declaration or a definition. It assigns
+-- a new symbol and optionally tag.
+structorunion_body :: Parser ((Symbol -> RecordInfo -> Record) -> Record)
+structorunion_body = do
+  withOption
+    (byteStringOf identifier_def)
+    (\i -> decl i <|> def (Just i))
+    (def Nothing)
+ where
+  decl i = do
+    sym <- newsymbol
+    symgivename sym i
+    pure \con -> con sym RecordDecl
+  def maybename = do
+    sym <- newsymbol
+    maybe (pure ()) (symgivename sym) maybename
+    incur do
+      let static_assert = do
+            static_assert'
+            e <- expr_
+            l <- optional (lx0 comma >> string_literal_val)
+            pure $ RecordStaticAssertion $ StaticAssertion e l
+          field = _ -- some stuff
+      ri <- RecordDef <$> (static_assert <|> field) `sepBy` lx0 semicolon
+      pure \con -> con sym ri
 
 -- | Parse types
 parsetype :: Parser Type
