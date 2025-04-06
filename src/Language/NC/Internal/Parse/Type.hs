@@ -13,6 +13,11 @@ module Language.NC.Internal.Parse.Type (
   typespecquals,
   SpecQual (..),
   TypeTokens (..),
+  Decl' (..),
+  DeclMode (..),
+  declarator, absdeclarator,
+  structorunion_body,
+  attrspecs,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -757,10 +762,10 @@ typespecquals = do
 attrspecs :: Parser [Attribute]
 attrspecs = lx0 $ indbsqb $ attribute `sepBy` lx0 comma
  where
-  attribute = attrtok <*> lx0 (inpar baltoks)
+  attribute = attrtok <*> option mempty (lx0 (inpar baltoks))
   idstr = byteStringOf identifier
   notdelim = (`notElem` "(){}[]")
-  baltoks = byteStringOf $ skipSatisfy notdelim
+  baltoks = byteStringOf $ skipMany $ skipSatisfy notdelim
   attrtok = do
     tok1 <- idstr
     option
@@ -891,7 +896,7 @@ structorunion_body :: Parser ((Symbol -> RecordInfo -> Record) -> Record)
 structorunion_body = do
   withOption
     (byteStringOf identifier_def)
-    (\i -> decl i <|> def (Just i))
+    (\i -> def (Just i) <|> decl i)
     (def Nothing)
  where
   decl i = do
