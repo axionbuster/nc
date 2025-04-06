@@ -18,6 +18,7 @@ module Language.NC.Internal.Parse.Type (
   absdeclarator,
   structorunion_body,
   attrspecs,
+  parseenum,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -952,6 +953,49 @@ structorunion_body = do
           <$> (option [] $ static_assert <|> field)
           `endBy` lx0 semicolon
       pure \con -> con sym (RecordDef ri)
+
+-- | Parse an @enum@ declaration or definition.
+parseenum :: Parser EnumType
+parseenum = do
+  sym <- newsymbol
+  lx1 enum'
+  let enumbody attrs tag membtype = do
+        -- any of the three rules
+        maybe (pure ()) (symgivename sym) tag
+        info <-
+          EnumDef <$> flip sepEndBy (lx0 comma) do
+            sym <- newsymbol
+            name <- lx1 identifier_def
+            symgivename sym name
+            attrs <- option [] attrspecs
+            value <- optional do
+              lx0 equal
+              CIEUnresolved <$> expr_
+            pure $ EnumConst sym attrs value
+        pure $ EnumType sym info attrs membtype
+  withOption
+    attrspecs
+    ( \attrs -> do
+        -- a declaration cannot have attributes for some reason,
+        -- so since we have attributes here we have a definition.
+        tag <- optional (lx1 identifier_def)
+        membtype <- optional (lx0 colon >> typespecquals)
+        lx0 $ incur $ enumbody attrs tag membtype
+    )
+    ( do
+        -- no attributes ... so this can be either a definition or declaration.
+        tag <- optional (lx1 identifier_def)
+        membtype <- optional (lx0 colon >> typespecquals)
+        branch
+          (lx0 lcur)
+          (enumbody [] tag membtype <* lx0 rcur)
+          ( do
+              case tag of
+                Just tag ->
+                  symgivename sym tag $> EnumType sym EnumDecl [] membtype
+                Nothing -> failed
+          )
+    )
 
 -- | Parse types
 parsetype :: Parser Type

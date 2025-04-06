@@ -75,9 +75,13 @@ module Language.NC.Internal.Types.Parse (
   cie_expr,
   recinfo_def,
   attr_clause,
-  rec_attrs,
   rec_info,
   rec_sym,
+  rec_attrs,
+  enum_sym,
+  enum_info,
+  enum_attrs,
+  enum_membertype,
   at_size,
   at_type,
   at_qual,
@@ -438,11 +442,6 @@ attr_clause = lens getter setter
   setter (StandardAttribute n _) c = StandardAttribute n c
   setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
 
-data EnumType
-  = -- | An enumeration type.
-    EnumType Symbol EnumInfo
-  deriving (Eq, Show)
-
 -- | Array type, annotated with various information such as size and
 -- element type and more.
 data ArrayType
@@ -496,12 +495,25 @@ data Type = Type
   }
   deriving (Eq, Show)
 
+data EnumType
+  = -- | An enumeration type.
+    EnumType
+    { _enum_sym :: Symbol,
+      _enum_info :: EnumInfo,
+      _enum_attrs :: [Attribute],
+      -- | optional member type; 'Int_' by default.
+      _enum_membertype :: Maybe Type
+    }
+  deriving (Eq, Show)
+
 -- | Enum information
 data EnumInfo = EnumDef [EnumConst] | EnumDecl
   deriving (Eq, Show)
 
 -- | Enum constant
-data EnumConst = EnumConst Symbol (Maybe Expr)
+data EnumConst
+  = -- | Symbol, attributes (if any), explicitly given value (if any).
+    EnumConst Symbol [Attribute] (Maybe ConstIntExpr)
   deriving (Eq, Show)
 
 -- | Is a function variadic?
@@ -1060,3 +1072,5 @@ makeLenses ''Record
 makeLenses ''ArrayType
 
 makeLenses ''FuncInfo
+
+makeLenses ''EnumType
