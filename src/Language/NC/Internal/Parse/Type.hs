@@ -13,7 +13,6 @@ module Language.NC.Internal.Parse.Type (
   typespecquals,
   SpecQual (..),
   TypeTokens (..),
-  Decl' (..),
   DeclMode (..),
   declarator,
   absdeclarator,
@@ -596,10 +595,25 @@ tt2basic v =
 newtype TSChangeType = TSChangeType {apchgtyp :: Type -> Type}
   deriving (Monoid, Semigroup) via (Dual (Endo Type))
 
+tt2typequal :: TSToks -> Parser TSChangeType
+tt2typequal v = do
+  -- four qualifiers: const, volatile, restrict, and _Atomic. any combo.
+  let pass mask
+        | v .&. mask /= 0 = TSChangeType . over ty_qual . (<>)
+        | otherwise = const mempty
+  pure
+    $ mconcat
+      [ pass 0x1_0000 tq_const,
+        pass 0x2_0000 tq_volatile,
+        pass 0x4_0000 tq_restrict,
+        pass 0x8_0000 tq_atomic
+      ]
+
 tt2storage :: TSToks -> Parser TSChangeType
 tt2storage v =
   -- bit range for formal storage class specifiers:
   --  - register, auto, static, extern, thread_local, typedef, constexpr
+  --  - mutually exclusive.
   fmap (TSChangeType . set ty_storclass) case v .&. 0x07F0_0000 of
     0x0000_0000 -> pure $ sc_none
     0x0010_0000 -> pure $ sc_none
@@ -612,13 +626,16 @@ tt2storage v =
     _ -> _unktyptokcombo "tt2storage" v
 
 tt2funcspec :: TSToks -> Parser TSChangeType
-tt2funcspec v =
-  -- inline and _Noreturn, respectively.
-  fmap (TSChangeType . set ty_funcspec) case v .&. 0x1800_0000 of
-    0x0000_0000 -> pure $ fs_none
-    0x0800_0000 -> pure $ fs_inline
-    0x1000_0000 -> pure $ fs_noreturn
-    _ -> _unktyptokcombo "tt2funcspec" v
+tt2funcspec v = do
+  -- inline and _Noreturn. any combo.
+  let pass mask
+        | v .&. mask /= 0 = TSChangeType . over ty_funcspec . (<>)
+        | otherwise = const mempty
+  pure
+    $ mconcat
+      [ pass 0x0800_0000 fs_inline,
+        pass 0x1000_0000 fs_noreturn
+      ]
 
 -- add to the type token counts
 newtype SpecQual = SpecQual {runspecqual :: TypeTokens -> TypeTokens}
@@ -722,14 +739,15 @@ typespecquals = do
   --  - Type specifiers
   --  - Type qualifiers
   -- Not Implemented Yet:
-  --  - Compound type specifiers
+  --  - Compound type specifiers (almost)
   --  - Typedef specifier, typedef name
   --  - Alignment specifiers
   --
   -- Build specifier-qualifier transformations (SpecQual);
   -- construct a BaseType (bt1).
   SpecQual f <- chainl (<>) typespecqual typespecqual
-  let tt = f $ TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing Nothing
+  let t0 = TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing Nothing
+      tt = f t0
   checksanity tt
   bt0 <- tt2basic (_tt_mask tt)
   bt1 <- case tt ^. tt_mask .&. tst_bitint of
@@ -748,7 +766,9 @@ typespecquals = do
   -- Promote the BaseType into a Type, representing a fully qualified
   -- C type with storage duration annotations. Decorate this Type.
   let ty0 = basetype2type bt1
-  chgtyp0 <- (<>) <$> tt2storage tt._tt_mask <*> tt2funcspec tt._tt_mask
+      three a b c = a <> b <> c
+      m = tt._tt_mask
+  chgtyp0 <- liftM3 three (tt2storage m) (tt2funcspec m) (tt2typequal m)
   pure $ apchgtyp chgtyp0 ty0
  where
   badcondition TStLong c = c > 2
@@ -764,24 +784,18 @@ attrspecs :: Parser [Attribute]
 attrspecs = lx0 $ indbsqb $ attribute `sepBy` lx0 comma
  where
   attribute = attrtok <*> option mempty (lx0 (inpar baltoks))
-  idstr = byteStringOf identifier
-  notdelim = (`notElem` "(){}[]")
-  baltoks = byteStringOf $ skipMany $ skipSatisfy notdelim
+  baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
   attrtok = do
-    tok1 <- idstr
+    tok1 <- lx1 identifier
     option
       (StandardAttribute tok1)
-      (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 idstr)
-
--- | Declaration
-data Decl' = Decl' Symbol Type
-  deriving (Eq, Show)
+      (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 identifier)
 
 -- | In declarator parsing, need identifier to be present or absent?
 data DeclMode = RequireIdentifier | RequireNoIdentifier
   deriving (Eq, Show)
 
-declarator, absdeclarator :: Parser (Type -> Decl')
+declarator, absdeclarator :: Symbol -> Parser (Type -> Type)
 
 -- | Declarator (requires an identifier)
 declarator = commondeclarator RequireIdentifier
@@ -793,17 +807,13 @@ absdeclarator = commondeclarator RequireNoIdentifier
 --
 -- An *abstract* declarator does not accept an identifier, but a
 -- (regular) declarator does.
-commondeclarator :: DeclMode -> Parser (Type -> Decl')
-commondeclarator declmode = do
-  sym <- newsymbol
-  (Decl' sym .) <$> decl_ sym
+commondeclarator :: DeclMode -> Symbol -> Parser (Type -> Type)
+commondeclarator declmode sym = do
+  ptr <- chainr (<>) pointer (pure mempty) -- optional pointer chain
+  bas <- basedecl -- base declarator (identifier/grouped decflarator)
+  afu <- arrfuncdecl -- array or function suffixes, if any
+  pure $ appEndo . getDual $ mconcat [ptr, bas, afu]
  where
-  decl_ :: Symbol -> Parser (Type -> Type)
-  decl_ sym = do
-    ptr <- pointer -- optional pointer chain
-    bas <- basedecl sym -- base declarator (identifier/grouped decflarator)
-    afu <- arrfuncdecl -- array or function suffixes, if any
-    pure $ appEndo . getDual $ mconcat [ptr, bas, afu]
   qualifier =
     $( switch_ws1
          [|
@@ -819,7 +829,7 @@ commondeclarator declmode = do
   attrspecs0 = option mempty attrspecs
   pointer, arrfuncdecl :: Parser (Dual (Endo Type))
   pointer =
-    wrap <$> option id do
+    wrap <$> do
       lx0 star
       attrs <- attrspecs0
       qual <- qualifiers
@@ -865,10 +875,11 @@ commondeclarator declmode = do
                 let paramdecl = do
                       attrs <- option mempty attrspecs0
                       partype1 <- typespecquals
-                      dec <- declarator <|> absdeclarator
-                      let Decl' sym partype2 = dec partype1
+                      sym2 <- newsymbol
+                      dec <- declarator sym2 <|> absdeclarator sym2
+                      let partype2 = dec partype1
                       let partype3 = set ty_attributes attrs partype2
-                      pure $ Param partype3 sym
+                      pure $ Param partype3 sym2
                 ps1 <- paramdecl `sepBy1` lx0 comma
                 var1 <-
                   option NotVariadic (lx0 comma >> lx0 tripledot $> Variadic)
@@ -880,12 +891,12 @@ commondeclarator declmode = do
           basetype2type (BTFunc ty) & over ty_attributes (<> attrs)
       pure $ f2 . f1
   wrap = Dual . Endo
-  basedecl :: Symbol -> Parser (Dual (Endo Type))
-  basedecl sym =
+  basedecl :: Parser (Dual (Endo Type))
+  basedecl =
     wrap <$> do
-      lx0 $ inpar (decl_ sym) <|> do
+      lx0 $ inpar (commondeclarator declmode sym) <|> do
         when (declmode == RequireIdentifier) do
-          byteStringOf (lx1 identifier_def) >>= symgivename sym
+          lx1 identifier_def >>= symgivename sym
         qual <- qualifiers
         pure $ over ty_qual (<> qual)
 
@@ -896,7 +907,7 @@ commondeclarator declmode = do
 structorunion_body :: Parser ((Symbol -> RecordInfo -> Record) -> Record)
 structorunion_body = do
   withOption
-    (byteStringOf identifier_def)
+    (lx1 identifier_def)
     (\i -> def (Just i) <|> decl i)
     (def Nothing)
  where
@@ -916,23 +927,30 @@ structorunion_body = do
             l <- optional (lx0 comma >> lx1 string_literal_val)
             pure . pure $ RecordStaticAssertion $ StaticAssertion e l
           field = do
-            let bitfielddecl = do
-                  optdecl <- optional declarator
-                  Decl' membsym membtype <- case optdecl of
-                    Just change -> pure $ change typebase
-                    _ -> do
-                      membsym' <- newsymbol
-                      pure $ Decl' membsym' typebase
+            membsym <- newsymbol
+            withOption
+              (declarator membsym)
+              ( \dec -> do
+                  let membtype = dec typebase
+                  branch
+                    (lx0 colon)
+                    ( do
+                        bitwidth <- optional $ CIEUnresolved <$> expr_
+                        pure $ RecordField attrs membtype membsym bitwidth
+                    )
+                    (do pure $ RecordField attrs membtype membsym Nothing)
+              )
+              ( do
+                  membsym <- newsymbol
                   lx0 colon
                   bitwidth <- optional $ CIEUnresolved <$> expr_
-                  pure $ RecordField attrs membtype membsym bitwidth
-                normaldecl = do
-                  Decl' membsym membtype <- declarator <*> pure typebase
-                  pure $ RecordField attrs membtype membsym Nothing
-                bitfielddecls = bitfielddecl `sepBy` lx0 comma
-                normaldecls = normaldecl `sepBy` lx0 comma
-            bitfielddecls <|> normaldecls
-      ri <- concat <$> (static_assert <|> field) `sepBy` lx0 semicolon
+                  pure $ RecordField attrs typebase membsym bitwidth
+              )
+              `sepBy` lx0 comma
+      ri <-
+        concat
+          <$> (option [] $ static_assert <|> field)
+          `endBy` lx0 semicolon
       pure \con -> con sym (RecordDef ri)
 
 -- | Parse types

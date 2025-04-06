@@ -467,7 +467,7 @@ keyword =
 
 -- | Any identifier. This allows reserved identifiers like @__func__@
 -- to be used. For use in declarations, consider 'identifier_def' instead.
-identifier = (id_head >> skipMany id_tail) `butnot` keyword
+identifier = byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
  where
   id_head = nondigit <|> universal_character_name
   id_tail = fullset <|> universal_character_name
@@ -490,6 +490,9 @@ identifier_def =
 
 -- *** 6.4.3 Universal character names
 
+-- | Recognize a universal character name character.
+--
+-- The value-returning counterpart is called 'ucnam_val_word'.
 universal_character_name = () <$ ucnam_val_word
 
 -- | A Unicode character (in a 'Word')
@@ -503,7 +506,7 @@ ucnam_val_word =
    )
     >>= \c ->
       c <$ guard do
-        (c < 0x00A0 && c `notElem` map (fromIntegral . ord) ['$', '@', '`'])
+        (c < 0x00A0 && c `notElem` map (fromIntegral . ord) "$@`")
           || (0xD800 <= c && c <= 0xDFFF)
           || (c > 0x10FFFF)
 
@@ -721,7 +724,7 @@ char_encpfx =
 --
 -- The range is NOT checked.
 character_constant_val = do
-  typ <- char_encpfx <|> pure Int_
+  typ <- option Int_ char_encpfx
   val <- between quote quote value
   pure $ val typ
  where
@@ -760,15 +763,14 @@ character_constant_val = do
         'v' -> '\v'
         c -> c
 
+-- | Parse a string literal.
 string_literal_val = do
-  typ <-
-    ( char_encpfx
-        >> err
-          ( InternalError
-              "string literals except regular literals not supported yet"
-          )
-    )
-      <|> pure Char_
+  typ <- option Char_ do
+    char_encpfx
+      >> err
+        ( InternalError
+            "string literals except regular literals not supported yet"
+        )
   let enc c
         | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
         | otherwise = err $ LiteralBadError BadChar
@@ -845,7 +847,7 @@ p_onexception p = pcatch p err
 
 -- | Parse @p@ but make sure @q@ cannot parse consuming the entirety
 -- of the span of @p@.
-butnot p q = withSpan p \x sp -> ((inSpan sp (q >> eof)) `fails`) $> x
+butnot p q = withSpan p \x sp -> (inSpan sp (q >> eof) `fails`) $> x
 
 -- | Parse @p@ but make sure @q@ is not a prefix of it.
 butnotpfx p q = withSpan p \x sp -> (inSpan sp q `fails`) $> x

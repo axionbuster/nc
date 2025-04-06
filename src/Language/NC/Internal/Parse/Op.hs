@@ -234,8 +234,9 @@ compound = do
 
 postfix = primary >>= go
  where
+  -- FIXME: no handling for alternative tokens (such as '<:')
   go a = do
-    let getid = byteStringOf identifier
+    let getid = lx1 identifier
         mksym i = do
           s <- newsymbol
           symgivename s i $> s
@@ -272,7 +273,7 @@ paren = Expr <$> runandgetspan (inpar (PrimParen <$> expr_))
 litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
 ident = do
-  withSpan (lx1 $ byteStringOf identifier) \i s ->
+  withSpan (lx1 identifier) \i s ->
     pure $ Expr $ WithSpan s $ PrimId i
 
 generic = do

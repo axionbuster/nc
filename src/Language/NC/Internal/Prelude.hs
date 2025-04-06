@@ -19,6 +19,7 @@ module Language.NC.Internal.Prelude (
   module Data.Sequence,
   module Data.Unique,
   module Data.Word,
+  module Debug.Trace,
   module FlatParse.Stateful,
   module GHC.Float,
   module GHC.Generics,
@@ -55,6 +56,7 @@ import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Text (Text)
 import Data.Unique
 import Data.Word
+import Debug.Trace
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics hiding (from, to)
