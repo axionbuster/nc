@@ -15,7 +15,8 @@ module Language.NC.Internal.Parse.Type (
   TypeTokens (..),
   Decl' (..),
   DeclMode (..),
-  declarator, absdeclarator,
+  declarator,
+  absdeclarator,
   structorunion_body,
   attrspecs,
 ) where
