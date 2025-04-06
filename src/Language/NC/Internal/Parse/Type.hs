@@ -669,13 +669,14 @@ typespecqual = do
   push token mask = pure $ SpecQual $ prepush token mask
   handleatomic =
     choice
-      [ inpar $ parsetype <&> \ty ->
+      [ lx0 $ inpar $ parsetype <&> \ty ->
           SpecQual (prepush TStAtomic tst_atomic)
             <> SpecQual (set tt_atomictype (Just ty)),
         push TStAtomic tst_atomic
       ]
   handlealignas =
-    inpar
+    lx0
+      $ inpar
       $ choice
         [ parsetype <&> \ty ->
             SpecQual (prepush TStAlignas tst_alignas)
@@ -689,7 +690,8 @@ typespecqual = do
           | unqual = (TStTypeofUnqual, tst_typeof_unqual)
           | otherwise = (TStTypeof, tst_typeof)
         f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
-     in inpar
+     in lx0
+          $ inpar
           $ choice
             [ parsetype <&> f . TOSTypeName,
               expr_ <&> f . TOSExpr
@@ -739,7 +741,7 @@ typespecquals = do
                   ("typespecquals: bad _BitInt width " ++ show bw)
   -- Promote the BaseType into a Type, representing a fully qualified
   -- C type with storage duration annotations. Decorate this Type.
-  let ty0 = Type mempty mempty bt1 mempty mempty AlignNone
+  let ty0 = basetype2type bt1
   chgtyp0 <- (<>) <$> tt2storage tt._tt_mask <*> tt2funcspec tt._tt_mask
   pure $ apchgtyp chgtyp0 ty0
  where
@@ -753,9 +755,9 @@ typespecquals = do
 
 -- | Parse the attribute-specifier-sequence rule
 attrspecs :: Parser [Attribute]
-attrspecs = indbsqb $ attribute `sepBy` lx0 comma
+attrspecs = lx0 $ indbsqb $ attribute `sepBy` lx0 comma
  where
-  attribute = attrtok <*> inpar baltoks
+  attribute = attrtok <*> lx0 (inpar baltoks)
   idstr = byteStringOf identifier
   notdelim = (`notElem` "(){}[]")
   baltoks = byteStringOf $ skipSatisfy notdelim
@@ -908,7 +910,7 @@ structorunion_body = do
             l <- optional (lx0 comma >> lx1 string_literal_val)
             pure . pure $ RecordStaticAssertion $ StaticAssertion e l
           field = do
-            let bitfielddecl1 = do
+            let bitfielddecl = do
                   optdecl <- optional declarator
                   Decl' membsym membtype <- case optdecl of
                     Just change -> pure $ change typebase
@@ -918,12 +920,12 @@ structorunion_body = do
                   lx0 colon
                   bitwidth <- optional $ CIEUnresolved <$> expr_
                   pure $ RecordField attrs membtype membsym bitwidth
-                normaldecl1 = do
+                normaldecl = do
                   Decl' membsym membtype <- declarator <*> pure typebase
                   pure $ RecordField attrs membtype membsym Nothing
-                bitfielddecl = bitfielddecl1 `sepBy` lx0 comma
-                normaldecl = normaldecl1 `sepBy` lx0 comma
-            concat <$> many bitfielddecl <|> many normaldecl
+                bitfielddecls = bitfielddecl `sepBy` lx0 comma
+                normaldecls = normaldecl `sepBy` lx0 comma
+            bitfielddecls <|> normaldecls
       ri <- concat <$> (static_assert <|> field) `sepBy` lx0 semicolon
       pure \con -> con sym (RecordDef ri)
 
