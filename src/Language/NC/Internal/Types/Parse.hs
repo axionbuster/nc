@@ -6,6 +6,7 @@ module Language.NC.Internal.Types.Parse (
   Type (..),
   BaseType (..),
   primtype2type,
+  basetype2type,
   ty_attributes,
   ty_storclass,
   ty_qual,
@@ -845,6 +846,10 @@ cie_expr = lens getter setter
     CIEResolved _ e -> e
   setter (CIEUnresolved _) e = CIEUnresolved e
   setter (CIEResolved i _) e = CIEResolved i e
+
+-- | Create an empty type that wraps around a base type.
+basetype2type :: BaseType -> Type
+basetype2type bt = Type mempty mempty bt mempty mempty AlignNone
 
 -- | Create a new empty annotated error with the given span and severity.
 aenew :: Error -> Span -> Severity -> AnnotatedError

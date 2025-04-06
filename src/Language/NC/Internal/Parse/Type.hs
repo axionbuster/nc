@@ -769,9 +769,24 @@ attrspecs = indbsqb $ attribute `sepBy` lx0 comma
 data Decl' = Decl' Symbol Type
   deriving (Eq, Show)
 
--- | Declarator
-declarator :: Parser (Type -> Decl')
-declarator = do
+-- | In declarator parsing, need identifier to be present or absent?
+data DeclMode = RequireIdentifier | RequireNoIdentifier
+  deriving (Eq, Show)
+
+declarator, absdeclarator :: Parser (Type -> Decl')
+
+-- | Declarator (requires an identifier)
+declarator = commondeclarator RequireIdentifier
+
+-- | Abstract declarator (does not accept an identifier)
+absdeclarator = commondeclarator RequireNoIdentifier
+
+-- | Declarator (abstract or not)
+--
+-- An *abstract* declarator does not accept an identifier, but a
+-- (regular) declarator does.
+commondeclarator :: DeclMode -> Parser (Type -> Decl')
+commondeclarator declmode = do
   sym <- newsymbol
   (Decl' sym .) <$> decl_ sym
  where
@@ -807,7 +822,7 @@ declarator = do
     wrap <$> do
       let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
           wraparrtype attrs arrty =
-            Type mempty attrs (BTArray arrty) mempty mempty AlignNone
+            basetype2type (BTArray arrty) & over ty_attributes (<> attrs)
       f1 <- lx0 $ insqb0 do
         -- parse index part of the declarator.
         --  * 'static' in index:
@@ -842,7 +857,7 @@ declarator = do
                 let paramdecl = do
                       attrs <- option mempty attrspecs0
                       partype1 <- typespecquals
-                      dec <- declarator -- TODO: <|> abstract-declarator
+                      dec <- declarator <|> absdeclarator
                       let Decl' sym partype2 = dec partype1
                       let partype3 = set ty_attributes attrs partype2
                       pure $ Param partype3 sym
@@ -854,15 +869,15 @@ declarator = do
         pure \retty -> FuncInfo ps retty var
       f2 <-
         attrspecs0 <&> \attrs ty ->
-          Type mempty attrs (BTFunc ty) mempty mempty AlignNone
+          basetype2type (BTFunc ty) & over ty_attributes (<> attrs)
       pure $ f2 . f1
   wrap = Dual . Endo
   basedecl :: Symbol -> Parser (Dual (Endo Type))
   basedecl sym =
     wrap <$> do
       lx0 $ inpar (decl_ sym) <|> do
-        na <- byteStringOf identifier_def
-        symgivename sym na
+        when (declmode == RequireIdentifier) do
+          byteStringOf identifier_def >>= symgivename sym
         qual <- qualifiers
         pure $ over ty_qual (<> qual)
 
