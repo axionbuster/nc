@@ -467,7 +467,7 @@ keyword =
 
 -- | Any identifier. This allows reserved identifiers like @__func__@
 -- to be used. For use in declarations, consider 'identifier_def' instead.
-identifier = lookahead (fails keyword) >> id_head >> skipMany id_tail
+identifier = (id_head >> skipMany id_tail) `butnot` keyword
  where
   id_head = nondigit <|> universal_character_name
   id_tail = fullset <|> universal_character_name
@@ -845,7 +845,7 @@ p_onexception p = pcatch p err
 
 -- | Parse @p@ but make sure @q@ cannot parse consuming the entirety
 -- of the span of @p@.
-butnot p q = withSpan p \x sp -> ((inSpan sp q >> eof) `fails`) $> x
+butnot p q = withSpan p \x sp -> ((inSpan sp (q >> eof)) `fails`) $> x
 
 -- | Parse @p@ but make sure @q@ is not a prefix of it.
 butnotpfx p q = withSpan p \x sp -> (inSpan sp q `fails`) $> x

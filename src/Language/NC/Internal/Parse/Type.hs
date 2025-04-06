@@ -885,7 +885,7 @@ commondeclarator declmode = do
     wrap <$> do
       lx0 $ inpar (decl_ sym) <|> do
         when (declmode == RequireIdentifier) do
-          byteStringOf identifier_def >>= symgivename sym
+          byteStringOf (lx1 identifier_def) >>= symgivename sym
         qual <- qualifiers
         pure $ over ty_qual (<> qual)
 
