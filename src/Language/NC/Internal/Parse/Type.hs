@@ -833,7 +833,7 @@ declarator = do
       pure $ f2 . f1 . mkarrtype
   function =
     wrap <$> do
-      f1 <- inpar do
+      f1 <- lx0 $ inpar do
         (ps, var) <-
           branch
             (lx0 tripledot)
@@ -860,7 +860,7 @@ declarator = do
   basedecl :: Symbol -> Parser (Dual (Endo Type))
   basedecl sym =
     wrap <$> do
-      inpar (decl_ sym) <|> do
+      lx0 $ inpar (decl_ sym) <|> do
         na <- byteStringOf identifier_def
         symgivename sym na
         qual <- qualifiers
@@ -884,15 +884,33 @@ structorunion_body = do
   def maybename = do
     sym <- newsymbol
     maybe (pure ()) (symgivename sym) maybename
-    incur do
+    lx0 $ incur do
+      attrs <- option [] attrspecs
+      typebase <- typespecquals
       let static_assert = do
-            static_assert'
+            lx1 static_assert'
             e <- expr_
-            l <- optional (lx0 comma >> string_literal_val)
-            pure $ RecordStaticAssertion $ StaticAssertion e l
-          field = _ -- some stuff
-      ri <- RecordDef <$> (static_assert <|> field) `sepBy` lx0 semicolon
-      pure \con -> con sym ri
+            l <- optional (lx0 comma >> lx1 string_literal_val)
+            pure . pure $ RecordStaticAssertion $ StaticAssertion e l
+          field = do
+            let bitfielddecl1 = do
+                  optdecl <- optional declarator
+                  Decl' membsym membtype <- case optdecl of
+                    Just change -> pure $ change typebase
+                    _ -> do
+                      membsym' <- newsymbol
+                      pure $ Decl' membsym' typebase
+                  lx0 colon
+                  bitwidth <- optional $ CIEUnresolved <$> expr_
+                  pure $ RecordField attrs membtype membsym bitwidth
+                normaldecl1 = do
+                  Decl' membsym membtype <- declarator <*> pure typebase
+                  pure $ RecordField attrs membtype membsym Nothing
+                bitfielddecl = bitfielddecl1 `sepBy` lx0 comma
+                normaldecl = normaldecl1 `sepBy` lx0 comma
+            concat <$> many bitfielddecl <|> many normaldecl
+      ri <- concat <$> (static_assert <|> field) `sepBy` lx0 semicolon
+      pure \con -> con sym (RecordDef ri)
 
 -- | Parse types
 parsetype :: Parser Type

@@ -54,6 +54,7 @@ module Language.NC.Internal.Types.Parse (
   StringLiteral (..),
 
   -- * Supplemental information
+  ConstIntExpr (..),
   Record (..),
   RecordInfo (..),
   RecordField (..),
@@ -70,6 +71,7 @@ module Language.NC.Internal.Types.Parse (
   Variadic (..),
   Attribute (..),
   StaticAssertion (..),
+  cie_expr,
   recinfo_def,
   attr_clause,
   rec_attrs,
@@ -404,10 +406,16 @@ recinfo_def = prism' builder matcher
 data RecordInfo = RecordDef [RecordField] | RecordDecl
   deriving (Eq, Show)
 
+-- | Constant integer expression
+data ConstIntExpr
+  = CIEUnresolved Expr
+  | CIEResolved !Int Expr
+  deriving (Eq, Show)
+
 -- | Record field
 data RecordField
   = -- | Optional attributes; type, symbol, optional bit width.
-    RecordField [Attribute] Type Symbol (Maybe Int)
+    RecordField [Attribute] Type Symbol (Maybe ConstIntExpr)
   | -- | static assertion member
     RecordStaticAssertion StaticAssertion
   deriving (Eq, Show)
@@ -827,6 +835,16 @@ instance Show LiteralBadWhy where
     LiteralTooLarge -> "literal is too large to fit"
     UnsupportedEncoding -> "unsupported character encoding"
     BadChar -> "invalid character in a string or character literal"
+
+-- | Lens for the expression part of a constant integer expression.
+cie_expr :: Lens' ConstIntExpr Expr
+cie_expr = lens getter setter
+ where
+  getter = \case
+    CIEUnresolved e -> e
+    CIEResolved _ e -> e
+  setter (CIEUnresolved _) e = CIEUnresolved e
+  setter (CIEResolved i _) e = CIEResolved i e
 
 -- | Create a new empty annotated error with the given span and severity.
 aenew :: Error -> Span -> Severity -> AnnotatedError
