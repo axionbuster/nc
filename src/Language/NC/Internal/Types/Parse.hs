@@ -6,6 +6,7 @@ module Language.NC.Internal.Types.Parse (
   Type (..),
   BaseType (..),
   primtype2type,
+  ty_attributes,
   ty_storclass,
   ty_qual,
   ty_funcspec,
@@ -59,11 +60,12 @@ module Language.NC.Internal.Types.Parse (
   EnumType (..),
   EnumInfo (..),
   EnumConst (..),
-  FuncType (..),
+  FuncType,
   FuncInfo (..),
   Param (..),
   ArrayType (..),
   ArraySize (..),
+  ArraySizeStatic (..),
   QualifiedType (..),
   Variadic (..),
   Attribute (..),
@@ -73,6 +75,13 @@ module Language.NC.Internal.Types.Parse (
   rec_attrs,
   rec_info,
   rec_sym,
+  at_size,
+  at_type,
+  at_qual,
+  at_static,
+  fun_rettype,
+  fun_pars,
+  fun_variadic,
 
   -- * Error types
   Error (..),
@@ -332,6 +341,8 @@ data Alignment
     AlignAsType Type
   deriving (Eq, Show)
 
+type FuncType = FuncInfo
+
 -- | Source base types.
 data BaseType
   = -- | Primitive, non-derived type.
@@ -423,21 +434,32 @@ data EnumType
     EnumType Symbol EnumInfo
   deriving (Eq, Show)
 
-data FuncType
-  = -- | A function type.
-    FuncType Symbol FuncInfo
-  deriving (Eq, Show)
-
+-- | Array type, annotated with various information such as size and
+-- element type and more.
 data ArrayType
   = -- | An array type.
-    ArrayType ArraySize Type
+    ArrayType
+    { -- | Size
+      _at_size :: ArraySize,
+      -- | Element type
+      _at_type :: Type,
+      -- | Has @static@ annotation (parameter position only)
+      _at_static :: ArraySizeStatic,
+      -- | Any qualifiers (parameter position only)
+      _at_qual :: TypeQual
+    }
+  deriving (Eq, Show)
+
+data ArraySizeStatic
+  = ASNoStatic
+  | ASStatic
   deriving (Eq, Show)
 
 data ArraySize
   = -- | A fixed size array.
     ArraySize Int
-  | -- | A variable length array.
-    ArraySizeVar Expr
+  | -- | Array size given by an expression. Not necessarily variably-sized.
+    ArraySizeExpr Expr
   | -- | A flexible array member or unknown size.
     ArraySizeNone
   deriving (Eq, Show)
@@ -457,6 +479,7 @@ newtype TypeQual = TypeQual {untypequal :: Int8}
 -- parsing and organization, though it is not part of the type itself.
 data Type = Type
   { _ty_storclass :: StorageClass,
+    _ty_attributes :: [Attribute],
     _ty_base :: BaseType,
     _ty_qual :: TypeQual,
     _ty_funcspec :: FuncSpec,
@@ -477,7 +500,14 @@ data Variadic = Variadic | NotVariadic
   deriving (Eq, Show)
 
 -- | Function information
-data FuncInfo = FuncDef [Param] Type Variadic | FuncDecl
+data FuncInfo = FuncInfo
+  { -- | Named parameters, if any
+    _fun_pars :: [Param],
+    -- | Return type
+    _fun_rettype :: Type,
+    -- | Followed by a variadic argument list?
+    _fun_variadic :: Variadic
+  }
   deriving (Eq, Show)
 
 -- | Function parameter
@@ -770,7 +800,7 @@ tq_atomic = TypeQual 8
 
 -- | Make a bare-bones 'Type' out of a 'PrimType'.
 primtype2type :: PrimType -> Type
-primtype2type pt = Type mempty (BTPrim pt) mempty mempty AlignNone
+primtype2type pt = Type mempty mempty (BTPrim pt) mempty mempty AlignNone
 
 instance Show PrimTypeBadWhy where
   show = \case
@@ -1003,3 +1033,7 @@ emitwarning e s = emitdiagnostic e s SeverityWarning
 makeLenses ''Type
 
 makeLenses ''Record
+
+makeLenses ''ArrayType
+
+makeLenses ''FuncInfo

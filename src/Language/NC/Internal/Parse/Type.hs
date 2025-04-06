@@ -15,13 +15,12 @@ module Language.NC.Internal.Parse.Type (
   TypeTokens (..),
 ) where
 
-import Data.Fix
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
-import Language.NC.Internal.Prelude hiding (L1)
+import Language.NC.Internal.Prelude hiding (L1, assign)
 
 -- in this parser-lexer we parse type names.
 
@@ -135,9 +134,44 @@ type-specifier-qualifier ←
 attribute-specifier-sequence ←
   ('[' '[' attribute? (',' attribute?)* ']' ']')*
 
+# Parameter type list - function parameters with optional variadic suffix
+parameter-type-list ←
+  # Case 1: One or more parameter declarations with optional variadic suffix
+  parameter-declaration (',' parameter-declaration)* (',' '...')? /
+  # Case 2: Purely variadic function (no named parameters)
+  '...'
+
 # Parameter declaration - simplified for type-name context
 parameter-declaration ←
   attribute-specifier-sequence? type-specifier-qualifier+ (declarator / abstract-declarator)?
+
+# Declarator - non-recursive form for PEG parsing
+declarator ←
+  # Step 1: Optional pointer chain
+  ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)*
+
+  # Step 2: Base declarator (identifier or grouped declarator)
+  (
+    # Named identifier with attributes
+    identifier attribute-specifier-sequence? /
+
+    # Parenthesized declarator for grouping
+    '(' declarator ')'
+  )
+
+  # Step 3: Array/function suffixes (zero or more)
+  (
+    # Array suffix forms - all variations in priority order
+    '[' (
+      'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
+      ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
+      ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
+      ('const'/'restrict'/'volatile'/'_Atomic')* '*'
+    ) ']' attribute-specifier-sequence? /
+
+    # Function suffix
+    '(' parameter-type-list? ')' attribute-specifier-sequence?
+  )*
 
 == Implementation strategy ==
 
@@ -705,7 +739,7 @@ typespecquals = do
                   ("typespecquals: bad _BitInt width " ++ show bw)
   -- Promote the BaseType into a Type, representing a fully qualified
   -- C type with storage duration annotations. Decorate this Type.
-  let ty0 = Type mempty bt1 mempty mempty AlignNone
+  let ty0 = Type mempty mempty bt1 mempty mempty AlignNone
   chgtyp0 <- (<>) <$> tt2storage tt._tt_mask <*> tt2funcspec tt._tt_mask
   pure $ apchgtyp chgtyp0 ty0
  where
@@ -731,28 +765,106 @@ attrspecs = indbsqb $ attribute `sepBy` lx0 comma
       (StandardAttribute tok1)
       (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 idstr)
 
-declarator :: Parser a
-declarator = error "declarator: not implemented yet"
+-- | Declaration
+data Decl' = Decl' Symbol Type
+  deriving (Eq, Show)
 
--- | Base type for skippable list.
-data List2' a f
-  = -- | End.
-    L0
-  | -- | One item.
-    L1 a f
-  | -- | Skip.
-    L' f
-  deriving (Eq, Show, Functor, Foldable, Traversable)
-
--- | List with skips.
-type List2 a = Fix (List2' a)
-
--- | Convert a skippable list into a regular list.
-l2_list :: List2 a -> [a]
-l2_list = foldFix \case
-  L0 -> []
-  L1 i l -> i : l
-  L' l -> l
+-- | Declarator
+declarator :: Parser (Type -> Decl')
+declarator = do
+  sym <- newsymbol
+  (Decl' sym .) <$> decl_ sym
+ where
+  decl_ :: Symbol -> Parser (Type -> Type)
+  decl_ sym = do
+    ptr <- pointer -- optional pointer chain
+    bas <- basedecl sym -- base declarator (identifier/grouped decflarator)
+    afu <- arrfuncdecl -- array or function suffixes, if any
+    pure $ appEndo . getDual $ mconcat [ptr, bas, afu]
+  qualifier =
+    $( switch_ws1
+         [|
+           case _ of
+             "const" -> pure tq_const
+             "restrict" -> pure tq_restrict
+             "volatile" -> pure tq_volatile
+             "_Atomic" -> pure tq_atomic
+           |]
+     )
+  qualifiers = chainl (<>) (pure mempty) qualifier
+  qualifiers1 = chainl (<>) qualifier qualifier
+  attrspecs0 = option mempty attrspecs
+  pointer, arrfuncdecl :: Parser (Dual (Endo Type))
+  pointer =
+    wrap <$> option id do
+      lx0 star
+      attrs <- attrspecs0
+      qual <- qualifiers
+      pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
+  arrfuncdecl = chainl (<>) (pure mempty) (array <|> function)
+  array, function :: Parser (Dual (Endo Type))
+  array =
+    wrap <$> do
+      let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
+          wraparrtype attrs arrty =
+            Type mempty attrs (BTArray arrty) mempty mempty AlignNone
+      f1 <- lx0 $ insqb0 do
+        -- parse index part of the declarator.
+        --  * 'static' in index:
+        -- 'static' as in an array size specifies that the array may not
+        -- be NULL and it will contain at least as many items as specified.
+        --  * qualifiers and the star (*):
+        -- for VLA expressions and such.
+        let static = lx1 static' $> set at_static ASStatic
+            arqua0 = qualifiers <&> set at_qual
+            arqua1 = qualifiers1 <&> set at_qual
+            ordinary1 = set at_size . ArraySizeExpr <$> assign
+            ordinary0 = option (set at_size ArraySizeNone) ordinary1
+            vlastar = lx0 star $> set at_size ArraySizeNone
+            three = liftM3 \f g h -> f . g . h
+            two = liftM2 (.)
+        choice
+          [ three static arqua0 ordinary1,
+            three arqua1 static ordinary1,
+            two arqua0 ordinary0,
+            two arqua0 vlastar
+          ]
+      f2 <- attrspecs0 <&> wraparrtype
+      pure $ f2 . f1 . mkarrtype
+  function =
+    wrap <$> do
+      f1 <- inpar do
+        (ps, var) <-
+          branch
+            (lx0 tripledot)
+            (pure ([], Variadic))
+            ( do
+                let paramdecl = do
+                      attrs <- option mempty attrspecs0
+                      partype1 <- typespecquals
+                      dec <- declarator -- TODO: <|> abstract-declarator
+                      let Decl' sym partype2 = dec partype1
+                      let partype3 = set ty_attributes attrs partype2
+                      pure $ Param partype3 sym
+                ps1 <- paramdecl `sepBy1` lx0 comma
+                var1 <-
+                  option NotVariadic (lx0 comma >> lx0 tripledot $> Variadic)
+                pure (ps1, var1)
+            )
+        pure \retty -> FuncInfo ps retty var
+      f2 <-
+        attrspecs0 <&> \attrs ty ->
+          Type mempty attrs (BTFunc ty) mempty mempty AlignNone
+      pure $ f2 . f1
+  wrap = Dual . Endo
+  basedecl :: Symbol -> Parser (Dual (Endo Type))
+  basedecl sym =
+    wrap <$> do
+      inpar (decl_ sym) <|> do
+        na <- byteStringOf identifier_def
+        symgivename sym na
+        qual <- qualifiers
+        pure $ over ty_qual (<> qual)
 
 -- | Construct the body of a record type, which may be a struct or a union.
 --
