@@ -18,7 +18,7 @@ module Language.NC.Internal.Parse.Type (
   absdeclarator,
   structorunion_body,
   attrspecs,
-  parseenum_body,
+  enum_body,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -321,6 +321,8 @@ data TSTok
     TStTypeof
   | -- | @typeof\_unqual@
     TStTypeofUnqual
+  | -- | @\_Atomic(...)@
+    TStAtomicNewtype
   deriving (Eq, Enum, Show, Generic)
   deriving anyclass (Hashable)
 
@@ -474,6 +476,11 @@ tst_typeof, tst_typeof_unqual :: TSToks
 tst_typeof = TSToks (1 .<<. 34)
 tst_typeof_unqual = TSToks (1 .<<. 35)
 
+-- _Atomic (...) newtype specifier
+
+tst_atomicnewtype :: TSToks
+tst_atomicnewtype = TSToks (1 .<<. 36)
+
 -- | Content behind an @alignas@ specification.
 data AlignAsSpec
   = -- | No `alignas` directive
@@ -510,10 +517,10 @@ data TypeTokens = TypeTokens
     _tt_typeofspec :: !TypeOfSpec,
     -- | Possibly, a single unqualified type under @\_Atomic@.
     _tt_atomictype :: !(Maybe Type),
-    -- | Possibly, a type definition
+    -- | Possibly, a type definition.
     _tt_typedef :: !(Maybe Type),
-    -- | Actual record
-    _tt_recorddef :: !(Maybe Record)
+    -- | Record or enumueration type.
+    _tt_compounddef :: !(Maybe Type)
   }
   deriving (Eq, Show)
 
@@ -648,56 +655,72 @@ typespecqual = do
   $( switch_ws1
        [|
          case _ of
-           "void" -> push TStVoid tst_void
+           "alignas" -> handlealignas
+           "_Alignas" -> handlealignas
+           "auto" -> push TStAuto tst_auto
            "char" -> push TStChar tst_char
-           "short" -> push TStShort tst_short
+           "const" -> push TStConst tst_const
+           "constexpr" -> push TStConstexpr tst_constexpr
+           "double" -> push TStDouble tst_double
+           "enum" -> handleenum
+           "extern" -> push TStExtern tst_extern
+           "float" -> push TStFloat tst_float
+           "inline" -> push TStInline tst_inline
            "int" -> push TStInt tst_int
            "long" -> handlelong
-           "float" -> push TStFloat tst_float
-           "double" -> push TStDouble tst_double
+           "register" -> push TStRegister tst_register
+           "restrict" -> push TStRestrict tst_restrict
+           "short" -> push TStShort tst_short
            "signed" -> push TStSigned tst_signed
+           "static" -> push TStStatic tst_static
+           "struct" -> handlerecord TStStruct tst_struct RecordStruct
+           "thread_local" -> push TStThreadLocal tst_threadlocal
+           "_Thread_local" -> push TStThreadLocal tst_threadlocal
+           "typedef" -> err $ InternalError "typedef not implemented, halt."
+           "typeof" -> handletypeof TQQual
+           "typeof_unqual" -> handletypeof TQUnqual
+           "union" -> handlerecord TStUnion tst_union RecordUnion
            "unsigned" -> push TStUnsigned tst_unsigned
+           "void" -> push TStVoid tst_void
+           "volatile" -> push TStVolatile tst_volatile
+           "_Atomic" ->
+             branch
+               (lx0 lpar)
+               handleatomic
+               (handleatomicnewtype <* lx0 rpar)
+           "_BitInt" -> lx0 (inpar $ decimal) >>= push_bitint
            "_Bool" -> push TStBool tst_bool
            "_Complex" -> push TStComplex tst_complex
+           "_Decimal128" -> push TStDecimal128 tst_decimal128
            "_Decimal32" -> push TStDecimal32 tst_decimal32
            "_Decimal64" -> push TStDecimal64 tst_decimal64
-           "_Decimal128" -> push TStDecimal128 tst_decimal128
-           "_BitInt" -> lx0 (inpar $ decimal) >>= push_bitint
-           "const" -> push TStConst tst_const
-           "volatile" -> push TStVolatile tst_volatile
-           "restrict" -> push TStRestrict tst_restrict
-           "_Atomic" -> handleatomic
-           "register" -> push TStRegister tst_register
-           "auto" -> push TStAuto tst_auto
-           "static" -> push TStStatic tst_static
-           "extern" -> push TStExtern tst_extern
-           "_Thread_local" -> push TStThreadLocal tst_threadlocal
-           "thread_local" -> push TStThreadLocal tst_threadlocal
-           "typedef" -> push TStTypedef tst_typedef
-           "constexpr" -> push TStConstexpr tst_constexpr
-           "inline" -> push TStInline tst_inline
            "_Noreturn" -> push TStNoreturn tst_noreturn
-           "_Alignas" -> handlealignas
-           "alignas" -> handlealignas
-           "typeof" -> handletypeof False
-           "typeof_unqual" -> handletypeof True
+           _ -> handletypedefname
          |]
    )
  where
-  decimal =
-    integer_constant_val >>= \case
-      IntegerLiteral n _ -> pure $ fromIntegral n
+  -- helpers of helpers
   prepush token mask =
     over tt_counts (HashMap.insertWith (+) token 1)
       . over tt_mask (<> mask)
   push token mask = pure $ SpecQual $ prepush token mask
+  decimal =
+    integer_constant_val >>= \case
+      IntegerLiteral n _ -> pure $ fromIntegral n
+  -- parse any subsequent tokens and then update TypeTokens state.
   handleatomic =
-    choice
-      [ lx0 $ inpar $ typename <&> \ty ->
-          SpecQual (prepush TStAtomic tst_atomic)
-            <> SpecQual (set tt_atomictype (Just ty)),
-        push TStAtomic tst_atomic
-      ]
+    branch
+      (lx0 lpar)
+      (handleatomicnewtype <* lx0 rpar) -- specifier; newtype (_Atomic (...))
+      (push TStAtomic tst_atomic) -- qualifier (_Atomic)
+  handleatomicnewtype = do
+    t <- typename
+    pure
+      . mconcat
+      . map SpecQual
+      $ [ set tt_atomictype $ Just $ basetype2type $ BTAtomic t,
+          prepush TStAtomicNewtype tst_atomicnewtype
+        ]
   handlealignas =
     lx0
       $ inpar
@@ -709,9 +732,9 @@ typespecqual = do
             SpecQual (prepush TStAlignas tst_alignas)
               <> SpecQual (set tt_alignspec (AASConstExpr ex))
         ]
-  handletypeof unqual =
+  handletypeof qualification =
     let (tok, tokbit)
-          | unqual = (TStTypeofUnqual, tst_typeof_unqual)
+          | TQUnqual <- qualification = (TStTypeofUnqual, tst_typeof_unqual)
           | otherwise = (TStTypeof, tst_typeof)
         f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
      in lx0
@@ -729,6 +752,31 @@ typespecqual = do
     case HashMap.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
+  handlerecord tok bit con = do
+    attrs <- attrspecs
+    record <-
+      structorunion_body
+        <&> ($ \a b -> basetype2type . BTRecord $ con a b attrs)
+    pure
+      . mconcat
+      . map SpecQual
+      $ [ set tt_compounddef (Just record),
+          prepush tok bit
+        ]
+  handleenum = do
+    e <- enum_body <&> basetype2type . BTEnum
+    pure
+      . mconcat
+      . map SpecQual
+      $ [ set tt_compounddef (Just e),
+          prepush TStEnum tst_enum
+        ]
+  handletypedefname = do
+    void identifier
+    emitwarning
+      (InternalError "typedef-name fetching not implemented")
+      (Span (Pos 0) (Pos 0))
+    failed
 
 -- | Do something only if a thing exists (is 'Just').
 whenjust :: (Applicative m) => (a -> m ()) -> Maybe a -> m ()
@@ -783,29 +831,6 @@ typespecquals = do
       map2
         | HashMap.null map2 -> pure ()
         | otherwise -> err $ BasicError "too many specifiers"
-  recordcon = do
-    ctor <-
-      $( switch_ws0
-           [|
-             case _ of
-               "struct" -> pure RecordStruct
-               "union" -> pure RecordUnion
-             |]
-       )
-    attrs <- attrspecs
-    pure \a b -> basetype2type $ BTRecord $ ctor a b attrs
-  enumcon = lx1 enum' $> basetype2type . BTEnum
-  atomiccon = lx0 _Atomic' $> basetype2type
-  typeofcon =
-    $( switch_ws0
-         [|
-           case _ of
-             "typeof" -> pure $ basetype2type . BTTypeof TQQual
-             "typeof_unqual" -> pure $ basetype2type . BTTypeof TQUnqual
-           |]
-     )
-  alignascon = alignas
-  typedefnamecon = typedef
 
 -- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
@@ -854,12 +879,11 @@ commondeclarator declmode sym = do
      )
   qualifiers = chainl (<>) (pure mempty) qualifier
   qualifiers1 = chainl (<>) qualifier qualifier
-  attrspecs0 = option mempty attrspecs
   pointer, arrfuncdecl :: Parser (Dual (Endo Type))
   pointer =
     wrap <$> do
       lx0 star
-      attrs <- attrspecs0
+      attrs <- attrspecs
       qual <- qualifiers
       pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
   arrfuncdecl = chainl (<>) (pure mempty) (array <|> function)
@@ -890,7 +914,7 @@ commondeclarator declmode sym = do
             two arqua0 ordinary0,
             two arqua0 vlastar
           ]
-      f2 <- attrspecs0 <&> wraparrtype
+      f2 <- attrspecs <&> wraparrtype
       pure $ f2 . f1 . mkarrtype
   function =
     wrap <$> do
@@ -901,7 +925,7 @@ commondeclarator declmode sym = do
             (pure ([], Variadic))
             ( do
                 let paramdecl = do
-                      attrs <- attrspecs0
+                      attrs <- attrspecs
                       partype1 <- typespecquals
                       sym2 <- newsymbol
                       dec <- declarator sym2 <|> absdeclarator sym2
@@ -915,7 +939,7 @@ commondeclarator declmode sym = do
             )
         pure \retty -> FuncInfo ps retty var
       f2 <-
-        attrspecs0 <&> \attrs ty ->
+        attrspecs <&> \attrs ty ->
           basetype2type (BTFunc ty) & over ty_attributes (<> attrs)
       pure $ f2 . f1
   wrap = Dual . Endo
@@ -983,10 +1007,10 @@ structorunion_body = do
       pure \con -> con sym (RecordDef ri)
 
 -- | Parse an @enum@ declaration or definition.
-parseenum_body :: Parser EnumType
-parseenum_body = do
+enum_body :: Parser EnumType
+enum_body = do
   sym <- newsymbol
-  let enumbody attrs tag membtype = do
+  let realenumbody attrs tag membtype = do
         -- any of the three rules
         whenjust (symgivename sym) tag
         info <-
@@ -1007,7 +1031,7 @@ parseenum_body = do
         -- so since we have attributes here we have a definition.
         tag <- optional (lx1 identifier_def)
         membtype <- optional (lx0 colon >> typespecquals)
-        lx0 $ incur $ enumbody attrs tag membtype
+        lx0 $ incur $ realenumbody attrs tag membtype
     )
     ( do
         -- no attributes ... so this can be either a definition or declaration.
@@ -1015,7 +1039,7 @@ parseenum_body = do
         membtype <- optional (lx0 colon >> typespecquals)
         branch
           (lx0 lcur)
-          (enumbody [] tag membtype <* lx0 rcur)
+          (realenumbody [] tag membtype <* lx0 rcur)
           ( do
               case tag of
                 Just tag ->
@@ -1026,20 +1050,20 @@ parseenum_body = do
 
 -- | Parse the @\_Atomic@ type specifier, which creates a new type around
 -- an unqualified type. Syntax: @\_Atomic(type-name)@. It assumes that the
--- @\_Atomic@ token has already been consumed by the time it was called.
+-- @\_Atomic@ token has already been consumed by the time it was called,
+-- as well as that the parentheses have been consumed.
 atomic :: Parser BaseType
-atomic =
-  lx0 $ inpar do
-    ty <- typespecquals
-    when (ty_nontrivialquals ty) do
-      err
-        $ BasicError
-        $ printf
-          "An atomic or cvr-qualified type %s\
-          \inside an _Atomic (...) newtype\
-          \was detected during parsing. Remove the qualifiers."
-          (show ty)
-    pure $ BTAtomic ty
+atomic = do
+  ty <- typespecquals
+  when (ty_nontrivialquals ty) do
+    err
+      $ BasicError
+      $ printf
+        "An atomic or cvr-qualified type %s\
+        \inside an _Atomic (...) newtype\
+        \was detected during parsing. Remove the qualifiers."
+        (show ty)
+  pure $ BTAtomic ty
 
 -- | Parse alignment. It will consume @alignas@ for itself.
 alignas :: Parser Alignment
@@ -1048,20 +1072,6 @@ alignas = do
   lx0
     $ inpar
       ((AlignAsType <$> typename) <|> (AlignAs . CIEUnresolved <$> expr_))
-
--- | Parse @typeof@ or @typeof\_unqual@. The token must have been consumed
--- before making this call.
-typeof :: Parser TypeofInfo
-typeof = lx0 (inpar ((TQType <$> typename) <|> (TQExpr <$> expr_)))
-
--- | Retrieve a @typedef-name@, which is just an _identifier_.
-typedef :: Parser Type
-typedef = do
-  void identifier
-  emitwarning
-    (InternalError "typedef-name fetching not implemented")
-    (Span (Pos 0) (Pos 0))
-  failed
 
 -- | Parse types
 typename :: Parser Type
