@@ -6,7 +6,7 @@
 
 module Language.NC.Internal.Parse.Type (
   -- * Parsing an expression determining type
-  parsetype,
+  typename,
 
   -- * Debugging
   typespecqual,
@@ -18,7 +18,7 @@ module Language.NC.Internal.Parse.Type (
   absdeclarator,
   structorunion_body,
   attrspecs,
-  parseenum,
+  parseenum_body,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -32,7 +32,7 @@ import Language.NC.Internal.Prelude hiding (L1, assign)
 
 -- we also define C types.
 
-{- Optimized C23 fragment (in PEG) of the type-name rule for parsetype implementation:
+{- Optimized C23 fragment (in PEG) of the type-name rule for typename implementation:
 
 # Fully inlined and optimized for PEG parsing efficiency
 # Type name - entry point for parsing C types
@@ -693,7 +693,7 @@ typespecqual = do
   push token mask = pure $ SpecQual $ prepush token mask
   handleatomic =
     choice
-      [ lx0 $ inpar $ parsetype <&> \ty ->
+      [ lx0 $ inpar $ typename <&> \ty ->
           SpecQual (prepush TStAtomic tst_atomic)
             <> SpecQual (set tt_atomictype (Just ty)),
         push TStAtomic tst_atomic
@@ -702,7 +702,7 @@ typespecqual = do
     lx0
       $ inpar
       $ choice
-        [ parsetype <&> \ty ->
+        [ typename <&> \ty ->
             SpecQual (prepush TStAlignas tst_alignas)
               <> SpecQual (set tt_alignspec (AASTypeName ty)),
           expr_ <&> \ex ->
@@ -717,7 +717,7 @@ typespecqual = do
      in lx0
           $ inpar
           $ choice
-            [ parsetype <&> f . TOSTypeName,
+            [ typename <&> f . TOSTypeName,
               expr_ <&> f . TOSExpr
             ]
   push_bitint width =
@@ -729,6 +729,10 @@ typespecqual = do
     case HashMap.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
+
+-- | Do something only if a thing exists (is 'Just').
+whenjust :: (Applicative m) => (a -> m ()) -> Maybe a -> m ()
+whenjust = maybe (pure ())
 
 -- parse the 'type-specifier-qualifier+' rule, part of the type-name rule.
 --
@@ -779,10 +783,33 @@ typespecquals = do
       map2
         | HashMap.null map2 -> pure ()
         | otherwise -> err $ BasicError "too many specifiers"
+  recordcon = do
+    ctor <-
+      $( switch_ws0
+           [|
+             case _ of
+               "struct" -> pure RecordStruct
+               "union" -> pure RecordUnion
+             |]
+       )
+    attrs <- attrspecs
+    pure \a b -> basetype2type $ BTRecord $ ctor a b attrs
+  enumcon = lx1 enum' $> basetype2type . BTEnum
+  atomiccon = lx0 _Atomic' $> basetype2type
+  typeofcon =
+    $( switch_ws0
+         [|
+           case _ of
+             "typeof" -> pure $ basetype2type . BTTypeof TQQual
+             "typeof_unqual" -> pure $ basetype2type . BTTypeof TQUnqual
+           |]
+     )
+  alignascon = alignas
+  typedefnamecon = typedef
 
--- | Parse the attribute-specifier-sequence rule
+-- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
-attrspecs = lx0 $ indbsqb $ attribute `sepBy` lx0 comma
+attrspecs = option [] $ lx0 $ indbsqb $ attribute `sepBy` lx0 comma
  where
   attribute = attrtok <*> option mempty (lx0 (inpar baltoks))
   baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
@@ -874,7 +901,7 @@ commondeclarator declmode sym = do
             (pure ([], Variadic))
             ( do
                 let paramdecl = do
-                      attrs <- option mempty attrspecs0
+                      attrs <- attrspecs0
                       partype1 <- typespecquals
                       sym2 <- newsymbol
                       dec <- declarator sym2 <|> absdeclarator sym2
@@ -905,7 +932,7 @@ commondeclarator declmode sym = do
 --
 -- This parser can parse either a declaration or a definition. It assigns
 -- a new symbol and optionally tag.
-structorunion_body :: Parser ((Symbol -> RecordInfo -> Record) -> Record)
+structorunion_body :: Parser ((Symbol -> RecordInfo -> a) -> a)
 structorunion_body = do
   withOption
     (lx1 identifier_def)
@@ -918,15 +945,16 @@ structorunion_body = do
     pure \con -> con sym RecordDecl
   def maybename = do
     sym <- newsymbol
-    maybe (pure ()) (symgivename sym) maybename
+    whenjust (symgivename sym) maybename
     lx0 $ incur do
-      attrs <- option [] attrspecs
+      attrs <- attrspecs
       typebase <- typespecquals
       let static_assert = do
             lx1 static_assert'
-            e <- expr_
-            l <- optional (lx0 comma >> lx1 string_literal_val)
-            pure . pure $ RecordStaticAssertion $ StaticAssertion e l
+            lx0 $ inpar do
+              e <- expr_
+              l <- optional (lx0 comma >> lx1 string_literal_val)
+              pure . pure $ RecordStaticAssertion $ StaticAssertion e l
           field = do
             membsym <- newsymbol
             withOption
@@ -955,19 +983,18 @@ structorunion_body = do
       pure \con -> con sym (RecordDef ri)
 
 -- | Parse an @enum@ declaration or definition.
-parseenum :: Parser EnumType
-parseenum = do
+parseenum_body :: Parser EnumType
+parseenum_body = do
   sym <- newsymbol
-  lx1 enum'
   let enumbody attrs tag membtype = do
         -- any of the three rules
-        maybe (pure ()) (symgivename sym) tag
+        whenjust (symgivename sym) tag
         info <-
           EnumDef <$> flip sepEndBy (lx0 comma) do
             sym <- newsymbol
             name <- lx1 identifier_def
             symgivename sym name
-            attrs <- option [] attrspecs
+            attrs <- attrspecs
             value <- optional do
               lx0 equal
               CIEUnresolved <$> expr_
@@ -997,6 +1024,45 @@ parseenum = do
           )
     )
 
+-- | Parse the @\_Atomic@ type specifier, which creates a new type around
+-- an unqualified type. Syntax: @\_Atomic(type-name)@. It assumes that the
+-- @\_Atomic@ token has already been consumed by the time it was called.
+atomic :: Parser BaseType
+atomic =
+  lx0 $ inpar do
+    ty <- typespecquals
+    when (ty_nontrivialquals ty) do
+      err
+        $ BasicError
+        $ printf
+          "An atomic or cvr-qualified type %s\
+          \inside an _Atomic (...) newtype\
+          \was detected during parsing. Remove the qualifiers."
+          (show ty)
+    pure $ BTAtomic ty
+
+-- | Parse alignment. It will consume @alignas@ for itself.
+alignas :: Parser Alignment
+alignas = do
+  lx0 alignas'
+  lx0
+    $ inpar
+      ((AlignAsType <$> typename) <|> (AlignAs . CIEUnresolved <$> expr_))
+
+-- | Parse @typeof@ or @typeof\_unqual@. The token must have been consumed
+-- before making this call.
+typeof :: Parser TypeofInfo
+typeof = lx0 (inpar ((TQType <$> typename) <|> (TQExpr <$> expr_)))
+
+-- | Retrieve a @typedef-name@, which is just an _identifier_.
+typedef :: Parser Type
+typedef = do
+  void identifier
+  emitwarning
+    (InternalError "typedef-name fetching not implemented")
+    (Span (Pos 0) (Pos 0))
+  failed
+
 -- | Parse types
-parsetype :: Parser Type
-parsetype = err $ InternalError "parsetype not implemented yet"
+typename :: Parser Type
+typename = err $ InternalError "typename not implemented yet"

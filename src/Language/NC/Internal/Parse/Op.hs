@@ -191,7 +191,7 @@ cast_ =
   choice
     [ unary,
       do
-        typ <- lx0 (inpar (parsetype))
+        typ <- lx0 (inpar (typename))
         val <- cast_
         pure $ ExprCast typ val
     ]
@@ -220,17 +220,17 @@ unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
       <*> cast_
   sizeof = do
     lx1 sizeof'
-    (ExprSizeOf . Left <$> inpar (parsetype))
+    (ExprSizeOf . Left <$> inpar (typename))
       <|> (ExprSizeOf . Right <$> unary)
   alignof = do
     lx1 alignof'
-    ExprAlignOf . Left <$> inpar (parsetype)
+    ExprAlignOf . Left <$> inpar (typename)
 
 compound = do
   -- For now, just handle the error since we need to refactor
   -- the Expr and Type handling in the AST to properly implement
   -- compound literals
-  lx0 (inpar (parsetype)) >> lx0 (incur anyChar) >> failed
+  lx0 (inpar (typename)) >> lx0 (incur anyChar) >> failed
 
 postfix = primary >>= go
  where

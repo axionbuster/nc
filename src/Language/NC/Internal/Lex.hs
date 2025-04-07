@@ -236,7 +236,7 @@ tripledot = $(string "...")
 -- so it will be insensitive to whitespace, lookahead is not handled, etc.
 -- Basically no semantic grouping is done here.
 
-alignas' = $(string "alignas")
+alignas' = $(string "alignas") <|> $(string "_Alignas")
 
 alignof' = $(string "alignof")
 
@@ -300,13 +300,13 @@ sizeof' = $(string "sizeof")
 
 static' = $(string "static")
 
-static_assert' = $(string "static_assert")
+static_assert' = $(string "static_assert") <|> $(string "_Static_assert")
 
 struct' = $(string "struct")
 
 switch' = $(string "switch")
 
-thread_local' = $(string "thread_local")
+thread_local' = $(string "thread_local") <|> $(string "_Thread_local")
 
 true' = $(string "true")
 

@@ -13,6 +13,8 @@ module Language.NC.Internal.Types.Parse (
   ty_funcspec,
   ty_base,
   ty_alignment,
+  ty_qualified,
+  ty_nontrivialquals,
   module Language.NC.Internal.Types.PrimTypes,
 
   -- * C Type Qualifiers
@@ -72,6 +74,8 @@ module Language.NC.Internal.Types.Parse (
   Variadic (..),
   Attribute (..),
   StaticAssertion (..),
+  TypeofQual (..),
+  TypeofInfo (..),
   cie_expr,
   recinfo_def,
   attr_clause,
@@ -343,12 +347,25 @@ newtype Symbol = Symbol {unsymbol :: Unique}
 data Alignment
   = AlignNone
   | -- | @\_Alignas@ with constant expression
-    AlignAs Int
+    AlignAs ConstIntExpr
   | -- | @\_Alignas@ with type
     AlignAsType Type
   deriving (Eq, Show)
 
 type FuncType = FuncInfo
+
+-- | Is it @typeof@ or @typeof_unqual@?
+data TypeofQual = TQQual | TQUnqual
+  deriving (Eq, Show)
+
+-- | Is the @typeof@ about a type or an expression?
+data TypeofInfo
+  = -- | @typeof@ or @typeof\_unqual@ is designates an existing type.
+    -- It may store a qualified type even under @typeof\_unqual@.
+    TQType Type
+  | -- | @typeof@ or @typeof\_unqual@ is about an unevaluated expression.
+    TQExpr Expr
+  deriving (Eq, Show)
 
 -- | Source base types.
 data BaseType
@@ -366,8 +383,11 @@ data BaseType
     BTArray ArrayType
   | -- | A pointer type.
     BTPointer QualifiedType
-  | -- | An atomic type specifier (_Atomic(...))
-    BTAtomic QualifiedType
+  | -- | An atomic type specifier (_Atomic(...)). The type is not allowed
+    -- to be atomic or cvr-qualified.
+    BTAtomic Type
+  | -- | @typeof@ or @typeof_unqual@
+    BTTypeof TypeofQual TypeofInfo
   deriving (Eq, Show)
 
 -- | A qualified type.
@@ -1064,6 +1084,23 @@ emiterror e s = emitdiagnostic e s SeverityError
 -- | Emit a warning.
 emitwarning :: Error -> Span -> Parser ()
 emitwarning e s = emitdiagnostic e s SeverityWarning
+
+-- | Is the type atomic or cvr-qualified?
+ty_nontrivialquals :: Type -> Bool
+ty_nontrivialquals ty = ty._ty_qual == mempty
+
+-- | Focus on the qualified portion of a full type.
+ty_qualified :: Lens' Type QualifiedType
+ty_qualified = lens getter setter
+ where
+  getter Type{_ty_base, _ty_qual, _ty_attributes} =
+    QualifiedType
+      { qt_base = _ty_base,
+        qt_qual = _ty_qual,
+        qt_attr = _ty_attributes
+      }
+  setter t QualifiedType{qt_base, qt_qual, qt_attr} =
+    t{_ty_base = qt_base, _ty_qual = qt_qual, _ty_attributes = qt_attr}
 
 makeLenses ''Type
 
