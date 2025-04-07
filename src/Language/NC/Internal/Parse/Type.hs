@@ -7,18 +7,6 @@
 module Language.NC.Internal.Parse.Type (
   -- * Parsing an expression determining type
   typename,
-
-  -- * Debugging
-  typespecqual,
-  typespecquals,
-  SpecQual (..),
-  TypeTokens (..),
-  DeclMode (..),
-  declarator,
-  absdeclarator,
-  structorunion_body,
-  attrspecs,
-  enum_body,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -1075,4 +1063,6 @@ alignas = do
 
 -- | Parse types
 typename :: Parser Type
-typename = err $ InternalError "typename not implemented yet"
+typename = do
+  sym <- newsymbol
+  typespecquals <**> option id (absdeclarator sym)
