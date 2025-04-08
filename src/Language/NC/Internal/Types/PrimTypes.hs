@@ -29,6 +29,7 @@ module Language.NC.Internal.Types.PrimTypes (
   IntLen (..),
   FloatType (..),
   RealFloatType (..),
+  BitIntWidth,
   char2schar,
   _primsign,
   _primsign2,
@@ -43,6 +44,8 @@ import Prelude hiding (
   Float,
   Int,
  )
+
+type BitIntWidth = Word16
 
 -- | Non-derived, primitive types
 data PrimType
@@ -116,7 +119,7 @@ pattern Long_ = PTInt Signed ILLong
 pattern LongLong_ = PTInt Signed ILLongLong
 
 -- | Some convenience patterns for 'PrimType'
-pattern BitInt_, UBitInt_ :: Word16 -> PrimType
+pattern BitInt_, UBitInt_ :: BitIntWidth -> PrimType
 pattern BitInt_ bw = PTInt Signed (ILBitInt bw)
 pattern UBitInt_ bw = PTInt Unsigned (ILBitInt bw)
 
@@ -143,7 +146,7 @@ data IntLen
   | ILInt
   | ILLong
   | ILLongLong
-  | ILBitInt Word16
+  | ILBitInt BitIntWidth
   deriving (Eq, Show)
 
 -- | Real or complex and what type?

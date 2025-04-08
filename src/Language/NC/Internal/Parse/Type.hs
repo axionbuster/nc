@@ -688,10 +688,10 @@ typespecqual = do
            "volatile" -> push TStVolatile tst_volatile
            "_Atomic" ->
              branch
-               (lx0 lpar)
+               lpar
                handleatomic
-               (handleatomicnewtype <* lx0 rpar)
-           "_BitInt" -> lx0 (inpar $ decimal) >>= push_bitint
+               (handleatomicnewtype <* rpar)
+           "_BitInt" -> (inpar $ decimal) >>= push_bitint
            "_Bool" -> push TStBool tst_bool
            "_Complex" -> push TStComplex tst_complex
            "_Decimal128" -> push TStDecimal128 tst_decimal128
@@ -713,8 +713,8 @@ typespecqual = do
   -- parse any subsequent tokens and then update TypeTokens state.
   handleatomic =
     branch
-      (lx0 lpar)
-      (handleatomicnewtype <* lx0 rpar) -- specifier; newtype (_Atomic (...))
+      lpar
+      (handleatomicnewtype <* rpar) -- specifier; newtype (_Atomic (...))
       (push TStAtomic tst_atomic) -- qualifier (_Atomic)
   handleatomicnewtype = do
     t <- typename
@@ -735,8 +735,7 @@ typespecqual = do
               prepush TStAtomicNewtype tst_atomicnewtype
             ]
   handlealignas =
-    lx0
-      $ inpar
+    inpar
       $ choice
         [ typename <&> \ty ->
             SpecQual (prepush TStAlignas tst_alignas)
@@ -750,8 +749,7 @@ typespecqual = do
           | TQUnqual <- qualification = (TStTypeofUnqual, tst_typeof_unqual)
           | otherwise = (TStTypeof, tst_typeof)
         f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
-     in lx0
-          $ inpar
+     in inpar
           $ choice
             [ typename <&> f . TOSTypeName,
               expr_ <&> f . TOSExpr
@@ -874,7 +872,7 @@ typespecquals = do
       0 -> pure bt0 -- absent _BitInt(N) type specifier.
       _ ->
         let bw = tt ^. tt_bitintwidth
-         in if 0 < bw && bw < fromIntegral (maxBound :: Word16)
+         in if 0 < bw && bw < fromIntegral (maxBound :: BitIntWidth)
               then case bt0 of
                 BTPrim (PTInt signed (ILBitInt _)) ->
                   pure $ BTPrim $ PTInt signed (ILBitInt $ fromIntegral bw)
@@ -897,15 +895,15 @@ typespecquals = do
 
 -- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
-attrspecs = option [] $ lx0 $ indbsqb $ attribute `sepBy` lx0 comma
+attrspecs = option [] $ indbsqb $ attribute `sepBy` comma
  where
-  attribute = attrtok <*> option mempty (lx0 (inpar baltoks))
+  attribute = attrtok <*> option mempty ((inpar baltoks))
   baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
   attrtok = do
-    tok1 <- lx1 identifier
+    tok1 <- identifier
     option
       (StandardAttribute tok1)
-      (ws0 >> lx0 doublecolon >> PrefixedAttribute tok1 <$> lx1 identifier)
+      (ws0 >> dbcolon >> PrefixedAttribute tok1 <$> identifier)
 
 -- | In declarator parsing, need identifier to be present or absent?
 data DeclMode = RequireIdentifier | RequireNoIdentifier
@@ -945,7 +943,7 @@ commondeclarator declmode sym = do
   pointer, arrfuncdecl :: Parser (Dual (Endo Type))
   pointer =
     wrap <$> do
-      lx0 star
+      star
       attrs <- attrspecs
       qual <- qualifiers
       pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
@@ -956,19 +954,19 @@ commondeclarator declmode sym = do
       let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
           wraparrtype attrs arrty =
             basetype2type (BTArray arrty) & over ty_attributes (<> attrs)
-      f1 <- lx0 $ insqb0 do
+      f1 <- insqb0 do
         -- parse index part of the declarator.
         --  * 'static' in index:
         -- 'static' as in an array size specifies that the array may not
         -- be NULL and it will contain at least as many items as specified.
         --  * qualifiers and the star (*):
         -- for VLA expressions and such.
-        let static = lx1 static' $> set at_static ASStatic
+        let static = static' $> set at_static ASStatic
             arqua0 = qualifiers <&> set at_qual
             arqua1 = qualifiers1 <&> set at_qual
             ordinary1 = set at_size . ArraySizeExpr <$> assign
             ordinary0 = option (set at_size ArraySizeNone) ordinary1
-            vlastar = lx0 star $> set at_size ArraySizeNone
+            vlastar = star $> set at_size ArraySizeNone
             three = liftM3 \f g h -> f . g . h
             two = liftM2 (.)
         choice
@@ -981,10 +979,10 @@ commondeclarator declmode sym = do
       pure $ f2 . f1 . mkarrtype
   function =
     wrap <$> do
-      f1 <- lx0 $ inpar do
+      f1 <- inpar do
         (ps, var) <-
           branch
-            (lx0 tripledot)
+            tripledot
             (pure ([], Variadic))
             ( do
                 let paramdecl = do
@@ -995,9 +993,9 @@ commondeclarator declmode sym = do
                       let partype2 = dec partype1
                       let partype3 = set ty_attributes attrs partype2
                       pure $ Param partype3 sym2
-                ps1 <- paramdecl `sepBy1` lx0 comma
+                ps1 <- paramdecl `sepBy1` comma
                 var1 <-
-                  option NotVariadic (lx0 comma >> lx0 tripledot $> Variadic)
+                  option NotVariadic (comma >> tripledot $> Variadic)
                 pure (ps1, var1)
             )
         pure \retty -> FuncInfo ps retty var
@@ -1009,9 +1007,9 @@ commondeclarator declmode sym = do
   basedecl :: Parser (Dual (Endo Type))
   basedecl =
     wrap <$> do
-      lx0 $ inpar (commondeclarator declmode sym) <|> do
+      inpar (commondeclarator declmode sym) <|> do
         when (declmode == RequireIdentifier) do
-          lx1 identifier_def >>= symgivename sym
+          identifier_def >>= symgivename sym
         qual <- qualifiers
         pure $ over ty_qual (<> qual)
 
@@ -1022,7 +1020,7 @@ commondeclarator declmode sym = do
 structorunion_body :: Parser ((Symbol -> RecordInfo -> a) -> a)
 structorunion_body = do
   withOption
-    (lx1 identifier_def)
+    identifier_def
     (\i -> def (Just i) <|> decl i)
     (def Nothing)
  where
@@ -1033,14 +1031,14 @@ structorunion_body = do
   def maybename = do
     sym <- newsymbol
     whenjust (symgivename sym) maybename
-    lx0 $ incur do
+    incur do
       attrs <- attrspecs
       typebase <- typespecquals
       let static_assert = do
-            lx1 static_assert'
-            lx0 $ inpar do
+            static_assert'
+            inpar do
               e <- CIEUnresolved <$> expr_
-              l <- optional (lx0 comma >> lx1 string_literal_val)
+              l <- optional (comma >> string_literal_val)
               pure . pure $ RecordStaticAssertion $ StaticAssertion e l
           field = do
             membsym <- newsymbol
@@ -1049,7 +1047,7 @@ structorunion_body = do
               ( \dec -> do
                   let membtype = dec typebase
                   branch
-                    (lx0 colon)
+                    colon
                     ( do
                         bitwidth <- optional $ CIEUnresolved <$> expr_
                         pure $ RecordField attrs membtype membsym bitwidth
@@ -1058,15 +1056,15 @@ structorunion_body = do
               )
               ( do
                   membsym <- newsymbol
-                  lx0 colon
+                  colon
                   bitwidth <- optional $ CIEUnresolved <$> expr_
                   pure $ RecordField attrs typebase membsym bitwidth
               )
-              `sepBy` lx0 comma
+              `sepBy` comma
       ri <-
         concat
           <$> (option [] $ static_assert <|> field)
-          `endBy` lx0 semicolon
+          `endBy` semicolon
       pure \con -> con sym (RecordDef ri)
 
 -- | Parse an @enum@ declaration or definition.
@@ -1077,13 +1075,13 @@ enum_body = do
         -- any of the three rules
         whenjust (symgivename sym) tag
         info <-
-          EnumDef <$> flip sepEndBy (lx0 comma) do
+          EnumDef <$> flip sepEndBy comma do
             sym <- newsymbol
-            name <- lx1 identifier_def
+            name <- identifier_def
             symgivename sym name
             attrs <- attrspecs
             value <- optional do
-              lx0 equal
+              equal
               CIEUnresolved <$> expr_
             pure $ EnumConst sym attrs value
         pure $ EnumType sym info attrs membtype
@@ -1092,17 +1090,17 @@ enum_body = do
     ( \attrs -> do
         -- a declaration cannot have attributes for some reason,
         -- so since we have attributes here we have a definition.
-        tag <- optional (lx1 identifier_def)
-        membtype <- optional (lx0 colon >> typespecquals)
-        lx0 $ incur $ realenumbody attrs tag membtype
+        tag <- optional identifier_def
+        membtype <- optional (colon >> typespecquals)
+        incur $ realenumbody attrs tag membtype
     )
     ( do
         -- no attributes ... so this can be either a definition or declaration.
-        tag <- optional (lx1 identifier_def)
-        membtype <- optional (lx0 colon >> typespecquals)
+        tag <- optional identifier_def
+        membtype <- optional (colon >> typespecquals)
         branch
-          (lx0 lcur)
-          (realenumbody [] tag membtype <* lx0 rcur)
+          lcur
+          (realenumbody [] tag membtype <* rcur)
           ( do
               case tag of
                 Just tag ->

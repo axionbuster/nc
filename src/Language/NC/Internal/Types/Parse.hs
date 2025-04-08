@@ -165,7 +165,6 @@ import Data.Sequence (Seq)
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Unique
-import Data.Word
 import FlatParse.Stateful (ParserIO, Span (..), ask, err, withSpan)
 import Language.NC.Internal.Types.PrimTypes
 import Text.Printf (printf)
@@ -625,11 +624,11 @@ data PrimTypeBadWhy
     --     \"mixing [void] with other types\" (replace [void] with the type).
     IncompatibleTypes String [String]
   | -- | Unrecognized or invalid _BitInt width
-    InvalidBitIntWidth Word16
+    InvalidBitIntWidth BitIntWidth
   | -- | Invalid _BitInt width due to overflow or bad formatting
     InvalidBitIntWidthOverflowOrBadFormat
   | -- | Invalid _Decimal bits specification
-    InvalidDecimalBits Word16
+    InvalidDecimalBits BitIntWidth
   | -- | Giving signedness to non-integral type
     InvalidSignedness String
   | -- | Constructing a decimal complex type
@@ -726,16 +725,16 @@ data SymbolTable = SymbolTable
 -- FIXME: 'IntegerSettings' is also responsible for floating-point settings.
 data IntegerSettings
   = IntegerSettings
-  { _ist_charbitwidth :: !Word16,
-    _ist_shortbitwidth :: !Word16,
-    _ist_intbitwidth :: !Word16,
-    _ist_longbitwidth :: !Word16,
-    _ist_longlongbitwidth :: !Word16,
+  { _ist_charbitwidth :: !BitIntWidth,
+    _ist_shortbitwidth :: !BitIntWidth,
+    _ist_intbitwidth :: !BitIntWidth,
+    _ist_longbitwidth :: !BitIntWidth,
+    _ist_longlongbitwidth :: !BitIntWidth,
     -- | is @char@ represented as @signed char@ or @unsigned char@?
     _ist_charissigned :: !Bool,
-    _ist_floatbitwidth :: !Word16,
-    _ist_doublebitwidth :: !Word16,
-    _ist_longdoublebitwidth :: !Word16
+    _ist_floatbitwidth :: !BitIntWidth,
+    _ist_doublebitwidth :: !BitIntWidth,
+    _ist_longdoublebitwidth :: !BitIntWidth
   }
   deriving (Eq, Show)
 
@@ -978,7 +977,7 @@ ain = psintset <$> ask
 -- Signed integers have one fewer bit than the unsigned counterpart.
 --
 -- For @char@, it depends on the signedness.
-ist_preciseposbw :: PrimType -> Parser Word16
+ist_preciseposbw :: PrimType -> Parser BitIntWidth
 ist_preciseposbw (PTInt _ (ILBitInt n)) = pure n
 ist_preciseposbw (PTInt s a) = do
   x <- ist_pbw' a
@@ -1011,7 +1010,7 @@ ist_preciseposbw t =
         ++ show t
 
 -- | Recall the exact number of bits needed to represent a scalar type.
-ist_precisebw :: PrimType -> Parser Word16
+ist_precisebw :: PrimType -> Parser BitIntWidth
 ist_precisebw (PTInt _ a) = case a of
   ILShort -> _ist_shortbitwidth <$> ain
   ILInt -> _ist_intbitwidth <$> ain

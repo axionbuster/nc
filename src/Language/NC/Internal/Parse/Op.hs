@@ -48,7 +48,7 @@ expr = runandgetspan expr_
 
 -- | Parse an expression without returning the span.
 expr_ :: Parser Expr
-expr_ = chainl ExprComma assign (lx0 comma >> assign)
+expr_ = chainl ExprComma assign (comma >> assign)
 
 -- | Parse an assignment expression.
 assign :: Parser Expr
@@ -63,9 +63,9 @@ assign = assignop <|> cond
 cond = do
   a <- logor
   option a do
-    lx0 questionmark
+    questionmark
     b <- expr_
-    lx0 colon
+    colon
     c <- assign
     pure $ ExprConditional a b c
 
@@ -74,7 +74,7 @@ logor = do
   go a
  where
   go a = option a do
-    lx0 doublebar
+    dbbar
     b <- logand
     go (ExprOr a b)
 
@@ -83,7 +83,7 @@ logand = do
   go a
  where
   go a = option a do
-    lx0 doubleamp
+    dbamp
     b <- bitor
     go (ExprAnd a b)
 
@@ -92,7 +92,7 @@ bitor = do
   go a
  where
   go a = option a do
-    lx0 bar
+    bar
     b <- bitxor
     go (ExprBitOr a b)
 
@@ -101,7 +101,7 @@ bitxor = do
   go a
  where
   go a = option a do
-    lx0 caret
+    caret
     b <- bitand
     go (ExprBitXor a b)
 
@@ -110,7 +110,7 @@ bitand = do
   go a
  where
   go a = option a do
-    lx0 ampersand
+    ampersand
     b <- rel
     go (ExprBitAnd a b)
 
@@ -191,7 +191,7 @@ cast_ =
   choice
     [ unary,
       do
-        typ <- lx0 (inpar (typename))
+        typ <- (inpar typename)
         val <- cast_
         pure $ ExprCast typ val
     ]
@@ -219,24 +219,24 @@ unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
      )
       <*> cast_
   sizeof = do
-    lx1 sizeof'
-    (ExprSizeOf . Left <$> inpar (typename))
+    sizeof'
+    (ExprSizeOf . Left <$> inpar typename)
       <|> (ExprSizeOf . Right <$> unary)
   alignof = do
-    lx1 alignof'
-    ExprAlignOf . Left <$> inpar (typename)
+    alignof'
+    ExprAlignOf . Left <$> inpar typename
 
 compound = do
   -- For now, just handle the error since we need to refactor
   -- the Expr and Type handling in the AST to properly implement
   -- compound literals
-  lx0 (inpar (typename)) >> lx0 (incur anyChar) >> failed
+  (inpar typename) >> (incur anyChar) >> failed
 
 postfix = primary >>= go
  where
   -- FIXME: no handling for alternative tokens (such as '<:')
   go a = do
-    let getid = lx1 identifier
+    let getid = identifier
         mksym i = do
           s <- newsymbol
           symgivename s i $> s
@@ -244,11 +244,11 @@ postfix = primary >>= go
           anyChar >>= \case
             '[' -> do
               b <- expr_
-              lx0 rsqb
+              rsqb
               pure $ ExprArray a b
             '(' -> do
-              b <- assign `sepBy` lx0 comma
-              lx0 rpar
+              b <- assign `sepBy` comma
+              rpar
               pure $ ExprCall a b
             '.' -> ExprMember a <$> (getid >>= mksym)
             '-' ->
@@ -273,22 +273,22 @@ paren = Expr <$> runandgetspan (inpar (PrimParen <$> expr_))
 litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
 ident = do
-  withSpan (lx1 identifier) \i s ->
+  withSpan identifier \i s ->
     pure $ Expr $ WithSpan s $ PrimId i
 
 generic = do
-  lx1 _Generic'
+  _Generic'
   inpar do
     a <- assign
-    lx0 comma
-    b <- genassoc `sepBy1` lx0 comma
+    comma
+    b <- genassoc `sepBy1` comma
     pure $ ExprGeneric a b
  where
   genassoc = do
     -- Temporarily handle only the default case since we need to
     -- decide how to convert Type to Str or adjust the GenAssoc structure
-    lx1 default'
-    lx0 colon
+    default'
+    colon
     b <- assign
     pure $ GenAssoc Nothing b
 

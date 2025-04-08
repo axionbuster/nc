@@ -1,16 +1,186 @@
 {-# OPTIONS_GHC -Wno-name-shadowing -Wno-missing-signatures #-}
 
--- | Lexers.
+-- | Lexers and basic parsers.
 --
 -- Lexing convention:
 --  - Each parser\/lexer assumes the respective token begins directly rather
 --    than potentially starting with whitespace. Consequently, these primitives
 --    do not begin with whitespace parsing.
---  - It also does not consume whitespace after itself.
-module Language.NC.Internal.Lex where
+--  - Keywords and punctuation will consume any whitespace, EOF,
+--    punctuation, or comments---collectively refered to as \'space\'. This
+--    includes in-delimiter parsers like 'inpar'.
+--  - Keywords and identifiers will require some space to come afterward.
+module Language.NC.Internal.Lex (
+  -- * Whitespace and comments
+  ws0,
+  ws1,
+  lx0,
+  lx1,
+  switch_ws0,
+  switch_ws1,
+
+  -- * Punctuation
+  punct,
+  ldbsqb,
+  rdbsqb,
+  lsqb,
+  rsqb,
+  lpar,
+  rpar,
+  lcur,
+  rcur,
+  insqb0,
+  indbsqb,
+  inpar,
+  incur,
+  comma,
+  semicolon,
+  quote,
+  dbquote,
+  period,
+  rarrow,
+  dbplus,
+  dbminus,
+  ampersand,
+  caret,
+  bar,
+  tilde,
+  plus,
+  minus,
+  star,
+  slash,
+  percent,
+  starslash,
+  less,
+  greater,
+  lessequal,
+  greaterequal,
+  dbequal,
+  notequal,
+  bang,
+  dbamp,
+  dbbar,
+  equal,
+  starequal,
+  slashequal,
+  percentequal,
+  plusequal,
+  minusequal,
+  ampersandequal,
+  caretequal,
+  barequal,
+  tildeequal,
+  dblessequal,
+  dbgreaterequal,
+  colon,
+  dbcolon,
+  questionmark,
+  hash',
+  dbhash',
+  backslash,
+  tripledot,
+  lesscolon,
+  colongreater,
+  lesspercent,
+  percentgreater,
+  percentcolon,
+  dbpercentcolon,
+
+  -- * Keywords
+  keyword,
+  alignas',
+  alignof',
+  auto',
+  break',
+  case',
+  char',
+  const',
+  constexpr',
+  continue',
+  default',
+  do',
+  double',
+  else',
+  enum',
+  extern',
+  false',
+  float',
+  for',
+  goto',
+  if',
+  inline',
+  int',
+  long',
+  nullptr',
+  nullptr_t',
+  register',
+  restrict',
+  return',
+  short',
+  signed',
+  sizeof',
+  static',
+  static_assert',
+  struct',
+  switch',
+  thread_local',
+  true',
+  typedef',
+  typeof',
+  typeof_unequal',
+  union',
+  unsigned',
+  void',
+  volatile',
+  while',
+  _Atomic',
+  _BitInt',
+  _Bool',
+  _Complex',
+  _Decimal128',
+  _Decimal32',
+  _Decimal64',
+  _Generic',
+  _Imaginary',
+  _Noreturn',
+
+  -- * Reserved or special identifiers
+  __func__',
+  main',
+  memset',
+  printf',
+  bs_dbunderscore,
+  bs_hasdbunderscore,
+
+  -- * Identifiers
+  identifier,
+  identifier_def,
+
+  -- * Universal character names
+  universal_character_name,
+  ucnam_val_word32,
+
+  -- * Literals
+  literal,
+  integer_constant,
+  integer_constant_val,
+  floating_constant,
+  character_constant,
+  character_constant_val,
+  string_literal,
+  string_literal_val,
+
+  -- * Higher-order constructs
+  pcatch,
+  pfinally,
+  p_onexception,
+  butnot,
+  butnotpfx,
+) where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BB
+import Data.ByteString.Char8 qualified as C8
 import Data.Text.ICU.Char qualified as C
 import GHC.Int (Int (..))
 import GHC.Integer.Logarithms (integerLog2#)
@@ -89,10 +259,10 @@ ws1 = ws_base eof
 -- * Operators, keywords, and identifiers
 
 -- | @[@
-_lsq = $(char '[') <|> $(string "<:")
+_lsq = $(char '[')
 
 -- | @]@
-_rsq = $(char ']') <|> $(string ":>")
+_rsq = $(char ']')
 
 -- | @[[@ and @]]@, respectively.
 (ldbsqb, rdbsqb) =
@@ -110,43 +280,43 @@ _rsq = $(char ']') <|> $(string ":>")
 
 (lpar, rpar) = ($(char '('), $(char ')'))
 
-(lcur, rcur) = ($(char '{') <|> $(string "<%"), $(char '}') <|> $(string "%>"))
+(lcur, rcur) = ($(char '{'), $(char '}'))
 
 -- | Enclose a thing in square brackets not followed by another square bracket.
-insqb0 = between (lsqb >> ws0) (ws0 >> rsqb)
+insqb0 = lx0 . between (lsqb >> ws0) (ws0 >> rsqb)
 
 -- | Enclose a thing in double square brackets.
-indbsqb = between (ldbsqb >> ws0) (ws0 >> rdbsqb)
+indbsqb = lx0 . between (ldbsqb >> ws0) (ws0 >> rdbsqb)
 
 -- | Enclose a thing in parentheses.
-inpar = between (lpar >> ws0) (ws0 >> rpar)
+inpar = lx0 . between (lpar >> ws0) (ws0 >> rpar)
 
 -- | Enclose a thing in braces.
-incur = between (lcur >> ws0) (ws0 >> rcur)
+incur = lx0 . between (lcur >> ws0) (ws0 >> rcur)
 
 -- Important punctuations
 
-(comma, semicolon) = ($(char ','), $(char ';'))
+(comma, semicolon) = (lx0 $(char ','), lx0 $(char ';'))
 
-(quote, dbquote) = ($(char '\''), $(char '"'))
+(quote, dbquote) = (lx0 $(char '\''), lx0 $(char '"'))
 
 -- Member access operators
-(period, rarrow) = ($(char '.'), $(string "->"))
+(period, rarrow) = (lx0 $(char '.'), lx0 $(string "->"))
 
 -- Increment/decrement operators
-(doubleplus, doubleminus) = ($(string "++"), $(string "--"))
+(dbplus, dbminus) = (lx0 $(string "++"), lx0 $(string "--"))
 
 -- Bitwise operators
 (ampersand, caret, bar, tilde) =
-  ( $(char '&') `notFollowedBy` $(char '&'),
-    $(char '^'),
-    $(char '|'),
-    $(char '~')
+  ( lx0 $ $(char '&') `notFollowedBy` $(char '&'),
+    lx0 $(char '^'),
+    lx0 $(char '|'),
+    lx0 $(char '~')
   )
 
 -- Basic arithmetic operators
 (plus, minus, star, slash, percent) =
-  ($(char '+'), $(char '-'), $(char '*'), s, $(char '%'))
+  (lx0 $(char '+'), lx0 $(char '-'), lx0 $(char '*'), lx0 s, lx0 $(char '%'))
  where
   -- most operators do "clash" (share a prefix with another operator)
   -- but the division operator clashes with comments so we will
@@ -164,71 +334,75 @@ incur = between (lcur >> ws0) (ws0 >> rcur)
 -- this isn't an *operator* but sometimes it appears because a block
 -- comment wasn't closed properly
 
-starslash = $(string "*/")
+starslash = lx0 $(string "*/")
 
 -- Relational operators
-(less, greater) = ($(char '<'), $(char '>'))
+(less, greater) = (lx0 $(char '<'), lx0 $(char '>'))
 
-(lessequal, greaterequal) = ($(string "<="), $(string ">="))
+(lessequal, greaterequal) = (lx0 $(string "<="), lx0 $(string ">="))
 
-(equalequal, notequal) = ($(string "=="), $(string "!="))
+(dbequal, notequal) = (lx0 $(string "=="), lx0 $(string "!="))
 
 -- Logical operators
-(bang, doubleamp, doublebar) = ($(char '!'), $(string "&&"), $(string "||"))
+(bang, dbamp, dbbar) =
+  ( lx0 $(char '!'),
+    lx0 $(string "&&"),
+    lx0 $(string "||")
+  )
 
 -- Assignment operator
-equal = $(char '=')
+equal = lx0 $(char '=')
 
 -- Compound assignments
 (starequal, slashequal, percentequal, plusequal, minusequal) =
-  ( $(string "*="),
-    $(string "/="),
-    $(string "%="),
-    $(string "+="),
-    $(string "-=")
+  ( lx0 $(string "*="),
+    lx0 $(string "/="),
+    lx0 $(string "%="),
+    lx0 $(string "+="),
+    lx0 $(string "-=")
   )
 
 (ampersandequal, caretequal, barequal, tildeequal) =
-  ( $(string "&="),
-    $(string "^="),
-    $(string "|="),
-    $(string "~=")
+  ( lx0 $(string "&="),
+    lx0 $(string "^="),
+    lx0 $(string "|="),
+    lx0 $(string "~=")
   )
 
-(doublelessequal, doublegreaterequal) =
-  ( $(string "<<="),
-    $(string ">>=")
+(dblessequal, dbgreaterequal) =
+  ( lx0 $(string "<<="),
+    lx0 $(string ">>=")
   )
 
 -- ** Misc operators (and parts of operators)
 
-(colon, doublecolon) = ($(char ':'), $(string "::"))
+(colon, dbcolon) = (lx0 $(char ':'), lx0 $(string "::"))
 
-questionmark = $(char '?')
+questionmark = lx0 $(char '?')
 
 -- ** Preprocessor 'operators'
 
-(hash', doublehash') =
-  ( $(char '#') <|> $(string "%:"),
+(hash', dbhash') =
+  ( lx0 $(char '#'),
     hash' >> hash'
   )
 
-backslash = $(char '\\')
+backslash = lx0 $(char '\\')
 
 -- ** Ellipsis
 
-tripledot = $(string "...")
+tripledot = lx0 $(string "...")
 
 -- ** Compensation for deficient encodings (digraphs)
 
 -- square brackets
-(lesscolon, colongreater) = ($(string "<:"), $(string ":>"))
+(lesscolon, colongreater) = (lx0 $(string "<:"), lx0 $(string ":>"))
 
 -- braces
-(lesspercent, percentgreater) = ($(string "<%"), $(string "%>"))
+(lesspercent, percentgreater) = (lx0 $(string "<%"), lx0 $(string "%>"))
 
 -- single and double hashes
-(percentcolon, doublepercentcolon) = ($(string "%:"), $(string "%:%:"))
+(percentcolon, dbpercentcolon) = (lx0 $(string "%:"), lx0 $(string "%:%:"))
 
 -- ** Keywords
 
@@ -236,141 +410,159 @@ tripledot = $(string "...")
 -- so it will be insensitive to whitespace, lookahead is not handled, etc.
 -- Basically no semantic grouping is done here.
 
-alignas' = $(string "alignas") <|> $(string "_Alignas")
+alignas' =
+  lx1
+    $(switch [|case _ of "alignas" -> pure (); "_Alignas" -> pure ()|])
 
-alignof' = $(string "alignof")
+alignof' =
+  lx1
+    $( switch
+         [|
+           case _ of
+             "alignof" -> pure ()
+             "_Alignof" -> pure ()
+           |]
+     )
 
-auto' = $(string "auto")
+auto' = lx1 $(string "auto")
 
-break' = $(string "break")
+break' = lx1 $(string "break")
 
-case' = $(string "case")
+case' = lx1 $(string "case")
 
-char' = $(string "char")
+char' = lx1 $(string "char")
 
-const' = $(string "const")
+const' = lx1 $(string "const")
 
-constexpr' = $(string "constexpr")
+constexpr' = lx1 $(string "constexpr")
 
-continue' = $(string "continue")
+continue' = lx1 $(string "continue")
 
-default' = $(string "default")
+default' = lx1 $(string "default")
 
-do' = $(string "do")
+do' = lx1 $(string "do")
 
-double' = $(string "double")
+double' = lx1 $(string "double")
 
-else' = $(string "else")
+else' = lx1 $(string "else")
 
-enum' = $(string "enum")
+enum' = lx1 $(string "enum")
 
-extern' = $(string "extern")
+extern' = lx1 $(string "extern")
 
-false' = $(string "false")
+false' = lx1 $(string "false")
 
-float' = $(string "float")
+float' = lx1 $(string "float")
 
-for' = $(string "for")
+for' = lx1 $(string "for")
 
-goto' = $(string "goto")
+goto' = lx1 $(string "goto")
 
-if' = $(string "if")
+if' = lx1 $(string "if")
 
-inline' = $(string "inline")
+inline' = lx1 $(string "inline")
 
-int' = $(string "int")
+int' = lx1 $(string "int")
 
-long' = $(string "long")
+long' = lx1 $(string "long")
 
-nullptr' = $(string "nullptr")
+nullptr' = lx1 $(string "nullptr")
 
-nullptr_t' = $(string "nullptr_t")
+nullptr_t' = lx1 $(string "nullptr_t")
 
-register' = $(string "register")
+register' = lx1 $(string "register")
 
-restrict' = $(string "restrict")
+restrict' = lx1 $(string "restrict")
 
-return' = $(string "return")
+return' = lx1 $(string "return")
 
-short' = $(string "short")
+short' = lx1 $(string "short")
 
-signed' = $(string "signed")
+signed' = lx1 $(string "signed")
 
-sizeof' = $(string "sizeof")
+sizeof' = lx1 $(string "sizeof")
 
-static' = $(string "static")
+static' = lx1 $(string "static")
 
-static_assert' = $(string "static_assert") <|> $(string "_Static_assert")
+static_assert' =
+  lx1
+    $( switch
+         [|
+           case _ of
+             "static_assert" -> pure ()
+             "_Static_assert" -> pure ()
+           |]
+     )
 
-struct' = $(string "struct")
+struct' = lx1 $(string "struct")
 
-switch' = $(string "switch")
+switch' = lx1 $(string "switch")
 
-thread_local' = $(string "thread_local") <|> $(string "_Thread_local")
+thread_local' =
+  lx1
+    $( switch
+         [|
+           case _ of
+             "thread_local" -> pure ()
+             "_Thread_local" -> pure ()
+           |]
+     )
 
-true' = $(string "true")
+true' = lx1 $(string "true")
 
-typedef' = $(string "typedef")
+typedef' = lx1 $(string "typedef")
 
-typeof' = $(string "typeof")
+typeof' = lx1 $(string "typeof")
 
-typeof_unequal' = $(string "typeof_unequal")
+typeof_unequal' = lx1 $(string "typeof_unequal")
 
-union' = $(string "union")
+union' = lx1 $(string "union")
 
-unsigned' = $(string "unsigned")
+unsigned' = lx1 $(string "unsigned")
 
-void' = $(string "void")
+void' = lx1 $(string "void")
 
-volatile' = $(string "volatile")
+volatile' = lx1 $(string "volatile")
 
-while' = $(string "while")
+while' = lx1 $(string "while")
 
-_Alignas' = $(string "_Alignas")
+_Atomic' = lx1 $(string "_Atomic")
 
-_Alignof' = $(string "_Alignof")
+_BitInt' = lx1 $(string "_BitInt")
 
-_Atomic' = $(string "_Atomic")
+_Bool' = lx1 $(string "_Bool")
 
-_BitInt' = $(string "_BitInt")
+_Complex' = lx1 $(string "_Complex")
 
-_Bool' = $(string "_Bool")
+_Decimal128' = lx1 $(string "_Decimal128")
 
-_Complex' = $(string "_Complex")
+_Decimal32' = lx1 $(string "_Decimal32")
 
-_Decimal128' = $(string "_Decimal128")
+_Decimal64' = lx1 $(string "_Decimal64")
 
-_Decimal32' = $(string "_Decimal32")
+_Generic' = lx1 $(string "_Generic")
 
-_Decimal64' = $(string "_Decimal64")
+_Imaginary' = lx1 $(string "_Imaginary")
 
-_Generic' = $(string "_Generic")
-
-_Imaginary' = $(string "_Imaginary")
-
-_Noreturn' = $(string "_Noreturn")
-
-_Static_assert' = $(string "_Static_assert")
-
-_Thread_local' = $(string "_Thread_local")
+_Noreturn' = lx1 $(string "_Noreturn")
 
 -- ** some reserved identifiers.
 
 -- user code may not declare these identifiers. they have special
--- meaning in the C standard.
+-- meaning in the C standard. however, these are not keywords.
 
-__func__' = $(string "__func__")
-
-main' = $(string "main")
+__func__' = lx1 $(string "__func__")
 
 -- ** Any notable identifiers.
 
 -- this is an ever expanding list of identifiers that are not keywords
 -- or reserved identifiers, but are notable in some way.
 
-memset' = $(string "memset")
+main' = lx1 $(string "main")
 
-printf' = $(string "printf")
+memset' = lx1 $(string "memset")
+
+printf' = lx1 $(string "printf")
 
 -- ** Helping find 'bad' syntax for identifiers.
 
@@ -381,12 +573,9 @@ printf' = $(string "printf")
 --    by an uppercase Latin letter.
 --  - Identifier contains two consecutive underscores anywhere.
 
--- | AVOID, use efficient string search instead when possible.
-doubleunderscore = $(string "__")
+bs_dbunderscore = BS.pack [95, 95]
 
-bs_doubleunderscore = BS.pack [95, 95]
-
-bs_hasdunder = (bs_doubleunderscore `BS.isInfixOf`)
+bs_hasdbunderscore = (bs_dbunderscore `BS.isInfixOf`)
 
 -- * Lexing (6.4 Lexical elements)
 
@@ -394,70 +583,71 @@ bs_hasdunder = (bs_doubleunderscore `BS.isInfixOf`)
 
 -- | C23 keywords
 keyword =
-  $( switch
-       [|
-         case _ of
-           "alignas" -> pure ()
-           "alignof" -> pure ()
-           "auto" -> pure ()
-           "break" -> pure ()
-           "case" -> pure ()
-           "char" -> pure ()
-           "const" -> pure ()
-           "constexpr" -> pure ()
-           "continue" -> pure ()
-           "default" -> pure ()
-           "do" -> pure ()
-           "double" -> pure ()
-           "else" -> pure ()
-           "enum" -> pure ()
-           "extern" -> pure ()
-           "false" -> pure ()
-           "float" -> pure ()
-           "for" -> pure ()
-           "goto" -> pure ()
-           "if" -> pure ()
-           "inline" -> pure ()
-           "int" -> pure ()
-           "long" -> pure ()
-           "nullptr" -> pure ()
-           "nullptr_t" -> pure ()
-           "register" -> pure ()
-           "restrict" -> pure ()
-           "return" -> pure ()
-           "short" -> pure ()
-           "signed" -> pure ()
-           "sizeof" -> pure ()
-           "static" -> pure ()
-           "static_assert" -> pure ()
-           "struct" -> pure ()
-           "switch" -> pure ()
-           "thread_local" -> pure ()
-           "true" -> pure ()
-           "typedef" -> pure ()
-           "typeof" -> pure ()
-           "typeof_unqual" -> pure ()
-           "union" -> pure ()
-           "unsigned" -> pure ()
-           "void" -> pure ()
-           "volatile" -> pure ()
-           "while" -> pure ()
-           "_Alignas" -> pure ()
-           "_Alignof" -> pure ()
-           "_Atomic" -> pure ()
-           "_BitInt" -> pure ()
-           "_Bool" -> pure ()
-           "_Complex" -> pure ()
-           "_Decimal128" -> pure ()
-           "_Decimal32" -> pure ()
-           "_Decimal64" -> pure ()
-           "_Generic" -> pure ()
-           "_Imaginary" -> pure ()
-           "_Noreturn" -> pure ()
-           "_Static_assert" -> pure ()
-           "_Thread_local" -> pure ()
-         |]
-   )
+  lx1
+    $( switch
+         [|
+           case _ of
+             "alignas" -> pure ()
+             "alignof" -> pure ()
+             "auto" -> pure ()
+             "break" -> pure ()
+             "case" -> pure ()
+             "char" -> pure ()
+             "const" -> pure ()
+             "constexpr" -> pure ()
+             "continue" -> pure ()
+             "default" -> pure ()
+             "do" -> pure ()
+             "double" -> pure ()
+             "else" -> pure ()
+             "enum" -> pure ()
+             "extern" -> pure ()
+             "false" -> pure ()
+             "float" -> pure ()
+             "for" -> pure ()
+             "goto" -> pure ()
+             "if" -> pure ()
+             "inline" -> pure ()
+             "int" -> pure ()
+             "long" -> pure ()
+             "nullptr" -> pure ()
+             "nullptr_t" -> pure ()
+             "register" -> pure ()
+             "restrict" -> pure ()
+             "return" -> pure ()
+             "short" -> pure ()
+             "signed" -> pure ()
+             "sizeof" -> pure ()
+             "static" -> pure ()
+             "static_assert" -> pure ()
+             "struct" -> pure ()
+             "switch" -> pure ()
+             "thread_local" -> pure ()
+             "true" -> pure ()
+             "typedef" -> pure ()
+             "typeof" -> pure ()
+             "typeof_unqual" -> pure ()
+             "union" -> pure ()
+             "unsigned" -> pure ()
+             "void" -> pure ()
+             "volatile" -> pure ()
+             "while" -> pure ()
+             "_Alignas" -> pure ()
+             "_Alignof" -> pure ()
+             "_Atomic" -> pure ()
+             "_BitInt" -> pure ()
+             "_Bool" -> pure ()
+             "_Complex" -> pure ()
+             "_Decimal128" -> pure ()
+             "_Decimal32" -> pure ()
+             "_Decimal64" -> pure ()
+             "_Generic" -> pure ()
+             "_Imaginary" -> pure ()
+             "_Noreturn" -> pure ()
+             "_Static_assert" -> pure ()
+             "_Thread_local" -> pure ()
+           |]
+     )
 
 -- ** 6.4.2 Identifiers
 
@@ -467,7 +657,7 @@ keyword =
 
 -- | Any identifier. This allows reserved identifiers like @__func__@
 -- to be used. For use in declarations, consider 'identifier_def' instead.
-identifier = byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
+identifier = lx1 $ byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
  where
   id_head = nondigit <|> universal_character_name
   id_tail = fullset <|> universal_character_name
@@ -479,29 +669,24 @@ identifier = byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
   xidc = C.property C.XidContinue
 
 -- | A user-definable identifier. Currently, only @__func__@ is banned.
-identifier_def =
-  $( switch
-       [|
-         case _ of
-           "__func__" -> failed
-           _ -> identifier
-         |]
-   )
+identifier_def = do
+  i <- identifier
+  guard (i /= C8.pack "__func__") $> i
 
 -- *** 6.4.3 Universal character names
 
 -- | Recognize a universal character name character.
 --
--- The value-returning counterpart is called 'ucnam_val_word'.
-universal_character_name = () <$ ucnam_val_word
+-- The value-returning counterpart is called 'ucnam_val_word32'.
+universal_character_name = () <$ ucnam_val_word32
 
--- | A Unicode character (in a 'Word')
-ucnam_val_word =
+-- | A Unicode character (in a 'Word32')
+ucnam_val_word32 =
   $( switch
        [|
          case _ of
-           "\\u" -> isolate 4 anyAsciiHexWord
-           "\\U" -> isolate 8 anyAsciiHexWord
+           "\\u" -> fromIntegral @_ @Word32 <$> isolate 4 anyAsciiHexWord
+           "\\U" -> fromIntegral @_ @Word32 <$> isolate 8 anyAsciiHexWord
          |]
    )
     >>= \c ->
@@ -530,14 +715,14 @@ asm b p sep = go 0 True
       branch
         (sep >> guard sepfresh)
         (go n False i)
-        ( do
-            d <- p
-            let m = n * b + d
-            go m True (i - 1) <|> pure m
+        ( withOption
+            p
+            (\d -> go (n * b + d) True (i - 1))
+            (pure n)
         )
 
 _hexdigit =
-  satisfyAscii isHexDigit <&> fromIntegral . \c ->
+  satisfyAscii isHexDigit <&> fromIntegral @_ @Integer . \c ->
     if
       | 'A' <= c && c <= 'F' -> ord c - ord 'A' + 10
       | 'a' <= c && c <= 'f' -> ord c - ord 'a' + 10
@@ -545,10 +730,10 @@ _hexdigit =
       | otherwise -> error "_hexdigit: impossible"
 
 _octdigit =
-  satisfyAscii isOctDigit <&> fromIntegral . \c -> ord c - ord '0'
+  satisfyAscii isOctDigit <&> fromIntegral @_ @Integer . \c -> ord c - ord '0'
 
 _decdigit =
-  satisfyAscii isDigit <&> fromIntegral . \c -> ord c - ord '0'
+  satisfyAscii isDigit <&> fromIntegral @_ @Integer . \c -> ord c - ord '0'
 
 _bindigit =
   $( switch
@@ -559,9 +744,9 @@ _bindigit =
          |]
    )
 
+-- | occurrence counts of integer literal suffices
 data ISFX_
-  = -- occurrence counts
-  ISFX_ {isfxu :: !Word8, isfxl :: !Word8, isfxbw :: !Word8}
+  = ISFX_ !Word8 !Word8 !Word8
 
 instance Semigroup ISFX_ where
   ISFX_ a b c <> ISFX_ x y z = ISFX_ (a ^^+ x) (b ^^+ y) (c ^^+ z)
@@ -650,7 +835,7 @@ integer_constant_val =
   -- the (-1) indicates max number of digits (unrestricted)
   hex = (False,) <$> asm 16 _hexdigit quote (-1)
   oct = (False,) <$> asm 8 _octdigit quote (-1)
-  dec = (True,) <$> asm 10 _decdigit quote (-1)
+  dec = (True,) <$> anyAsciiDecimalInteger
   bin = (False,) <$> asm 2 _bindigit quote (-1)
   sfx wasdecimal n = do
     let sfxchr =
@@ -743,7 +928,7 @@ character_constant_val = do
   esc = choice [simple, octal, hex, skipBack 1 >> universal]
    where
     simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
-    universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word
+    universal = CharacterLiteral . chr . fromIntegral <$> ucnam_val_word32
     -- FIXME: currently we assume that the host and target have the
     -- same integer endianness.
     -- base parser digit_sep (max_digits or -1 to disable)
@@ -794,7 +979,7 @@ string_literal_val = do
   esc = choice [simple, octal, hex, skipBack 1 >> universal]
    where
     simple = interpret <$> satisfyAscii (`elem` "'\"?\\abfnrtv")
-    universal = fromIntegral <$> ucnam_val_word
+    universal = fromIntegral <$> ucnam_val_word32
     -- base parser digit_sep (max_digits or -1 to disable)
     octal = fromIntegral <$> asm 8 _octdigit (pure ()) 3
     hex = do $(char 'x'); fromIntegral <$> asm 16 _hexdigit (pure ()) (-1)
@@ -822,10 +1007,14 @@ switch_ws0 = switchWithPost (Just [|ws0|])
 -- consumes at least some whitespace after each match.
 switch_ws1 = switchWithPost (Just [|ws1|])
 
--- | Lexeme ... apply parser and then consume optional whitespace
+-- | Apply parser and then consume optional whitespace, comments,
+-- or punctuation. Essentially, does not mark identifier boundary, but
+-- will consume any space afterward. Useful for punctuation.
 lx0 = (<* ws0)
 
--- | Lexeme ... apply parser and then consume whitespace
+-- | Apply parser and then consume some whitespace, comments,
+-- or punctuation. Essentially, marks identifier boundary. Useful for
+-- identifiers and keywords.
 lx1 = (<* ws1)
 
 -- | Parse with @p@; on error, record with span and then handle
