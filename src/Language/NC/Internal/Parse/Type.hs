@@ -2,7 +2,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Language.NC.Internal.Parse.Type (
   -- * Parsing an expression determining type
@@ -315,7 +314,7 @@ data TSTok
   deriving anyclass (Hashable)
 
 -- Bitset for type specifier tokens
-newtype TSToks = TSToks {untstoks :: Word64}
+newtype TSToks = TSToks Word64
   deriving newtype (Eq, Num, Bits, FiniteBits)
 
 instance Semigroup TSToks where
@@ -422,26 +421,33 @@ tst_decimal128 = TSToks (1 .<<. 14)
 tst_bitint :: TSToks
 tst_bitint = TSToks (1 .<<. 15)
 
-tst_const, tst_volatile, tst_restrict :: TSToks
+tst_primmask :: (Bits a, Num a) => a
+tst_primmask = 1 .<<. 16 - 1
+
+-- type qualifiers
+
+tst_const, tst_volatile, tst_restrict, tst_atomic :: TSToks
 tst_const = TSToks (1 .<<. 16)
 tst_volatile = TSToks (1 .<<. 17)
 tst_restrict = TSToks (1 .<<. 18)
-
-tst_atomic, tst_register :: TSToks
 tst_atomic = TSToks (1 .<<. 19)
-tst_register = TSToks (1 .<<. 20)
 
-tst_auto, tst_static, tst_extern :: TSToks
+-- storage class specifiers
+
+tst_register, tst_auto, tst_static, tst_extern :: TSToks
+tst_register = TSToks (1 .<<. 20)
 tst_auto = TSToks (1 .<<. 21)
 tst_static = TSToks (1 .<<. 22)
 tst_extern = TSToks (1 .<<. 23)
 
-tst_threadlocal, tst_typedef :: TSToks
+tst_threadlocal, tst_typedef, tst_constexpr :: TSToks
 tst_threadlocal = TSToks (1 .<<. 24)
 tst_typedef = TSToks (1 .<<. 25)
-
-tst_constexpr, tst_inline, tst_noreturn :: TSToks
 tst_constexpr = TSToks (1 .<<. 26)
+
+-- function specifiers
+
+tst_inline, tst_noreturn :: TSToks
 tst_inline = TSToks (1 .<<. 27)
 tst_noreturn = TSToks (1 .<<. 28)
 
@@ -453,7 +459,7 @@ tst_union = TSToks (1 .<<. 30)
 tst_enum = TSToks (1 .<<. 31)
 tst_typedefname = TSToks (1 .<<. 32)
 
--- alignment specifiers
+-- alignment specifier
 
 tst_alignas :: TSToks
 tst_alignas = TSToks (1 .<<. 33)
@@ -514,6 +520,15 @@ data TypeTokens = TypeTokens
 
 makeLenses ''TypeTokens
 
+-- | An adapter required because lack of foresight when drafting this module.
+--
+-- FIXME: remove this in favor of 'TypeofInfo' from "Parse".
+tt_typeofspec2 :: Getter TypeTokens (Maybe TypeofInfo)
+tt_typeofspec2 = to \tt -> case tt ^. tt_typeofspec of
+  TOSNone -> Nothing
+  TOSExpr e -> Just $ TQExpr e
+  TOSTypeName t -> Just $ TQType t
+
 -- | Throw an error citing an unknown combination of type tokens.
 _unktyptokcombo :: String -> TSToks -> Parser a
 _unktyptokcombo name v =
@@ -524,11 +539,11 @@ _unktyptokcombo name v =
       (if null name then "" else name ++ ": ")
       (show v)
 
--- if type found, find base type. otherwise, report error.
-tt2basic :: TSToks -> Parser BaseType
-tt2basic v =
+-- if type found, extract primitive type. otherwise, report error.
+tt2prim :: TSToks -> Parser BaseType
+tt2prim v =
   -- we shouldn't bother with other specifiers.
-  fmap BTPrim case ((1 .<<. 16) - 1) .&. v of
+  fmap BTPrim case (tst_primmask .&. v) of
     -- void
     0x0001 -> pure PTVoid
     -- char variants
@@ -579,7 +594,7 @@ tt2basic v =
     0x8100 -> pure $ BitInt_ 0
     0x8200 -> pure $ BitInt_ 0
     -- error case
-    _ -> _unktyptokcombo "tt2basic" v
+    _ -> _unktyptokcombo "tt2prim" v
 
 -- | decorate types ... why 'Dual'? because if you have something like:
 --
@@ -703,12 +718,22 @@ typespecqual = do
       (push TStAtomic tst_atomic) -- qualifier (_Atomic)
   handleatomicnewtype = do
     t <- typename
-    pure
-      . mconcat
-      . map SpecQual
-      $ [ set tt_atomictype $ Just $ basetype2type $ BTAtomic t,
-          prepush TStAtomicNewtype tst_atomicnewtype
-        ]
+    if ty_nontrivialquals t
+      then
+        err
+          $ BasicError
+          $ printf
+            "An atomic or cvr-qualified type %s\
+            \inside an _Atomic (...) newtype\
+            \was detected during parsing. Remove the qualifiers."
+            (show t)
+      else
+        pure
+          . mconcat
+          . map SpecQual
+          $ [ set tt_atomictype $ Just $ basetype2type $ BTAtomic t,
+              prepush TStAtomicNewtype tst_atomicnewtype
+            ]
   handlealignas =
     lx0
       $ inpar
@@ -779,46 +804,94 @@ typespecquals = do
   -- Implemented:
   --  - Type specifiers
   --  - Type qualifiers
-  -- Not Implemented Yet:
   --  - Compound type specifiers (almost)
-  --  - Typedef specifier, typedef name
   --  - Alignment specifiers
+  -- Not Implemented Yet:
+  --  - Typedef specifier
+  --  - Typedef name
   --
-  -- Build specifier-qualifier transformations (SpecQual);
-  -- construct a BaseType (bt1).
+  -- Build specifier-qualifier transformations (SpecQual).
+  -- Then transform empty type (t0) to create type (tt).
   SpecQual f <- chainl (<>) typespecqual typespecqual
   let t0 = TypeTokens mempty mempty 0 AASNone TOSNone Nothing Nothing Nothing
       tt = f t0
-  checksanity tt
-  bt0 <- tt2basic (_tt_mask tt)
-  bt1 <- case tt ^. tt_mask .&. tst_bitint of
-    0 -> pure bt0 -- absent _BitInt(N) type specifier.
-    _ ->
-      let bw = tt ^. tt_bitintwidth
-       in if 0 < bw && bw < fromIntegral (maxBound :: Word16)
-            then case bt0 of
-              BTPrim (PTInt signed (ILBitInt _)) ->
-                pure $ BTPrim $ PTInt signed (ILBitInt $ fromIntegral bw)
-              _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
-            else
-              err
-                $ BasicError
-                  ("typespecquals: bad _BitInt width " ++ show bw)
-  -- Promote the BaseType into a Type, representing a fully qualified
-  -- C type with storage duration annotations. Decorate this Type.
-  let ty0 = basetype2type bt1
-      three a b c = a <> b <> c
-      m = tt._tt_mask
-  chgtyp0 <- liftM3 three (tt2storage m) (tt2funcspec m) (tt2typequal m)
-  pure $ apchgtyp chgtyp0 ty0
+      tm = tt._tt_mask
+  checkcounts tt
+  checkexclusivity tm
+  ty <-
+    if
+      | tm .&. tst_primmask /= 0 -> handleprim tt tm
+      | tm .&. (tst_struct .|. tst_union .|. tst_enum) /= 0 -> handlecompound tt
+      | tm .&. (tst_typeof .|. tst_typeof_unqual) /= 0 -> handletypeof tt
+      | tm .&. (tst_typedef .|. tst_typedefname) /= 0 ->
+          err $ InternalError "typedef/typedef-name not implemented"
+      | otherwise -> err $ InternalError "???"
+  -- Decorate this type (tt) using storage and function specifiers and
+  -- type qualifiers.
+  let three a b c = a <> b <> c
+  chgtyp0 <- liftM3 three (tt2storage tm) (tt2funcspec tm) (tt2typequal tm)
+  pure $ apchgtyp chgtyp0 ty
  where
-  badcondition TStLong c = c > 2
-  badcondition _ c = c > 1
-  checksanity tt = case tt ^. tt_counts of
-    cc -> case HashMap.filterWithKey badcondition cc of
-      map2
-        | HashMap.null map2 -> pure ()
-        | otherwise -> err $ BasicError "too many specifiers"
+  checkcounts tt =
+    let
+      badcondition TStLong c = c > 2
+      badcondition _ c = c > 1
+     in
+      case tt ^. tt_counts of
+        cc -> case HashMap.filterWithKey badcondition cc of
+          map2
+            | HashMap.null map2 -> pure ()
+            | otherwise -> err $ BasicError "too many specifiers"
+  checkexclusivity tt =
+    let bad =
+          let z (x, y)
+                | tt .&. x /= 0 = y
+                | otherwise = ""
+           in filter (not . null)
+                $ map
+                  z
+                  [ (tst_typedef, "typedef"),
+                    (tst_typedefname, "<typedef-name>"),
+                    (tst_struct, "struct"),
+                    (tst_union, "union"),
+                    (tst_enum, "enum"),
+                    (tst_typeof, "typeof"),
+                    (tst_typeof_unqual, "typeof_unqual"),
+                    (tst_primmask, "<primitive type>")
+                  ]
+     in if null bad
+          then pure ()
+          else
+            err
+              $ BasicError
+              $ "incompatible type categories: "
+              ++ unwords bad
+  handleprim tt tm = do
+    bt0 <- tt2prim tm
+    bt1 <- case tt ^. tt_mask .&. tst_bitint of
+      0 -> pure bt0 -- absent _BitInt(N) type specifier.
+      _ ->
+        let bw = tt ^. tt_bitintwidth
+         in if 0 < bw && bw < fromIntegral (maxBound :: Word16)
+              then case bt0 of
+                BTPrim (PTInt signed (ILBitInt _)) ->
+                  pure $ BTPrim $ PTInt signed (ILBitInt $ fromIntegral bw)
+                _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
+              else
+                err
+                  $ BasicError
+                    ("typespecquals: bad _BitInt width " ++ show bw)
+    pure $ basetype2type bt1
+  handle_generic name ge tt = case tt ^. ge of
+    Just x -> pure x
+    _ -> err $ InternalError $ name ++ ": unexpected absense"
+  handlecompound = handle_generic "handlecompound" tt_compounddef
+  handletypeof tt =
+    handle_generic "handletypeof" tt_typeofspec2 tt <&> \ti ->
+      basetype2type
+        if tt ^. tt_mask .&. tst_typeof /= 0
+          then BTTypeof TQQual ti
+          else BTTypeof TQUnqual ti
 
 -- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
@@ -1035,31 +1108,6 @@ enum_body = do
                 Nothing -> failed
           )
     )
-
--- | Parse the @\_Atomic@ type specifier, which creates a new type around
--- an unqualified type. Syntax: @\_Atomic(type-name)@. It assumes that the
--- @\_Atomic@ token has already been consumed by the time it was called,
--- as well as that the parentheses have been consumed.
-atomic :: Parser BaseType
-atomic = do
-  ty <- typespecquals
-  when (ty_nontrivialquals ty) do
-    err
-      $ BasicError
-      $ printf
-        "An atomic or cvr-qualified type %s\
-        \inside an _Atomic (...) newtype\
-        \was detected during parsing. Remove the qualifiers."
-        (show ty)
-  pure $ BTAtomic ty
-
--- | Parse alignment. It will consume @alignas@ for itself.
-alignas :: Parser Alignment
-alignas = do
-  lx0 alignas'
-  lx0
-    $ inpar
-      ((AlignAsType <$> typename) <|> (AlignAs . CIEUnresolved <$> expr_))
 
 -- | Parse types
 typename :: Parser Type
