@@ -491,7 +491,9 @@ data ArraySize
   deriving (Eq, Show)
 
 data StaticAssertion
-  = StaticAssertion Expr (Maybe StringLiteral)
+  = -- | Expression that must not evaluate to 0, and an optional error
+    -- message tatat should be emitted.
+    StaticAssertion ConstIntExpr (Maybe StringLiteral)
   deriving (Eq, Show)
 
 -- | Monoid representing qualifier monoid.

@@ -964,7 +964,7 @@ structorunion_body = do
       let static_assert = do
             lx1 static_assert'
             lx0 $ inpar do
-              e <- expr_
+              e <- CIEUnresolved <$> expr_
               l <- optional (lx0 comma >> lx1 string_literal_val)
               pure . pure $ RecordStaticAssertion $ StaticAssertion e l
           field = do
