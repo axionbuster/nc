@@ -174,8 +174,6 @@ data PrimExpr
     PrimId Str
   | -- | A literal value (excluding string literals)
     PrimLit Lit
-  | -- | A string literal
-    PrimStrLit Str
   | -- | An expression in parentheses. Don't count on the
     -- parentheses being included in the span (or not being
     -- included in the span).
