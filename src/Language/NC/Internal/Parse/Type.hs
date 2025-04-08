@@ -676,13 +676,13 @@ typespecqual = do
            "short" -> push TStShort tst_short
            "signed" -> push TStSigned tst_signed
            "static" -> push TStStatic tst_static
-           "struct" -> handlerecord TStStruct tst_struct RecordStruct
+           "struct" -> handlerecord TStStruct tst_struct con_struct
            "thread_local" -> push TStThreadLocal tst_threadlocal
            "_Thread_local" -> push TStThreadLocal tst_threadlocal
            "typedef" -> err $ InternalError "typedef not implemented, halt."
            "typeof" -> handletypeof TQQual
            "typeof_unqual" -> handletypeof TQUnqual
-           "union" -> handlerecord TStUnion tst_union RecordUnion
+           "union" -> handlerecord TStUnion tst_union con_union
            "unsigned" -> push TStUnsigned tst_unsigned
            "void" -> push TStVoid tst_void
            "volatile" -> push TStVolatile tst_volatile
@@ -765,11 +765,13 @@ typespecqual = do
     case HashMap.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
+  con_struct = mkrecord RecordStruct
+  con_union = mkrecord RecordUnion
   handlerecord tok bit con = do
     attrs <- attrspecs
     record <-
       structorunion_body
-        <&> ($ \a b -> basetype2type . BTRecord $ con a b attrs)
+        >>= ($ \a b -> basetype2type . BTRecord <$> con a b attrs)
     pure
       . mconcat
       . map SpecQual

@@ -57,10 +57,12 @@ module Language.NC.Internal.Types.Parse (
   StringLiteral (..),
 
   -- * Supplemental information
+  Str2Symbol,
   ConstIntExpr (..),
   Record (..),
   RecordInfo (..),
   RecordField (..),
+  RecordType (..),
   EnumType (..),
   EnumInfo (..),
   EnumConst (..),
@@ -79,9 +81,12 @@ module Language.NC.Internal.Types.Parse (
   cie_expr,
   recinfo_def,
   attr_clause,
+  mkrecord,
+  rec_type,
   rec_info,
   rec_sym,
   rec_attrs,
+  rec_membernames,
   enum_sym,
   enum_info,
   enum_attrs,
@@ -400,21 +405,36 @@ data QualifiedType
   }
   deriving (Eq, Show)
 
+-- | An IO-based hash table from identifier to symbol.
+type Str2Symbol = FastTable Str Symbol
+
+-- | Is this record a @union@ or a @struct@?
+data RecordType
+  = RecordStruct
+  | RecordUnion
+  deriving (Eq, Show)
+
 -- | A @struct@ or @union@, with body or without.
 data Record
-  = -- | A struct type.
-    RecordStruct
-      { _rec_sym :: Symbol,
-        _rec_info :: RecordInfo,
-        _rec_attrs :: [Attribute]
-      }
-  | -- | A union type.
-    RecordUnion
-      { _rec_sym :: Symbol,
-        _rec_info :: RecordInfo,
-        _rec_attrs :: [Attribute]
-      }
-  deriving (Eq, Show)
+  = Record
+  { -- | @union@ or @struct@
+    _rec_type :: RecordType,
+    -- | Symbol for this record
+    _rec_sym :: Symbol,
+    -- | Declaration or definition
+    _rec_info :: RecordInfo,
+    -- | Any attributes
+    _rec_attrs :: [Attribute],
+    -- | Member name to symbol
+    _rec_membernames :: FastTable Str Symbol
+  }
+  deriving (Show)
+
+-- | This only compares the symbols for equality (nominal typing).
+-- It does NOT look for compatibility, which is a form of structural typing
+-- for across translation units.
+instance Eq Record where
+  r0 == r1 = r0._rec_sym == r1._rec_sym
 
 -- | Prism for the body of a record.
 recinfo_def :: Prism' RecordInfo [RecordField]
@@ -1101,6 +1121,10 @@ ty_qualified = lens getter setter
       }
   setter t QualifiedType{qt_base, qt_qual, qt_attr} =
     t{_ty_base = qt_base, _ty_qual = qt_qual, _ty_attributes = qt_attr}
+
+-- | Create a new record in IO.
+mkrecord :: RecordType -> Symbol -> RecordInfo -> [Attribute] -> Parser Record
+mkrecord a b c d = Record a b c d <$> liftIO H.new
 
 makeLenses ''Type
 
