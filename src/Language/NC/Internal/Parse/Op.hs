@@ -266,7 +266,10 @@ postfix = primary >>= go
       then pure result
       else go result -- Recursively parse more postfix operators
 
-primary = ident <|> litexpr <|> paren <|> generic
+primary =
+  branch _Generic' generic $
+    branch $(char '(') (skipBack 1 >> paren) $
+      ident <|> litexpr
 
 paren = Expr <$> runandgetspan (inpar (PrimParen <$> expr_))
 
@@ -277,7 +280,6 @@ ident = do
     pure $ Expr $ WithSpan s $ PrimId i
 
 generic = do
-  _Generic'
   inpar do
     a <- assign
     comma

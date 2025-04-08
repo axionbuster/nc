@@ -1035,7 +1035,6 @@ structorunion_body = do
       attrs <- attrspecs
       typebase <- typespecquals
       let static_assert = do
-            static_assert'
             inpar do
               e <- CIEUnresolved <$> expr_
               l <- optional (comma >> string_literal_val)
@@ -1063,7 +1062,7 @@ structorunion_body = do
               `sepBy` comma
       ri <-
         concat
-          <$> (option [] $ static_assert <|> field)
+          <$> (option [] $ branch static_assert' static_assert field)
           `endBy` semicolon
       pure \con -> con sym (RecordDef ri)
 

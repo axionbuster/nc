@@ -659,8 +659,8 @@ keyword =
 -- to be used. For use in declarations, consider 'identifier_def' instead.
 identifier = lx1 $ byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
  where
-  id_head = nondigit <|> universal_character_name
-  id_tail = fullset <|> universal_character_name
+  id_head = branch slash universal_character_name nondigit
+  id_tail = branch slash universal_character_name fullset
   nondigit = skipFusedSatisfy asciind xids xids xids
   fullset = skipFusedSatisfy asciifull xidc xidc xidc
   asciind = \c -> isLatinLetter c || c == '_'
@@ -826,7 +826,7 @@ integer_constant_val =
            "0X" -> hex
            "0b" -> bin
            "0B" -> bin
-           "0" -> oct <|> pure (False, 0)
+           "0" -> option (False, 0) oct
            _ -> dec
          |]
    )
@@ -865,7 +865,7 @@ floating_constant =
   -- trying to support them.
   -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
   -- 2-page CFG down to like 3 PEG clauses.
-  (hex <|> dec) >> optional_ sfx
+  (branch hexpfx hex dec) >> optional_ sfx
  where
   -- floating-point suffix.
   sfx = do
@@ -880,11 +880,9 @@ floating_constant =
   man f =
     (skipSome f >> optional_ (period >> skipMany f))
       <|> (period >> skipSome f)
-  dec =
-    man (skipSatisfyAscii isDigit) >> optional_ (exp "eE")
+  dec = man (skipSatisfyAscii isDigit) >> optional_ (exp "eE")
+  hexpfx = $(char '0') >> oneof_ascii "xX"
   hex = do
-    $(char '0')
-    oneof_ascii "xX"
     man $ skipSatisfyAscii isHexDigit
     -- exponent. exponent is given in decimal.
     exp "pP"
