@@ -512,8 +512,8 @@ data TypeTokens = TypeTokens
     _tt_typeofspec :: !TypeOfSpec,
     -- | Possibly, a single unqualified type under @\_Atomic@.
     _tt_atomictype :: !(Maybe Type),
-    -- | Possibly, a type definition.
-    _tt_typedef :: !(Maybe Type),
+    -- | Possibly, a type definition. Used for typedef-name, but not typedef.
+    _tt_typedefname :: !(Maybe Type),
     -- | Record or enumueration type.
     _tt_compounddef :: !(Maybe Type)
   }
@@ -680,7 +680,7 @@ typespecqual = do
            "struct" -> handlerecord TStStruct tst_struct con_struct
            "thread_local" -> push TStThreadLocal tst_threadlocal
            "_Thread_local" -> push TStThreadLocal tst_threadlocal
-           "typedef" -> err $ InternalError "typedef not implemented, halt."
+           "typedef" -> push TStTypedef tst_typedef
            "typeof" -> handletypeof TQQual
            "typeof_unqual" -> handletypeof TQUnqual
            "union" -> handlerecord TStUnion tst_union con_union
@@ -782,11 +782,13 @@ typespecqual = do
           prepush TStEnum tst_enum
         ]
   handletypedefname = do
-    void identifier
-    emitwarning
-      (InternalError "typedef-name fetching not implemented")
-      (Span (Pos 0) (Pos 0))
-    failed
+    ty <- identifier >>= symlookup >>= symgettype
+    pure
+      . mconcat
+      . map SpecQual
+      $ [ set tt_typedefname (Just ty),
+          prepush TStTypedefName tst_typedefname
+        ]
 
 -- | Do something only if a thing exists (is 'Just').
 whenjust :: (Applicative m) => (a -> m ()) -> Maybe a -> m ()
@@ -803,7 +805,6 @@ typespecquals = do
   --  - Type qualifiers
   --  - Compound type specifiers (almost)
   --  - Alignment specifiers
-  -- Not Implemented Yet:
   --  - Typedef specifier
   --  - Typedef name
   --
@@ -820,15 +821,20 @@ typespecquals = do
       | tm .&. tst_primmask /= 0 -> handleprim tt tm
       | tm .&. (tst_struct .|. tst_union .|. tst_enum) /= 0 -> handlecompound tt
       | tm .&. (tst_typeof .|. tst_typeof_unqual) /= 0 -> handletypeof tt
-      | tm .&. (tst_typedef .|. tst_typedefname) /= 0 ->
-          err $ InternalError "typedef/typedef-name not implemented"
-      | otherwise -> err $ InternalError "???"
+      | tm .&. tst_typedefname /= 0 -> handletypedefname tt
+      | otherwise ->
+          err
+            $ InternalError
+              "typespecquals parsed a type specifier string, but it \
+              \failed to be categorized into any known category."
   -- Decorate this type (tt) using storage and function specifiers and
   -- type qualifiers.
   let three a b c = a <> b <> c
   chgtyp0 <- liftM3 three (tt2storage tm) (tt2funcspec tm) (tt2typequal tm)
   pure $ apchgtyp chgtyp0 ty
  where
+  -- make sure each type specifier or qualifier happens at most once,
+  -- except for 'long,' which can appear at most twice.
   checkcounts tt =
     let
       badcondition TStLong c = c > 2
@@ -839,6 +845,7 @@ typespecquals = do
           map2
             | HashMap.null map2 -> pure ()
             | otherwise -> err $ BasicError "too many specifiers"
+  -- check exclusivity. e.g., "struct XXX" and "int" cannot appear together.
   checkexclusivity tt =
     let bad =
           let z (x, y)
@@ -847,8 +854,7 @@ typespecquals = do
            in filter (not . null)
                 $ map
                   z
-                  [ (tst_typedef, "typedef"),
-                    (tst_typedefname, "<typedef-name>"),
+                  [ (tst_typedefname, "<typedef-name>"),
                     (tst_struct, "struct"),
                     (tst_union, "union"),
                     (tst_enum, "enum"),
@@ -863,6 +869,8 @@ typespecquals = do
               $ BasicError
               $ "incompatible type categories: "
               ++ unwords bad
+  -- handle primitive, non-derived types such as "int," "unsigned long,"
+  -- "long double _Complex."
   handleprim tt tm = do
     bt0 <- tt2prim tm
     bt1 <- case tt ^. tt_mask .&. tst_bitint of
@@ -879,22 +887,27 @@ typespecquals = do
                   $ BasicError
                     ("typespecquals: bad _BitInt width " ++ show bw)
     pure $ basetype2type bt1
+  -- retrieve a property from TypeTokens or else throw an error.
   handle_generic name ge tt = case tt ^. ge of
     Just x -> pure x
     _ -> err $ InternalError $ name ++ ": unexpected absense"
+  -- handle a compound type such as struct, union, or enum.
   handlecompound = handle_generic "handlecompound" tt_compounddef
+  -- handle a "typeof"
   handletypeof tt =
     handle_generic "handletypeof" tt_typeofspec2 tt <&> \ti ->
       basetype2type
         if tt ^. tt_mask .&. tst_typeof /= 0
           then BTTypeof TQQual ti
           else BTTypeof TQUnqual ti
+  -- handle a typedef-name.
+  handletypedefname = handle_generic "handletypedefname" tt_typedefname
 
 -- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
 attrspecs = option [] $ indbsqb $ attribute `sepBy` comma
  where
-  attribute = attrtok <*> option mempty ((inpar baltoks))
+  attribute = attrtok <*> option mempty (inpar baltoks)
   baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
   attrtok = do
     tok1 <- identifier

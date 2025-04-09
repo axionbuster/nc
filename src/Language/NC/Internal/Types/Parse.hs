@@ -126,6 +126,8 @@ module Language.NC.Internal.Types.Parse (
   exitscope,
   inscope,
   symgivename,
+  symlookup,
+  symgettype,
   symassoctype,
 
   -- * Parser types and functions
@@ -134,7 +136,7 @@ module Language.NC.Internal.Types.Parse (
   WithSpan (..),
   IntegerSettings (..),
   CharSettings (..),
-  ComplianceSettings (..),
+  ComplianceSettings,
   Endianness (..),
   runandgetspan,
   pwithspan,
@@ -148,11 +150,14 @@ module Language.NC.Internal.Types.Parse (
   ist_preciseposbw,
   ist_precisebw,
   int_canrepresent,
+  comp_allow_block_shadowing,
+  comp_separate_typedef_variable_ns,
   mkstate0,
 ) where
 
 import Control.Exception
 import Control.Lens
+import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Bits
 import Data.ByteString (ByteString)
@@ -169,11 +174,13 @@ import Data.Sequence (Seq ((:|>)))
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Unique
+import Data.Word (Word64)
 import FlatParse.Stateful (
   ParserIO,
   Span (..),
   ask,
   err,
+  failed,
   getPos,
   withError,
   withSpan,
@@ -441,21 +448,6 @@ data Record
   }
   deriving (Show)
 
--- | This only compares the symbols for equality (nominal typing).
--- It does NOT look for compatibility, which is a form of structural typing
--- for across translation units.
-instance Eq Record where
-  r0 == r1 = r0._rec_sym == r1._rec_sym
-
--- | Prism for the body of a record.
-recinfo_def :: Prism' RecordInfo [RecordField]
-recinfo_def = prism' builder matcher
- where
-  builder = RecordDef
-  matcher = \case
-    RecordDef f -> Just f
-    RecordDecl -> Nothing
-
 -- | Record information
 data RecordInfo = RecordDef [RecordField] | RecordDecl
   deriving (Eq, Show)
@@ -481,15 +473,6 @@ data Attribute
   | -- | prefix, name, uninterpreted clauses.
     PrefixedAttribute Str Str Str
   deriving (Eq, Show)
-
--- | Lens for the clause part of an 'Attribute'
-attr_clause :: Lens' Attribute Str
-attr_clause = lens getter setter
- where
-  getter (StandardAttribute _ c) = c
-  getter (PrefixedAttribute _ _ c) = c
-  setter (StandardAttribute n _) c = StandardAttribute n c
-  setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
 
 -- | Array type, annotated with various information such as size and
 -- element type and more.
@@ -774,10 +757,9 @@ data CharSettings = CharSettings
   }
 
 -- | Compliance settings for controlling parser behavior.
-data ComplianceSettings = ComplianceSettings
-  { -- | Allow variable shadowing in block scope (non-standard, default on)
-    comp_allow_block_shadowing :: !Bool
-  }
+newtype ComplianceSettings = ComplianceSettings Word64
+  deriving newtype (Eq, Bits)
+  deriving (Semigroup, Monoid) via (Ior ComplianceSettings)
 
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
@@ -900,6 +882,30 @@ instance Show LiteralBadWhy where
     UnsupportedEncoding -> "unsupported character encoding"
     BadChar -> "invalid character in a string or character literal"
 
+-- | Lens for the clause part of an 'Attribute'
+attr_clause :: Lens' Attribute Str
+attr_clause = lens getter setter
+ where
+  getter (StandardAttribute _ c) = c
+  getter (PrefixedAttribute _ _ c) = c
+  setter (StandardAttribute n _) c = StandardAttribute n c
+  setter (PrefixedAttribute p n _) c = PrefixedAttribute p n c
+
+-- | This only compares the symbols for equality (nominal typing).
+-- It does NOT look for compatibility, which is a form of structural typing
+-- for across translation units.
+instance Eq Record where
+  r0 == r1 = r0._rec_sym == r1._rec_sym
+
+-- | Prism for the body of a record.
+recinfo_def :: Prism' RecordInfo [RecordField]
+recinfo_def = prism' builder matcher
+ where
+  builder = RecordDef
+  matcher = \case
+    RecordDef f -> Just f
+    RecordDecl -> Nothing
+
 -- | Lens for the expression part of a constant integer expression.
 cie_expr :: Lens' ConstIntExpr Expr
 cie_expr = lens getter setter
@@ -950,6 +956,28 @@ symgivename sym name = do
   liftIO $ H.insert st.symtab_names sym name
   (s :| _) <- symlatestscope "symgivename"
   liftIO $ H.insert s name sym
+
+-- | Do a cascading lookup for a symbol given the name from the current
+-- symbol scope. If the symbol cannot be found, fail the parser instead of
+-- throwing an error. Note: if the scope doesn't exist at all (empty stack),
+-- then it is considered an error, so an error will be thrown.
+symlookup :: Str -> Parser Symbol
+symlookup name = do
+  (s :| ss) <- symlatestscope "symlookup"
+  (s : ss) & fix \r -> \case
+    [] -> failed
+    (t : tt) -> do
+      liftIO (H.lookup t name) >>= \case
+        Nothing -> r tt
+        Just sym -> pure sym
+
+-- | Look up the type for a symbol. If it isn't registered, fail.
+symgettype :: Symbol -> Parser Type
+symgettype sym = do
+  tys <- symtab_types <$> asktab
+  liftIO (H.lookup tys sym) >>= \case
+    Nothing -> failed
+    Just ty -> pure ty
 
 -- | Associate a symbol with a type.
 symassoctype :: Symbol -> Type -> Parser ()
@@ -1037,12 +1065,60 @@ ist_precisebw (PTInt _ a) = case a of
 ist_precisebw (PTChar _) = _ist_charbitwidth <$> ain
 ist_precisebw t = ist_preciseposbw t
 
+__comp_boollens :: Word64 -> Lens' ComplianceSettings Bool
+__comp_boollens bitfield = lens getter setter
+ where
+  getter (ComplianceSettings cs) = cs .&. bitfield /= 0
+  setter (ComplianceSettings cs) = \case
+    True -> ComplianceSettings (cs .|. bitfield)
+    _ -> ComplianceSettings (cs .&. complement bitfield)
+
+instance Show ComplianceSettings where
+  show cs = unwords . filter (not . null) $ settings
+   where
+    b True = id
+    b _ = const ""
+    settings =
+      [ b (cs ^. comp_allow_block_shadowing) "allow block shadowing",
+        b
+          (cs ^. comp_separate_typedef_variable_ns)
+          "separate typedef and variable namespaces"
+      ]
+
+-- | Allow shadowing symbols within block scope.
+-- When on, the following code is accepted:
+--
+-- @
+-- int main(int x, char **_y) {
+--   int x = 0;
+--   {
+--      int x = 1;
+--      char const *x = "hi";
+--   }
+-- }
+-- @
+comp_allow_block_shadowing :: Lens' ComplianceSettings Bool
+comp_allow_block_shadowing = __comp_boollens 1
+
+-- | Separate namespaces for typedef-names and regular identifiers.
+-- When on, the following code is accepted:
+--
+-- @
+--  typedef int h;
+--  h h = 23;
+-- @
+comp_separate_typedef_variable_ns :: Lens' ComplianceSettings Bool
+comp_separate_typedef_variable_ns = __comp_boollens 2
+
 -- | Default compliance settings.
+--
+--  - Allow block shadowing: ON
+--  - Separate typedef and variable namespaces: ON
 defaultcompliancesettings :: ComplianceSettings
 defaultcompliancesettings =
-  ComplianceSettings
-    { comp_allow_block_shadowing = True
-    }
+  mempty
+    & (comp_allow_block_shadowing .~ True)
+      . (comp_separate_typedef_variable_ns .~ True)
 
 -- | See if an integer constant can be represented by a given type.
 int_canrepresent :: Integer -> PrimType -> Parser Bool
