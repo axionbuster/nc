@@ -188,7 +188,12 @@ mul = do
            |]
      )
 
-cast_ = branch_inpar (ExprCast <$> inpar typename <*> cast_) unary
+cast_ =
+  -- can't really use branch_inpar because it needs to be followed up by cast_.
+  branch
+    $(char '(')
+    (skipBack 1 >> ws0 >> ExprCast <$> inpar typename <*> cast_)
+    unary
 
 unary =
   $( switch_ws0
