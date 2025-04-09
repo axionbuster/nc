@@ -29,10 +29,15 @@ module Language.NC.Internal.Lex (
   rpar,
   lcur,
   rcur,
-  insqb0,
+  branch_between,
+  insqb,
+  branch_insqb,
   indbsqb,
+  branch_indbsqb,
   inpar,
+  branch_inpar,
   incur,
+  branch_incur,
   comma,
   semicolon,
   quote,
@@ -79,12 +84,6 @@ module Language.NC.Internal.Lex (
   dbhash',
   backslash,
   tripledot,
-  lesscolon,
-  colongreater,
-  lesspercent,
-  percentgreater,
-  percentcolon,
-  dbpercentcolon,
 
   -- * Keywords
   keyword,
@@ -187,11 +186,9 @@ import GHC.Integer.Logarithms (integerLog2#)
 import Language.NC.Internal.Prelude
 
 literal =
-  choice
-    [ LitInteger <$> integer_constant_val,
-      LitChar <$> character_constant_val,
-      LitString <$> string_literal_val
-    ]
+  branch $(char '\'') (skipBack 1 >> LitChar <$> character_constant_val)
+    $ branch _decdigit (skipBack 1 >> LitInteger <$> integer_constant_val)
+    $ (LitString <$> string_literal_val) -- formatter cries if no parens here
 
 -- * Whitespace and comments
 
@@ -259,40 +256,67 @@ ws1 = ws_base eof
 -- * Operators, keywords, and identifiers
 
 -- | @[@
-_lsq = $(char '[')
+_lsq = lx0 $(switch [|case _ of "[" -> pure (); "<:" -> pure ()|])
 
 -- | @]@
-_rsq = $(char ']')
+_rsq = lx0 $(switch [|case _ of "]" -> pure (); ":>" -> pure ()|])
 
 -- | @[[@ and @]]@, respectively.
 (ldbsqb, rdbsqb) =
   -- The C standard allows whitespace to go between them.
-  ( _lsq >> ws0 >> _lsq,
-    _rsq >> ws0 >> _rsq
-  )
+  (_lsq >> _lsq, _rsq >> _rsq)
 
 -- | These check that they're not followed by another copy of the respective
 -- bracket (e.g., @[[@, @]]@).
-(lsqb, rsqb) =
-  ( (_lsq >> ws0) `notFollowedBy` _lsq,
-    (_rsq >> ws0) `notFollowedBy` _rsq
-  )
+(lsqb, rsqb) = (_lsq `notFollowedBy` _lsq, _rsq `notFollowedBy` _rsq)
 
-(lpar, rpar) = ($(char '('), $(char ')'))
+(lpar, rpar) = (lx0 $(char '('), lx0 $(char ')'))
 
-(lcur, rcur) = ($(char '{'), $(char '}'))
+(lcur, rcur) = (lx0 opening, lx0 closing)
+ where
+  opening = $(switch [|case _ of "{" -> pure (); "<%" -> pure ()|])
+  closing = $(switch [|case _ of "}" -> pure (); "%>" -> pure ()|])
+
+-- | Parse o. If ok, parse p and then parse c and return what p returns.
+-- If o doesn't parse, then parse q. Usage: @branch_between o c p q@
+branch_between ::
+  ParserT st r e open ->
+  ParserT st r e close ->
+  ParserT st r e a ->
+  ParserT st r e a ->
+  ParserT st r e a
+branch_between o c p = branch o (p <* c)
 
 -- | Enclose a thing in square brackets not followed by another square bracket.
-insqb0 = lx0 . between (lsqb >> ws0) (ws0 >> rsqb)
+insqb = between lsqb rsqb
+
+-- | Parse the first parser in square brackets if opening (left) square bracket
+-- is detected. Otherwise, parse q. This cuts down on needless backtracking.
+branch_insqb = branch_between lsqb rsqb
 
 -- | Enclose a thing in double square brackets.
-indbsqb = lx0 . between (ldbsqb >> ws0) (ws0 >> rdbsqb)
+indbsqb = between ldbsqb rdbsqb
+
+-- | Parse the first parser in double square brackets if opening double
+-- square bracket is detected. Otherwise, parse q. This cuts down on needless
+-- backtracking.
+branch_indbsqb = branch_between ldbsqb rdbsqb
 
 -- | Enclose a thing in parentheses.
-inpar = lx0 . between (lpar >> ws0) (ws0 >> rpar)
+inpar = between lpar rpar
+
+-- | Parse the first parser in parentheses if opening parenthesis
+-- is detected. Otherwise, parse q. This cuts down on needless
+-- backtracking.
+branch_inpar = branch_between lpar rpar
 
 -- | Enclose a thing in braces.
-incur = lx0 . between (lcur >> ws0) (ws0 >> rcur)
+incur = between lcur rcur
+
+-- | Parse the first parser in (curly) braces if opening brace
+-- is detected. Otherwise, parse q. This cuts down on needless
+-- backtracking.
+branch_incur = branch_between lcur rcur
 
 -- Important punctuations
 
@@ -308,7 +332,7 @@ incur = lx0 . between (lcur >> ws0) (ws0 >> rcur)
 
 -- Bitwise operators
 (ampersand, caret, bar, tilde) =
-  ( lx0 $ $(char '&') `notFollowedBy` $(char '&'),
+  ( lx0 $(char '&'),
     lx0 $(char '^'),
     lx0 $(char '|'),
     lx0 $(char '~')
@@ -383,8 +407,8 @@ questionmark = lx0 $(char '?')
 -- ** Preprocessor 'operators'
 
 (hash', dbhash') =
-  ( lx0 $(char '#'),
-    hash' >> hash'
+  ( lx0 $(switch [|case _ of "#" -> pure (); "%:" -> pure ()|]),
+    lx0 $(switch [|case _ of "##" -> pure (); "%:%:" -> pure ()|])
   )
 
 backslash = lx0 $(char '\\')
@@ -392,17 +416,6 @@ backslash = lx0 $(char '\\')
 -- ** Ellipsis
 
 tripledot = lx0 $(string "...")
-
--- ** Compensation for deficient encodings (digraphs)
-
--- square brackets
-(lesscolon, colongreater) = (lx0 $(string "<:"), lx0 $(string ":>"))
-
--- braces
-(lesspercent, percentgreater) = (lx0 $(string "<%"), lx0 $(string "%>"))
-
--- single and double hashes
-(percentcolon, dbpercentcolon) = (lx0 $(string "%:"), lx0 $(string "%:%:"))
 
 -- ** Keywords
 

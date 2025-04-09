@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 -- | This module implements parsing of C23 expressions and operators.
 --
@@ -187,112 +188,96 @@ mul = do
            |]
      )
 
-cast_ =
-  choice
-    [ unary,
-      do
-        typ <- (inpar typename)
-        val <- cast_
-        pure $ ExprCast typ val
-    ]
+cast_ = branch_inpar (ExprCast <$> inpar typename <*> cast_) unary
 
-unary = choice [postfix, pfxpm, pfxcast, sizeof, alignof]
+unary =
+  postfix
+    <|> $( switch_ws0
+             [|
+               case _ of
+                 "++" -> ExprPreInc <$> unary
+                 "--" -> ExprPreDec <$> unary
+                 "&" -> ExprAddrOf <$> cast_
+                 "*" -> ExprDeref <$> cast_
+                 "+" -> ExprUnaryPlus <$> cast_
+                 "-" -> ExprUnaryMinus <$> cast_
+                 "~" -> ExprBitNot <$> cast_
+                 "!" -> ExprNot <$> cast_
+                 _ ->
+                   $( switch_ws1
+                        [|
+                          case _ of
+                            "sizeof" -> sizeof
+                            "alignof" -> alignof
+                            "_Alignof" -> alignof
+                          |]
+                    )
+               |]
+         )
  where
-  pfxpm =
-    $( switch_ws0
-         [|
-           case _ of "++" -> pure ExprPreInc; "--" -> pure ExprPreDec
-           |]
-     )
-      <*> unary
-  pfxcast =
-    $( switch_ws0
-         [|
-           case _ of
-             "&" -> pure ExprAddrOf
-             "*" -> pure ExprDeref
-             "+" -> pure ExprUnaryPlus
-             "~" -> pure ExprBitNot
-             "!" -> pure ExprNot
-             "-" -> pure ExprUnaryMinus
-           |]
-     )
-      <*> cast_
-  sizeof = do
-    sizeof'
-    (ExprSizeOf . Left <$> inpar typename)
-      <|> (ExprSizeOf . Right <$> unary)
-  alignof = do
-    alignof'
-    ExprAlignOf . Left <$> inpar typename
+  sizeof = ExprSizeOf <$> branch_inpar (Left <$> typename) (Right <$> unary)
+  alignof = ExprAlignOf . Left <$> inpar typename
 
 compound = do
   -- For now, just handle the error since we need to refactor
   -- the Expr and Type handling in the AST to properly implement
   -- compound literals
-  (inpar typename) >> (incur anyChar) >> failed
+  inpar typename >> incur anyChar >> failed
 
 postfix = primary >>= go
  where
-  -- FIXME: no handling for alternative tokens (such as '<:')
   go a = do
     let getid = identifier
         mksym i = do
           s <- newsymbol
           symgivename s i $> s
+        onsqb = do
+          b <- expr_
+          rsqb $> ExprArray a b
+        onpar = do
+          b <- assign `sepBy` comma
+          rpar $> ExprCall a b
         sfxop =
-          anyChar >>= \case
-            '[' -> do
-              b <- expr_
-              rsqb
-              pure $ ExprArray a b
-            '(' -> do
-              b <- assign `sepBy` comma
-              rpar
-              pure $ ExprCall a b
-            '.' -> ExprMember a <$> (getid >>= mksym)
-            '-' ->
-              anyChar >>= \case
-                '>' -> ExprMember a <$> (getid >>= mksym)
-                '-' -> pure $ ExprPostDec a
-                _ -> failed
-            '+' ->
-              anyChar >>= \case
-                '+' -> pure $ ExprPostInc a
-                _ -> failed
-            _ -> failed
-    result <- option a (sfxop <|> compound)
+          $( switch_ws0
+               [|
+                 case _ of
+                   "[" -> onsqb
+                   "<:" -> onsqb
+                   "(" -> onpar
+                   "." -> ExprMember a <$> (getid >>= mksym)
+                   "->" -> ExprMember a <$> (getid >>= mksym) -- FIXME
+                   "--" -> pure $ ExprPostDec a
+                   "++" -> pure $ ExprPostInc a
+                   _ -> compound
+                 |]
+           )
+    result <- option a sfxop
     if result == a
       then pure result
       else go result -- Recursively parse more postfix operators
 
-primary =
-  branch _Generic' generic $
-    branch $(char '(') (skipBack 1 >> paren) $
-      ident <|> litexpr
-
-paren = Expr <$> runandgetspan (inpar (PrimParen <$> expr_))
-
-litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
-
-ident = do
-  withSpan identifier \i s ->
-    pure $ Expr $ WithSpan s $ PrimId i
-
-generic = do
-  inpar do
-    a <- assign
-    comma
-    b <- genassoc `sepBy1` comma
-    pure $ ExprGeneric a b
+primary = branch _Generic' generic $ branch_inpar paren ident <|> litexpr
  where
-  genassoc = do
-    -- Temporarily handle only the default case since we need to
-    -- decide how to convert Type to Str or adjust the GenAssoc structure
-    default'
-    colon
-    b <- assign
-    pure $ GenAssoc Nothing b
+  generic =
+    inpar do
+      a <- assign <* cut comma (BasicError "expected comma")
+      b <- genassoc `sepBy1` comma
+      pure $ ExprGeneric a b
+   where
+    genassoc = do
+      let tynam = branch default' (pure Nothing) $ Just <$> typename
+      tt <- cut tynam (BasicError "bad typename in generic association")
+      cut colon (BasicError "colon expected in generic association")
+      GenAssoc tt <$> assign
+  paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
+   where
+    cut_expr_ = cut expr_ (BasicError "expected expression")
+  ident = withSpan cut_identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
+   where
+    cut_identifier = cut identifier (BasicError "expected identifier")
+  litexpr = Expr <$> runandgetspan (PrimLit <$> cut_literal)
+   where
+    cut_literal = cut literal (BasicError "expected literal")
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =

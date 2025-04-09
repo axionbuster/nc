@@ -687,10 +687,9 @@ typespecqual = do
            "void" -> push TStVoid tst_void
            "volatile" -> push TStVolatile tst_volatile
            "_Atomic" ->
-             branch
-               lpar
-               handleatomic
-               (handleatomicnewtype <* rpar)
+             branch_inpar
+               handleatomicnewtype -- _Atomic (...); specifier. creates newtype
+               handleatomic -- _Atomic ...; qualifier. same type
            "_BitInt" -> (inpar $ decimal) >>= push_bitint
            "_Bool" -> push TStBool tst_bool
            "_Complex" -> push TStComplex tst_complex
@@ -711,11 +710,7 @@ typespecqual = do
     integer_constant_val >>= \case
       IntegerLiteral n _ -> pure $ fromIntegral n
   -- parse any subsequent tokens and then update TypeTokens state.
-  handleatomic =
-    branch
-      lpar
-      (handleatomicnewtype <* rpar) -- specifier; newtype (_Atomic (...))
-      (push TStAtomic tst_atomic) -- qualifier (_Atomic)
+  handleatomic = push TStAtomic tst_atomic
   handleatomicnewtype = do
     t <- typename
     if ty_nontrivialquals t
@@ -737,12 +732,12 @@ typespecqual = do
   handlealignas =
     inpar
       $ choice
-        [ typename <&> \ty ->
+        [ expr_ <&> \ex ->
             SpecQual (prepush TStAlignas tst_alignas)
-              <> SpecQual (set tt_alignspec (AASTypeName ty)),
-          expr_ <&> \ex ->
+              <> SpecQual (set tt_alignspec (AASConstExpr ex)),
+          typename <&> \ty ->
             SpecQual (prepush TStAlignas tst_alignas)
-              <> SpecQual (set tt_alignspec (AASConstExpr ex))
+              <> SpecQual (set tt_alignspec (AASTypeName ty))
         ]
   handletypeof qualification =
     let (tok, tokbit)
@@ -751,8 +746,8 @@ typespecqual = do
         f = (SpecQual (prepush tok tokbit) <>) . SpecQual . set tt_typeofspec
      in inpar
           $ choice
-            [ typename <&> f . TOSTypeName,
-              expr_ <&> f . TOSExpr
+            [ expr_ <&> f . TOSExpr,
+              typename <&> f . TOSTypeName
             ]
   push_bitint width =
     pure
@@ -954,7 +949,7 @@ commondeclarator declmode sym = do
       let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
           wraparrtype attrs arrty =
             basetype2type (BTArray arrty) & over ty_attributes (<> attrs)
-      f1 <- insqb0 do
+      f1 <- insqb do
         -- parse index part of the declarator.
         --  * 'static' in index:
         -- 'static' as in an array size specifies that the array may not
@@ -1021,13 +1016,15 @@ structorunion_body :: Parser ((Symbol -> RecordInfo -> a) -> a)
 structorunion_body = do
   withOption
     identifier_def
-    (\i -> def (Just i) <|> decl i)
+    (\i -> branch_incur (def $ Just i) (decl i))
     (def Nothing)
  where
+  -- [struct|union] identifier
   decl i = do
     sym <- newsymbol
     symgivename sym i
     pure \con -> con sym RecordDecl
+  -- [struct|union] identifier? { ... }
   def maybename = do
     sym <- newsymbol
     whenjust (symgivename sym) maybename
@@ -1051,7 +1048,7 @@ structorunion_body = do
                         bitwidth <- optional $ CIEUnresolved <$> expr_
                         pure $ RecordField attrs membtype membsym bitwidth
                     )
-                    (do pure $ RecordField attrs membtype membsym Nothing)
+                    (pure $ RecordField attrs membtype membsym Nothing)
               )
               ( do
                   membsym <- newsymbol
@@ -1097,9 +1094,8 @@ enum_body = do
         -- no attributes ... so this can be either a definition or declaration.
         tag <- optional identifier_def
         membtype <- optional (colon >> typespecquals)
-        branch
-          lcur
-          (realenumbody [] tag membtype <* rcur)
+        branch_incur
+          (realenumbody [] tag membtype)
           ( do
               case tag of
                 Just tag ->
