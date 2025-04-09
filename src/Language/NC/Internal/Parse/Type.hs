@@ -534,10 +534,9 @@ tt_typeofspec2 = to \tt -> case tt ^. tt_typeofspec of
 _unktyptokcombo :: String -> TSToks -> Parser a
 _unktyptokcombo name v =
   err
-    $ BasicError
-    $ printf
-      "%sunknown type token combination %s"
-      (if null name then "" else name ++ ": ")
+    $ TypeParseError
+    $ InvalidTokenCombination
+      (if null name then "" else name)
       (show v)
 
 -- if type found, extract primitive type. otherwise, report error.
@@ -717,12 +716,8 @@ typespecqual = do
     if ty_nontrivialquals t
       then
         err
-          $ BasicError
-          $ printf
-            "An atomic or cvr-qualified type %s\
-            \inside an _Atomic (...) newtype\
-            \was detected during parsing. Remove the qualifiers."
-            (show t)
+          $ TypeParseError
+          $ InvalidAtomicQualifiedType t
       else
         pure
           . mconcat
@@ -844,7 +839,10 @@ typespecquals = do
         cc -> case HashMap.filterWithKey badcondition cc of
           map2
             | HashMap.null map2 -> pure ()
-            | otherwise -> err $ BasicError "too many specifiers"
+            | otherwise ->
+                err
+                  $ TypeParseError
+                  $ TooManyTypeSpecifiers (show map2)
   -- check exclusivity. e.g., "struct XXX" and "int" cannot appear together.
   checkexclusivity tt =
     let bad =
@@ -866,9 +864,9 @@ typespecquals = do
           then pure ()
           else
             err
-              $ BasicError
-              $ "incompatible type categories: "
-              ++ unwords bad
+              $ TypeParseError
+              $ IncompatibleTypeCategories
+              $ unwords bad
   -- handle primitive, non-derived types such as "int," "unsigned long,"
   -- "long double _Complex."
   handleprim tt tm = do
@@ -884,8 +882,8 @@ typespecquals = do
                 _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
               else
                 err
-                  $ BasicError
-                    ("typespecquals: bad _BitInt width " ++ show bw)
+                  $ PrimTypeBadError
+                  $ InvalidBitIntWidth (fromIntegral bw)
     pure $ basetype2type bt1
   -- retrieve a property from TypeTokens or else throw an error.
   handle_generic name ge tt = case tt ^. ge of
@@ -954,7 +952,7 @@ commondeclarator declmode sym = do
   pointer =
     wrap <$> do
       star
-      flip cut (BasicError "I can't understand your pointer syntax") do
+      flip cut (TypeParseError BadPointerSyntax) do
         attrs <- attrspecs
         qual <- qualifiers
         pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
@@ -1043,7 +1041,7 @@ structorunion_body tab = do
     sym <- newsymbol
     whenjust (symgivename sym) maybename
     inscope tab do
-      flip cut (BasicError "bad struct or union definition") do
+      flip cut (TypeParseError BadStructOrUnionDefinition) do
         attrs <- attrspecs
         typebase <- typespecquals
         let static_assert = do

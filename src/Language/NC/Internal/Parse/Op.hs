@@ -256,28 +256,28 @@ postfix = primary >>= go
       then pure result
       else go result -- Recursively parse more postfix operators
 
-primary = branch _Generic' generic $ branch_inpar paren ident <|> litexpr
+primary = branch _Generic' generic $ branch_inpar paren (ident <|> litexpr)
  where
   generic =
     inpar do
-      a <- assign <* cut comma (BasicError "expected comma")
+      a <- assign <* cut comma (ExprParseError (MissingSeparator "comma"))
       b <- genassoc `sepBy1` comma
       pure $ ExprGeneric a b
    where
     genassoc = do
       let tynam = branch default' (pure Nothing) $ Just <$> typename
-      tt <- cut tynam (BasicError "bad typename in generic association")
-      cut colon (BasicError "colon expected in generic association")
+      tt <- cut tynam (ExprParseError MalformedGenericExpression)
+      cut colon (ExprParseError MalformedGenericExpression)
       GenAssoc tt <$> assign
   paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
    where
-    cut_expr_ = cut expr_ (BasicError "expected expression")
+    cut_expr_ = cut expr_ (ExprParseError ExpectedExpression)
   ident = withSpan cut_identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
    where
-    cut_identifier = cut identifier (BasicError "expected identifier")
+    cut_identifier = cut identifier (ExprParseError ExpectedIdentifier)
   litexpr = Expr <$> runandgetspan (PrimLit <$> cut_literal)
    where
-    cut_literal = cut literal (BasicError "expected literal")
+    cut_literal = cut literal (ExprParseError ExpectedLiteral)
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =

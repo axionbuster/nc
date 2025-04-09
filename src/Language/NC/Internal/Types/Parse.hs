@@ -103,7 +103,9 @@ module Language.NC.Internal.Types.Parse (
   Error (..),
   PrimTypeBadWhy (..),
   LiteralBadWhy (..),
-  SymbolRedefinitionWhy (..),
+  SymbolError (..),
+  TypeParseError (..),
+  ExprParseError (..),
   AnnotatedError (..),
   RelatedInfo (..),
   Severity (..),
@@ -143,7 +145,6 @@ module Language.NC.Internal.Types.Parse (
   pcatch,
   pfinally,
   p_onexception,
-  throwbasic,
   emiterror,
   emitwarning,
   emitdiagnostic,
@@ -587,32 +588,29 @@ type SeverityPolicy = Error -> Severity -> Severity
 --
 -- Not all \"errors\" may be errors.
 data Error
-  = -- | Miscellaneous programming error
+  = -- | Miscellaneous programming error. Before specific error variants
+    -- are added, ad hoc errors go here.
     BasicError String
   | -- | Bad primitive type
     PrimTypeBadError PrimTypeBadWhy
   | -- | Literal problem
     LiteralBadError LiteralBadWhy
+  | -- | Type parsing error
+    TypeParseError TypeParseError
   | -- | Unexpected end of file
     UnexpectedEOFError
   | -- | Internal error
     InternalError String
-  | -- | Symbol redefinition
-    SymbolRedefinitionError SymbolRedefinitionWhy
-  deriving (Eq, Show)
-
--- | Reasons for symbol redefinition errors
-data SymbolRedefinitionWhy
-  = -- | Symbol already defined in current scope
-    AlreadyDefinedInScope
-  | -- | Type mismatch in redefinition
-    TypeMismatch
+  | -- | Symbol error
+    SymbolError SymbolError
+  | -- | Expression parsing error
+    ExprParseError ExprParseError
   deriving (Eq, Show)
 
 -- | Why a primitive type couldn't be parsed, or is incorrect.
 data PrimTypeBadWhy
   = -- | Too many specifiers of the same type (e.g. "multiple sign specifiers")
-    TooManySpecifiers String
+    TooManyPrimSpecifiers String
   | -- | Incompatible type combination (e.g. \"mixing void with float\")
     --
     --     If the list of \"other types\" is empty, then say,
@@ -632,6 +630,7 @@ data PrimTypeBadWhy
     InvalidTypeSpec String
   deriving (Eq)
 
+-- | Cause for literal processing failure.
 data LiteralBadWhy
   = -- | Incorrect integer suffix combo.
     IncorrectIntSuffix
@@ -642,6 +641,62 @@ data LiteralBadWhy
   | -- | Invalid character in a string or character literal.
     BadChar
   deriving (Eq)
+
+-- | Errors related to type parsing
+data TypeParseError
+  = -- | Token combination is invalid or unknown
+    InvalidTokenCombination
+      -- | Procedure name
+      String
+      -- | Best reconstructed type name
+      String
+  | -- | Too many type specifiers of a specific kind
+    TooManyTypeSpecifiers String
+  | -- | Unexpected abstract declarator in a context requiring an identifier
+    MissingRequiredIdentifier
+  | -- | Atomic type contains qualified types
+    InvalidAtomicQualifiedType Type
+  | -- | Unresolvable type name
+    UnknownTypedefName Str
+  | -- | Incompatible type categories
+    IncompatibleTypeCategories String
+  | -- | Bad pointer syntax
+    BadPointerSyntax
+  | -- | Bad struct or union definition
+    BadStructOrUnionDefinition
+  deriving (Eq, Show)
+
+-- | Errors related to expression parsing
+data ExprParseError
+  = -- | Expected a specific token but didn't find it
+    ExpectedToken String
+  | -- | Missing comma or other separator
+    MissingSeparator String
+  | -- | Invalid expression in a specific context
+    InvalidExpression String
+  | -- | Expected an expression
+    ExpectedExpression
+  | -- | Expected a literal
+    ExpectedLiteral
+  | -- | Expected an identifier
+    ExpectedIdentifier
+  | -- | Error while parsing a generic expression
+    MalformedGenericExpression
+  deriving (Eq, Show)
+
+-- | Symbol-related errors beyond redefinition
+data SymbolError
+  = -- | Symbol not found during lookup
+    SymbolNotFound Str
+  | -- | Used as the wrong kind (e.g., used a variable as a type)
+    WrongSymbolKind SymbolKind SymbolKind
+  | -- | Symbol scope violation
+    ScopeViolation String
+  | -- | Symbol already defined in current scope
+    AlreadyDefinedInScope
+  | -- | Type mismatch in redefinition
+    TypeMismatch
+  deriving (Eq, Show)
 
 -- | An error annotated with span, severity, and optional hints.
 data AnnotatedError = AnnotatedError
@@ -858,7 +913,7 @@ primtype2type pt = Type mempty mempty (BTPrim pt) mempty mempty AlignNone
 
 instance Show PrimTypeBadWhy where
   show = \case
-    TooManySpecifiers s -> printf "too many %s specifiers" s
+    TooManyPrimSpecifiers s -> printf "too many %s specifiers" s
     IncompatibleTypes s [] -> printf "mixing %s with other types" s
     IncompatibleTypes s ts -> printf "mixing %s with %s" s (show ts)
     InvalidBitIntWidth w -> printf "invalid _BitInt width %v" w
@@ -1198,10 +1253,6 @@ p_onexception p q = pcatch p (\e -> q >> err e) <* q
 -- | Run a parser and return a 'WithSpan'.
 runandgetspan :: Parser a -> Parser (WithSpan a)
 runandgetspan p = withSpan p pwithspan
-
--- | Throw a 'BasicError'.
-throwbasic :: String -> Parser a
-throwbasic = err . BasicError
 
 -- | Helper for emitting diagnostics with appropriate severity.
 emitdiagnostic :: Error -> Span -> Severity -> Parser ()
