@@ -8,6 +8,7 @@ module Language.NC.Internal.Prelude (
   module Control.Monad,
   module Control.Monad.Combinators,
   module Control.Monad.Fix,
+  module Control.Monad.IO.Class,
   module Data.Bits,
   module Data.Char,
   module Data.Data,
@@ -41,6 +42,7 @@ import Control.Monad.Combinators hiding (
   (<|>),
  )
 import Control.Monad.Fix
+import Control.Monad.IO.Class
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)

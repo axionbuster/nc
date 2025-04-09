@@ -10,6 +10,7 @@ module Language.NC.Internal.Parse.Type (
 
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.HashTable.IO qualified as H
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
@@ -649,7 +650,7 @@ tt2funcspec v = do
       ]
 
 -- add to the type token counts
-newtype SpecQual = SpecQual {runspecqual :: TypeTokens -> TypeTokens}
+newtype SpecQual = SpecQual (TypeTokens -> TypeTokens)
   deriving (Monoid, Semigroup) via (Endo TypeTokens)
 
 -- | Parse the "type-specifier-qualifier" rule
@@ -758,13 +759,14 @@ typespecqual = do
     case HashMap.lookup TStLong tt._tt_counts of
       Nothing -> prepush TStLong tst_long tt
       Just _ -> prepush TStLong tst_longlong tt
-  con_struct = mkrecord RecordStruct
-  con_union = mkrecord RecordUnion
+  con_struct a b c d = pure $ Record RecordStruct a b c d
+  con_union a b c d = pure $ Record RecordUnion a b c d
   handlerecord tok bit con = do
+    membernames <- liftIO H.new
     attrs <- attrspecs
     record <-
-      structorunion_body
-        >>= ($ \a b -> basetype2type . BTRecord <$> con a b attrs)
+      structorunion_body membernames
+        >>= ($ \a b c -> basetype2type . BTRecord <$> con a b attrs c)
     pure
       . mconcat
       . map SpecQual
@@ -1008,56 +1010,60 @@ commondeclarator declmode sym = do
 --
 -- This parser can parse either a declaration or a definition. It assigns
 -- a new symbol and optionally tag.
-structorunion_body :: Parser ((Symbol -> RecordInfo -> a) -> a)
-structorunion_body = do
-  withOption
-    identifier_def
-    (\i -> branch_incur (def $ Just i) (decl i))
-    (def Nothing)
+structorunion_body ::
+  Str2Symbol -> Parser ((Symbol -> RecordInfo -> Str2Symbol -> a) -> a)
+structorunion_body tab = do
+  f <-
+    withOption
+      identifier_def
+      (\i -> branch_incur (def $ Just i) (decl i))
+      (def Nothing)
+  pure \con -> f con tab
  where
   -- [struct|union] identifier
   decl i = do
     sym <- newsymbol
     symgivename sym i
-    pure \con -> con sym RecordDecl
+    pure \con tab -> con sym RecordDecl tab
   -- [struct|union] identifier? { ... }
   def maybename = do
     sym <- newsymbol
     whenjust (symgivename sym) maybename
-    incur do
-      attrs <- attrspecs
-      typebase <- typespecquals
-      let static_assert = do
-            inpar do
-              e <- CIEUnresolved <$> expr_
-              l <- optional (comma >> string_literal_val)
-              pure . pure $ RecordStaticAssertion $ StaticAssertion e l
-          field = do
-            membsym <- newsymbol
-            withOption
-              (declarator membsym)
-              ( \dec -> do
-                  let membtype = dec typebase
-                  branch
+    inscope tab do
+      flip cut (BasicError "bad struct or union definition") do
+        attrs <- attrspecs
+        typebase <- typespecquals
+        let static_assert = do
+              inpar do
+                e <- CIEUnresolved <$> expr_
+                l <- optional (comma >> string_literal_val)
+                pure . pure $ RecordStaticAssertion $ StaticAssertion e l
+            field = do
+              membsym <- newsymbol
+              withOption
+                (declarator membsym)
+                ( \dec -> do
+                    let membtype = dec typebase
+                    branch
+                      colon
+                      ( do
+                          bitwidth <- optional $ CIEUnresolved <$> expr_
+                          pure $ RecordField attrs membtype membsym bitwidth
+                      )
+                      (pure $ RecordField attrs membtype membsym Nothing)
+                )
+                ( do
+                    membsym <- newsymbol
                     colon
-                    ( do
-                        bitwidth <- optional $ CIEUnresolved <$> expr_
-                        pure $ RecordField attrs membtype membsym bitwidth
-                    )
-                    (pure $ RecordField attrs membtype membsym Nothing)
-              )
-              ( do
-                  membsym <- newsymbol
-                  colon
-                  bitwidth <- optional $ CIEUnresolved <$> expr_
-                  pure $ RecordField attrs typebase membsym bitwidth
-              )
-              `sepBy` comma
-      ri <-
-        concat
-          <$> (option [] $ branch static_assert' static_assert field)
-          `endBy` semicolon
-      pure \con -> con sym (RecordDef ri)
+                    bitwidth <- optional $ CIEUnresolved <$> expr_
+                    pure $ RecordField attrs typebase membsym bitwidth
+                )
+                `sepBy` comma
+        ri <-
+          concat
+            <$> (option [] $ branch static_assert' static_assert field)
+            `endBy` semicolon
+        pure \con tab -> con sym (RecordDef ri) tab
 
 -- | Parse an @enum@ declaration or definition.
 enum_body :: Parser EnumType

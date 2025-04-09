@@ -124,6 +124,7 @@ module Language.NC.Internal.Types.Parse (
   newsymbol,
   enterscope,
   exitscope,
+  inscope,
   symgivename,
   symassoctype,
 
@@ -137,6 +138,9 @@ module Language.NC.Internal.Types.Parse (
   Endianness (..),
   runandgetspan,
   pwithspan,
+  pcatch,
+  pfinally,
+  p_onexception,
   throwbasic,
   emiterror,
   emitwarning,
@@ -161,11 +165,19 @@ import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Monoid
 import Data.Semigroup
-import Data.Sequence (Seq)
+import Data.Sequence (Seq ((:|>)))
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Unique
-import FlatParse.Stateful (ParserIO, Span (..), ask, err, withSpan)
+import FlatParse.Stateful (
+  ParserIO,
+  Span (..),
+  ask,
+  err,
+  getPos,
+  withError,
+  withSpan,
+ )
 import Language.NC.Internal.Types.PrimTypes
 import Text.Printf (printf)
 import UnliftIO.IORef
@@ -946,7 +958,7 @@ symassoctype sym ty = do
   liftIO $ H.insert st.symtab_types sym ty
 
 -- | Get the latest scope as a list or error out.
-symlatestscope :: String -> Parser (NonEmpty (FastTable Str Symbol))
+symlatestscope :: String -> Parser (NonEmpty Str2Symbol)
 symlatestscope procname = do
   s <- symtab_scopes <$> asktab
   readIORef s >>= \case
@@ -954,12 +966,11 @@ symlatestscope procname = do
     ScopeStack (t : ts) -> pure (t :| ts)
 
 -- | Enter a new scope
-enterscope :: Parser ()
-enterscope = do
+enterscope :: Str2Symbol -> Parser ()
+enterscope nametab = do
   st <- asktab
-  newscope <- liftIO H.new
   modifyIORef' (symtab_scopes st) \(ScopeStack scopes) ->
-    ScopeStack (newscope : scopes)
+    ScopeStack (nametab : scopes)
 
 -- | Exit the current scope
 exitscope :: Parser ()
@@ -967,6 +978,12 @@ exitscope = do
   st <- asktab
   (_ :| s) <- symlatestscope "exitscope"
   writeIORef st.symtab_scopes (ScopeStack s)
+
+-- | Parse @p@ in the given symbol table and then after @p@ finishes pop it.
+inscope :: Str2Symbol -> Parser a -> Parser a
+inscope nametab p = do
+  enterscope nametab
+  pfinally p exitscope
 
 -- internal function to get integer settings
 ain :: Parser IntegerSettings
@@ -1079,6 +1096,28 @@ mkstate0 = do
 -- Argument order was readjusted to agree with 'withSpan' in "flatparse".
 pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
+
+-- | Parse with @p@; on error, record with span and then handle
+-- it with @q@. Usage: @pcatch p q@.
+pcatch :: Parser a -> (Error -> Parser a) -> Parser a
+pcatch p q = do
+  st <- getPos
+  let h e = do
+        en <- getPos
+        es <- pserrors <$> ask
+        modifyIORef es (:|> aenew e (Span st en) SeverityError)
+        q e
+  withError p h
+
+-- | Parse; regardless of error, do the subsequent action.
+pfinally :: Parser a -> Parser b -> Parser a
+pfinally p q = do
+  a <- p `p_onexception` q
+  q $> a
+
+-- | Parse; on error, record error and then rethrow.
+p_onexception :: Parser a -> (Parser b) -> Parser a
+p_onexception p q = pcatch p (\e -> q >> err e) <* q
 
 -- | Run a parser and return a 'WithSpan'.
 runandgetspan :: Parser a -> Parser (WithSpan a)

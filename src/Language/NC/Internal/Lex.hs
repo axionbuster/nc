@@ -170,9 +170,6 @@ module Language.NC.Internal.Lex (
   string_literal_val,
 
   -- * Higher-order constructs
-  pcatch,
-  pfinally,
-  p_onexception,
   butnot,
   butnotpfx,
 ) where
@@ -1027,23 +1024,6 @@ lx0 = (<* ws0)
 -- or punctuation. Essentially, marks identifier boundary. Useful for
 -- identifiers and keywords.
 lx1 = (<* ws1)
-
--- | Parse with @p@; on error, record with span and then handle
--- it with @q@. Usage: @pcatch p q@.
-pcatch p q = do
-  st <- getPos
-  let h e = do
-        en <- getPos
-        es <- pserrors <$> ask
-        modifyIORef es (:|> aenew e (Span st en) SeverityError)
-        q e
-  withError p h
-
--- | Parse; on error, record error and then fail.
-pfinally p = pcatch p (const failed)
-
--- | Parse; on error, record error and then rethrow.
-p_onexception p = pcatch p err
 
 -- | Parse @p@ but make sure @q@ cannot parse consuming the entirety
 -- of the span of @p@.
