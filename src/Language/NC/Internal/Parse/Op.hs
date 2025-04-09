@@ -191,29 +191,29 @@ mul = do
 cast_ = branch_inpar (ExprCast <$> inpar typename <*> cast_) unary
 
 unary =
-  postfix
-    <|> $( switch_ws0
-             [|
-               case _ of
-                 "++" -> ExprPreInc <$> unary
-                 "--" -> ExprPreDec <$> unary
-                 "&" -> ExprAddrOf <$> cast_
-                 "*" -> ExprDeref <$> cast_
-                 "+" -> ExprUnaryPlus <$> cast_
-                 "-" -> ExprUnaryMinus <$> cast_
-                 "~" -> ExprBitNot <$> cast_
-                 "!" -> ExprNot <$> cast_
-                 _ ->
-                   $( switch_ws1
-                        [|
-                          case _ of
-                            "sizeof" -> sizeof
-                            "alignof" -> alignof
-                            "_Alignof" -> alignof
-                          |]
-                    )
-               |]
-         )
+  $( switch_ws0
+       [|
+         case _ of
+           "++" -> ExprPreInc <$> unary
+           "--" -> ExprPreDec <$> unary
+           "&" -> ExprAddrOf <$> cast_
+           "*" -> ExprDeref <$> cast_
+           "+" -> ExprUnaryPlus <$> cast_
+           "-" -> ExprUnaryMinus <$> cast_
+           "~" -> ExprBitNot <$> cast_
+           "!" -> ExprNot <$> cast_
+           _ ->
+             $( switch_ws1
+                  [|
+                    case _ of
+                      "sizeof" -> sizeof
+                      "alignof" -> alignof
+                      "_Alignof" -> alignof
+                      _ -> postfix
+                    |]
+              )
+         |]
+   )
  where
   sizeof = ExprSizeOf <$> branch_inpar (Left <$> typename) (Right <$> unary)
   alignof = ExprAlignOf . Left <$> inpar typename

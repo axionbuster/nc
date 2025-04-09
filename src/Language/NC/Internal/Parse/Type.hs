@@ -989,8 +989,7 @@ commondeclarator declmode sym = do
                       let partype3 = set ty_attributes attrs partype2
                       pure $ Param partype3 sym2
                 ps1 <- paramdecl `sepBy1` comma
-                var1 <-
-                  option NotVariadic (comma >> tripledot $> Variadic)
+                var1 <- option NotVariadic (comma >> tripledot $> Variadic)
                 pure (ps1, var1)
             )
         pure \retty -> FuncInfo ps retty var
@@ -1002,7 +1001,7 @@ commondeclarator declmode sym = do
   basedecl :: Parser (Dual (Endo Type))
   basedecl =
     wrap <$> do
-      inpar (commondeclarator declmode sym) <|> do
+      branch_inpar (commondeclarator declmode sym) do
         when (declmode == RequireIdentifier) do
           identifier_def >>= symgivename sym
         qual <- qualifiers
