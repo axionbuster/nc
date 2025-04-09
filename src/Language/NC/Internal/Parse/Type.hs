@@ -939,64 +939,61 @@ commondeclarator declmode sym = do
   pointer =
     wrap <$> do
       star
-      attrs <- attrspecs
-      qual <- qualifiers
-      pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
-  arrfuncdecl = chainl (<>) (pure mempty) (array <|> function)
-  array, function :: Parser (Dual (Endo Type))
-  array =
-    wrap <$> do
-      let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
-          wraparrtype attrs arrty =
-            basetype2type (BTArray arrty) & over ty_attributes (<> attrs)
-      f1 <- insqb do
-        -- parse index part of the declarator.
-        --  * 'static' in index:
-        -- 'static' as in an array size specifies that the array may not
-        -- be NULL and it will contain at least as many items as specified.
-        --  * qualifiers and the star (*):
-        -- for VLA expressions and such.
-        let static = static' $> set at_static ASStatic
-            arqua0 = qualifiers <&> set at_qual
-            arqua1 = qualifiers1 <&> set at_qual
-            ordinary1 = set at_size . ArraySizeExpr <$> assign
-            ordinary0 = option (set at_size ArraySizeNone) ordinary1
-            vlastar = star $> set at_size ArraySizeNone
-            three = liftM3 \f g h -> f . g . h
-            two = liftM2 (.)
-        choice
-          [ three static arqua0 ordinary1,
-            three arqua1 static ordinary1,
-            two arqua0 ordinary0,
-            two arqua0 vlastar
-          ]
-      f2 <- attrspecs <&> wraparrtype
-      pure $ f2 . f1 . mkarrtype
-  function =
-    wrap <$> do
-      f1 <- inpar do
-        (ps, var) <-
-          branch
-            tripledot
-            (pure ([], Variadic))
-            ( do
-                let paramdecl = do
-                      attrs <- attrspecs
-                      partype1 <- typespecquals
-                      sym2 <- newsymbol
-                      dec <- declarator sym2 <|> absdeclarator sym2
-                      let partype2 = dec partype1
-                      let partype3 = set ty_attributes attrs partype2
-                      pure $ Param partype3 sym2
-                ps1 <- paramdecl `sepBy1` comma
-                var1 <- option NotVariadic (comma >> tripledot $> Variadic)
-                pure (ps1, var1)
-            )
-        pure \retty -> FuncInfo ps retty var
-      f2 <-
-        attrspecs <&> \attrs ty ->
-          basetype2type (BTFunc ty) & over ty_attributes (<> attrs)
-      pure $ f2 . f1
+      flip cut (BasicError "I can't understand your pointer syntax") do
+        attrs <- attrspecs
+        qual <- qualifiers
+        pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
+  arrfuncdecl = chainl (<>) (pure mempty) do
+    branch_insqb array function <*> attrspecs
+  array, function :: Parser ([Attribute] -> Dual (Endo Type))
+  array = do
+    let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
+        wraparrtype attrs arrty =
+          basetype2type (BTArray arrty) & over ty_attributes (<> attrs)
+    f1 <- do
+      -- parse index part of the declarator.
+      --  * 'static' in index:
+      -- 'static' as in an array size specifies that the array may not
+      -- be NULL and it will contain at least as many items as specified.
+      --  * qualifiers and the star (*):
+      -- for VLA expressions and such.
+      let static = static' $> set at_static ASStatic
+          arqua0 = qualifiers <&> set at_qual
+          arqua1 = qualifiers1 <&> set at_qual
+          ordinary1 = set at_size . ArraySizeExpr <$> assign
+          ordinary0 = option (set at_size ArraySizeNone) ordinary1
+          vlastar = star $> set at_size ArraySizeNone
+          three = liftM3 \f g h -> f . g . h
+          two = liftM2 (.)
+      choice
+        [ two arqua0 ordinary0,
+          three static arqua0 ordinary1,
+          two arqua0 vlastar,
+          three arqua1 static ordinary1
+        ]
+    pure \as -> wrap $ wraparrtype as . f1 . mkarrtype
+  function = do
+    f1 <- inpar do
+      (ps, var) <-
+        branch
+          tripledot
+          (pure ([], Variadic))
+          ( do
+              let paramdecl = do
+                    attrs <- attrspecs
+                    partype1 <- typespecquals
+                    sym2 <- newsymbol
+                    dec <- declarator sym2 <|> absdeclarator sym2
+                    let partype2 = dec partype1
+                    let partype3 = set ty_attributes attrs partype2
+                    pure $ Param partype3 sym2
+              ps1 <- paramdecl `sepBy1` comma
+              var1 <- option NotVariadic (comma >> tripledot $> Variadic)
+              pure (ps1, var1)
+          )
+      pure \retty -> FuncInfo ps retty var
+    let chgfty as ty = basetype2type (BTFunc ty) & over ty_attributes (<> as)
+    pure \as -> wrap $ chgfty as . f1
   wrap = Dual . Endo
   basedecl :: Parser (Dual (Endo Type))
   basedecl =
