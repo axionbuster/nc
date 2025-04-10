@@ -150,6 +150,12 @@ module Language.NC.Internal.Types.Parse (
   CharSettings (..),
   ComplianceSettings,
   Endianness (..),
+  pscharset,
+  pscompliancesettings,
+  pserrors,
+  psintset,
+  pssevpolicy,
+  pssymtab,
   runandgetspan,
   pwithspan,
   pcatch,
@@ -893,17 +899,17 @@ newtype ComplianceSettings = ComplianceSettings Word64
 -- | Parsing state, to include such things as symbol tables.
 data ParserState = ParserState
   { -- | List of all messages, not just errors as the name might suggest.
-    pserrors :: IORef (Seq AnnotatedError),
+    _pserrors :: IORef (Seq AnnotatedError),
     -- | Settings for integers.
-    psintset :: IntegerSettings,
+    _psintset :: IntegerSettings,
     -- | Settings for character types and character and string literals.
-    pscharset :: CharSettings,
+    _pscharset :: CharSettings,
     -- | Symbol table for name resolution
-    pssymtab :: SymbolTable,
+    _pssymtab :: SymbolTable,
     -- | Compliance settings for language features
-    pscompliancesettings :: ComplianceSettings,
+    _pscompliancesettings :: ComplianceSettings,
     -- | Function that determines final severity of messages
-    pssevpolicy :: SeverityPolicy
+    _pssevpolicy :: SeverityPolicy
   }
 
 -- | The parser, which lives in IO.
@@ -1075,16 +1081,16 @@ newsymbol = liftIO $ Symbol <$> newUnique
 
 -- | Ask for the global symbol table.
 asktab :: Parser SymbolTable
-asktab = pssymtab <$> ask
+asktab = _pssymtab <$> ask
 
 -- | Associate an existing symbol with a name. Replace the name if needed.
 -- Also, associate the name in the current scope stack.
 symgivename :: Symbol -> Str -> Parser ()
 symgivename sym name = do
   st <- asktab
-  liftIO $ H.insert st.symtab_names sym name
+  __throwable_insert st.symtab_names sym name
   (s :| _) <- symlatestscope "symgivename"
-  liftIO $ H.insert s name sym
+  __throwable_insert s name sym
 
 -- | Do a cascading lookup for a symbol given the name from the current
 -- symbol scope. If the symbol cannot be found, fail the parser instead of
@@ -1108,11 +1114,26 @@ symgettype sym = do
     Nothing -> failed
     Just ty -> pure ty
 
+-- | Insert a symbol into a table. If something is already associated with
+-- the key, and symbol shadowing is disallowed, throw an 'InternalError'.
+-- The error does not go through IO; it uses 'Parser'\'s internal error
+-- handling mechanism. If it doesn't exist, or symbol shadowing is allowed,
+-- then associate the key with the new value.
+__throwable_insert :: (Hashable a) => FastTable a b -> a -> b -> Parser ()
+__throwable_insert tab a b = do
+  oopsies <- liftIO $ H.mutate tab a \case
+    Just{} -> (Just b, True)
+    Nothing -> (Just b, False)
+  comp <- _pscompliancesettings <$> ask
+  if oopsies && not (comp ^. comp_allow_block_shadowing)
+    then err $ SymbolError AlreadyDefinedInScope
+    else pure ()
+
 -- | Associate a symbol with a type.
 symassoctype :: Symbol -> Type -> Parser ()
 symassoctype sym ty = do
   st <- asktab
-  liftIO $ H.insert st.symtab_types sym ty
+  __throwable_insert st.symtab_types sym ty
 
 -- | Get the latest scope as a list or error out.
 symlatestscope :: String -> Parser (NonEmpty Str2Symbol)
@@ -1144,7 +1165,7 @@ inscope nametab p = do
 
 -- internal function to get integer settings
 ain :: Parser IntegerSettings
-ain = psintset <$> ask
+ain = _psintset <$> ask
 
 -- | Find the precise bit width needed to represent a positive number.
 --
@@ -1309,7 +1330,7 @@ pcatch p q = do
   st <- getPos
   let h e = do
         en <- getPos
-        es <- pserrors <$> ask
+        es <- _pserrors <$> ask
         modifyIORef es (:|> aenew e (Span st en) SeverityError)
         q e
   withError p h
@@ -1331,9 +1352,9 @@ runandgetspan p = withSpan p pwithspan
 -- | Helper for emitting diagnostics with appropriate severity.
 emitdiagnostic :: Error -> Span -> Severity -> Parser ()
 emitdiagnostic e s defaultsev = do
-  policy <- pssevpolicy <$> ask
+  policy <- _pssevpolicy <$> ask
   let finalsev = policy e defaultsev
-  errs <- pserrors <$> ask
+  errs <- _pserrors <$> ask
   liftIO $ modifyIORef' errs (|> aenew e s finalsev)
 
 -- | Emit an error.
@@ -1399,3 +1420,5 @@ makeLenses ''FuncInfo
 makeLenses ''EnumType
 
 makeLenses ''InitItem
+
+makeLenses ''ParserState

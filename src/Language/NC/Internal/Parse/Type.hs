@@ -756,9 +756,11 @@ typespecqual = do
   con_union a b c d = pure $ Record RecordUnion a b c d
   handlerecord tok bit con = do
     membernames <- liftIO H.new
+    sym <- newsymbol
     record <-
-      structorunion_body membernames
+      structorunion_body sym membernames
         >>= ($ \a b c d -> basetype2type . BTRecord <$> con a b c d)
+    symassoctype sym record
     pure
       . mconcat
       . map SpecQual
@@ -1050,6 +1052,7 @@ commondeclarator declmode sym = do
 -- This parser can parse either a declaration or a definition. It assigns
 -- a new symbol and optionally tag.
 structorunion_body ::
+  Symbol ->
   Str2Symbol ->
   Parser
     ( ( Symbol ->
@@ -1060,7 +1063,7 @@ structorunion_body ::
       ) ->
       a
     )
-structorunion_body tab = do
+structorunion_body sym tab = do
   as <- attrspecs
   f <-
     withOption
@@ -1071,12 +1074,10 @@ structorunion_body tab = do
  where
   -- [struct|union] identifier
   decl i = do
-    sym <- newsymbol
     symgivename sym i
     pure \con tab -> con sym RecordDecl tab
   -- [struct|union] identifier? { ... }
   def maybename = do
-    sym <- newsymbol
     symgivename sym `whenjust` maybename
     inscope tab do
       flip cut (TypeParseError BadStructOrUnionDefinition) do

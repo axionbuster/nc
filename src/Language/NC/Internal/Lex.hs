@@ -911,7 +911,7 @@ char_encpfx =
          |]
    )
  where
-  charset = pscharset <$> ask
+  charset = _pscharset <$> ask
 
 -- | Consume an integer character constant and then return its value.
 --
