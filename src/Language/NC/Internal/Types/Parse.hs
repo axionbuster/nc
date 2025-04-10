@@ -66,6 +66,7 @@ module Language.NC.Internal.Types.Parse (
   Initializer (..),
   init_designation,
   init_value,
+  init_isempty,
 
   -- * Supplemental information
   Str2Symbol,
@@ -1417,6 +1418,12 @@ dbg_dumpsyms = do
       go _ [] = pure ()
   ScopeStack scopes <- readIORef tab.symtab_scopes
   liftIO $ go (0 :: Int) scopes
+
+-- | A 'Getter' to quickly decide if an initializer is empty (i.e., @{}@).
+init_isempty :: Getter Initializer Bool
+init_isempty = to \case
+  InitBraced [] -> True
+  _ -> False
 
 makeLenses ''Type
 
