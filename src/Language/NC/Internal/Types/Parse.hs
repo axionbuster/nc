@@ -449,7 +449,8 @@ data DeclInit
     -- so identifiers are not listed in this definition.
     DeclInit Declarator (Maybe Initializer)
 
--- | A declaration.
+-- | A declaration or definition, including objects, arrays, functions, and
+-- typedefs. This encompasses top-level and block definitions.
 data Declaration
   = -- | Define identifiers, their types, and any initialization.
     -- Attributes can be found inside the 'Type' field.
@@ -458,12 +459,21 @@ data Declaration
     -- apply the 'Declarator' for each 'DeclInit' in the list. The 'Type'
     -- given under 'NormalDeclaration' only gives the base type. For function
     -- pointer declarations, it only gives the return type.
+    --
+    -- NOTE: function definitions are not given in 'NormalDeclaration'. Those
+    -- go to 'FunctionDefinition'
     NormalDeclaration Type [DeclInit]
+  | -- | Define a single function.
+    FunctionDefinition Type CompoundStatement
   | -- | Encapsulate a static assertion.
     StaticAssertDeclaration StaticAssertion
   | -- | A declaration made purely of attributes.
     AttributeDeclaration [Attribute]
   deriving (Show)
+
+-- | FIXME: Dummy data for a compound statement.
+data CompoundStatement
+  deriving (Eq, Show)
 
 -- | Source storage class monoid.
 newtype StorageClass = StorageClass {unstorclass :: Int8}

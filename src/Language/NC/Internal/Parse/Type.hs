@@ -3,7 +3,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
--- | Parse type names and declarators.
+-- | Parse type names and declarations.
 module Language.NC.Internal.Parse.Type (
   -- * Type name
   typename,
@@ -908,8 +908,10 @@ typespecquals = do
 -- | Parse the attribute-specifier-sequence? rule, but assuming the
 -- double square brackets have been parsed already.
 attrspecs :: Parser [Attribute]
-attrspecs = attribute `sepBy` comma
+attrspecs = chainr (<>) a (pure mempty)
  where
+  a = branch_indbsqb (cut (attribute `sepBy` comma) e) failed
+  e = BasicError "this attribute isn't understood"
   attribute = attrtok <*> option mempty (inpar baltoks)
   baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
   attrtok = do
@@ -917,11 +919,6 @@ attrspecs = attribute `sepBy` comma
     option
       (StandardAttribute tok1)
       (ws0 >> dbcolon >> PrefixedAttribute tok1 <$> identifier)
-
--- | Parse the attribute-specifier-sequence? rule enclosed in double
--- square brackets. If double square brackets aren't found, return @[]@.
-attrspecs_indbsqb :: Parser [Attribute]
-attrspecs_indbsqb = branch_indbsqb attrspecs (pure [])
 
 -- | In declarator parsing, need identifier to be present or absent?
 data DeclMode = RequireIdentifier | RequireNoIdentifier
@@ -989,7 +986,7 @@ commondeclarator declmode sym = do
     Declarator <$> do
       star
       flip cut (TypeParseError BadPointerSyntax) do
-        attrs <- attrspecs_indbsqb
+        attrs <- attrspecs
         qual <- qualifiers
         -- here, we are careful to qualify the *pointer* itself, not the
         -- type that the pointer refers to.
@@ -999,7 +996,7 @@ commondeclarator declmode sym = do
             . set ty_base (BTPointer $ ty ^. ty_qualified)
             $ ty
   arrfuncdecl = chainl (<>) (pure mempty) do
-    branch_insqb array function <*> attrspecs_indbsqb
+    branch_insqb array function <*> attrspecs
   array, function :: Parser ([Attribute] -> Declarator)
   array = do
     let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
@@ -1036,7 +1033,7 @@ commondeclarator declmode sym = do
           (pure ([], Variadic))
           ( do
               let paramdecl = do
-                    attrs <- attrspecs_indbsqb
+                    attrs <- attrspecs
                     partype1 <- typespecquals
                     sym2 <- newsymbol
                     dec <- declarator sym2 <|> absdeclarator sym2
@@ -1075,7 +1072,7 @@ structorunion_body ::
       a
     )
 structorunion_body sym tab = do
-  as <- attrspecs_indbsqb
+  as <- attrspecs
   f <-
     withOption
       identifier_def
@@ -1094,7 +1091,7 @@ structorunion_body sym tab = do
       flip cut (TypeParseError BadStructOrUnionDefinition) do
         let sa = pure . RecordStaticAssertion <$> static_assert
             field = do
-              attrs <- attrspecs_indbsqb
+              attrs <- attrspecs
               typebase <- typespecquals
               membsym <- newsymbol
               withOption
@@ -1151,14 +1148,14 @@ enum_body = do
             sym <- newsymbol
             name <- identifier_def
             symgivename sym name
-            attrs <- attrspecs_indbsqb
+            attrs <- attrspecs
             value <- optional do
               equal
               cut (CIEUnresolved <$> expr_) (ExprParseError ExpectedExpression)
             pure $ EnumConst sym attrs value
         pure $ EnumType sym info attrs membtype
   withOption
-    attrspecs_indbsqb
+    attrspecs
     ( \attrs -> do
         -- a declaration cannot have attributes according to the C23 standard,
         -- so, since we have attributes here, we have a definition.
@@ -1212,11 +1209,12 @@ initializer = branch_incur bracedinitializer (InitExpr <$> assign)
 -- (I also think this is a wonderful place to add a synchronization point.
 -- I'll think about that soon...)
 declaration :: Parser Declaration
-declaration = sa_or $ as_or $ regular <* semicolon
+declaration = sa_or $ (as_or <* semicolon) <|> (regular <* semicolon)
  where
   sa_or = branch static_assert' (StaticAssertDeclaration <$> static_assert)
-  as_or =
-    branch ldbsqb (AttributeDeclaration <$> attrspecs <* rdbsqb <* semicolon)
-  decini = DeclInit <$> (newsymbol >>= declarator) <*>
-    optional (equal >> initializer)
+  as_or = AttributeDeclaration <$> attrspecs
+  decini =
+    DeclInit
+      <$> (newsymbol >>= declarator)
+      <*> optional (equal >> initializer)
   regular = NormalDeclaration <$> typespecquals <*> (decini `sepBy1` comma)
