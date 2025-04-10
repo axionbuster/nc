@@ -56,8 +56,10 @@ module Language.NC.Internal.Types.Parse (
   CharacterLiteral (..),
   StringLiteral (..),
 
-  -- * C Declarators
+  -- * C Declarations.
+  Declaration (..),
   Declarator (..),
+  DeclInit (..),
 
   -- * C Initializers
   Designator (..),
@@ -440,6 +442,23 @@ data Initializer
   | -- | Braced initializer list (possibly empty)
     InitBraced [InitItem]
   deriving (Eq, Show)
+
+-- | A declarator or a pair of a declarator and an initializer.
+data DeclInit
+  = -- | The parser introduces identifiers into scope while parsing,
+    -- so identifiers are not listed in this definition.
+    DeclInit Declarator (Maybe Initializer)
+
+-- | A declaration.
+data Declaration
+  = -- | Define identifiers, their types, and any initialization.
+    -- Attributes can be found inside the 'Type' field.
+    NormalDeclaration Type [DeclInit]
+  | -- | Encapsulate a static assertion.
+    StaticAssertDeclaration StaticAssertion
+  | -- | A declaration made purely of attributes.
+    AttributeDeclaration [Attribute]
+  deriving (Show)
 
 -- | Source storage class monoid.
 newtype StorageClass = StorageClass {unstorclass :: Int8}
@@ -1424,6 +1443,9 @@ init_isempty :: Getter Initializer Bool
 init_isempty = to \case
   InitBraced [] -> True
   _ -> False
+
+instance Show DeclInit where
+  show (DeclInit _ mi) = show mi
 
 makeLenses ''Type
 
