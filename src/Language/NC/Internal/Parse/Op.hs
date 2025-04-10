@@ -277,12 +277,8 @@ primary = branch _Generic' generic $ branch_inpar paren (ident <|> litexpr)
   paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
    where
     cut_expr_ = cut expr_ (ExprParseError ExpectedExpression)
-  ident = withSpan cut_identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
-   where
-    cut_identifier = cut identifier (ExprParseError ExpectedIdentifier)
-  litexpr = Expr <$> runandgetspan (PrimLit <$> cut_literal)
-   where
-    cut_literal = cut literal (ExprParseError ExpectedLiteral)
+  ident = withSpan identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
+  litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =

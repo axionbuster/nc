@@ -6,6 +6,11 @@
 module Language.NC.Internal.Parse.Type (
   -- * Parsing an expression determining type
   typename,
+
+  -- * Declarations
+  Declarator (..),
+  declarator,
+  absdeclarator,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -758,10 +763,9 @@ typespecqual = do
   con_union a b c d = pure $ Record RecordUnion a b c d
   handlerecord tok bit con = do
     membernames <- liftIO H.new
-    attrs <- attrspecs
     record <-
       structorunion_body membernames
-        >>= ($ \a b c -> basetype2type . BTRecord <$> con a b attrs c)
+        >>= ($ \a b c d -> basetype2type . BTRecord <$> con a b c d)
     pure
       . mconcat
       . map SpecQual
@@ -798,7 +802,7 @@ typespecquals = do
   -- Implemented:
   --  - Type specifiers
   --  - Type qualifiers
-  --  - Compound type specifiers (almost)
+  --  - Compound type specifiers
   --  - Alignment specifiers
   --  - Typedef specifier
   --  - Typedef name
@@ -817,6 +821,7 @@ typespecquals = do
       | tm .&. (tst_struct .|. tst_union .|. tst_enum) /= 0 -> handlecompound tt
       | tm .&. (tst_typeof .|. tst_typeof_unqual) /= 0 -> handletypeof tt
       | tm .&. tst_typedefname /= 0 -> handletypedefname tt
+      | tm .&. tst_atomicnewtype /= 0 -> handleatomicnewtype tt
       | otherwise ->
           err
             $ InternalError
@@ -858,15 +863,12 @@ typespecquals = do
                     (tst_enum, "enum"),
                     (tst_typeof, "typeof"),
                     (tst_typeof_unqual, "typeof_unqual"),
-                    (tst_primmask, "<primitive type>")
+                    (tst_primmask, "<primitive type>"),
+                    (tst_atomicnewtype, "_Atomic (<type>)")
                   ]
-     in if null bad
-          then pure ()
-          else
-            err
-              $ TypeParseError
-              $ IncompatibleTypeCategories
-              $ unwords bad
+     in case bad of
+          (_ : []) -> pure ()
+          _ -> err $ TypeParseError $ IncompatibleTypeCategories $ unwords bad
   -- handle primitive, non-derived types such as "int," "unsigned long,"
   -- "long double _Complex."
   handleprim tt tm = do
@@ -900,6 +902,7 @@ typespecquals = do
           else BTTypeof TQUnqual ti
   -- handle a typedef-name.
   handletypedefname = handle_generic "handletypedefname" tt_typedefname
+  handleatomicnewtype = handle_generic "handleatomicnewtype" tt_atomictype
 
 -- | Parse the attribute-specifier-sequence? rule
 attrspecs :: Parser [Attribute]
@@ -917,7 +920,39 @@ attrspecs = option [] $ indbsqb $ attribute `sepBy` comma
 data DeclMode = RequireIdentifier | RequireNoIdentifier
   deriving (Eq, Show)
 
-declarator, absdeclarator :: Symbol -> Parser (Type -> Type)
+-- | A declarator is what transforms a type.
+--
+-- Basically, a C declaration will have one or more declarators followed by
+-- a base type:
+--
+-- @
+-- static long _Complex double a, *b(void), (*c)[2];
+-- @
+--
+-- In the example above, the base type given is @static long \_Complex double@,
+-- and there are three declarators:
+--
+-- - @a@
+-- - @*b(void)@
+-- - @(*c)[2]@
+--
+-- Now, there are two types of declarators. (Regular) declarators give an
+-- identifier (like @a@, @b@, and @c@ in the example above), while *abstract*
+-- declarators do not (e.g., @(\*)(int, long a)@, which does not give an
+-- identifier to the function pointer).
+--
+-- So in the example above, to determine the type of @a@, we need to apply
+-- no transformation ('id') to the base type. To determine the type of @b@,
+-- we must apply the transformation to turn it into a function that returns
+-- a pointer to the base type (@return-type-of-void-function@ '.' @pointer@).
+-- For @c@, we need make it a pointer to the array of length 2 (which is
+-- because the parentheses around the pointer (@\*@) prioritizes the pointer
+-- declaration). It is for this reason a declarator is represented as
+-- a function.
+newtype Declarator = Declarator {apdecl :: Type -> Type}
+  deriving (Semigroup, Monoid) via (Dual (Endo Type))
+
+declarator, absdeclarator :: Symbol -> Parser Declarator
 
 -- | Declarator (requires an identifier)
 declarator = commondeclarator RequireIdentifier
@@ -929,12 +964,38 @@ absdeclarator = commondeclarator RequireNoIdentifier
 --
 -- An *abstract* declarator does not accept an identifier, but a
 -- (regular) declarator does.
-commondeclarator :: DeclMode -> Symbol -> Parser (Type -> Type)
+commondeclarator :: DeclMode -> Symbol -> Parser Declarator
 commondeclarator declmode sym = do
   ptr <- chainr (<>) pointer (pure mempty) -- optional pointer chain
   bas <- basedecl -- base declarator (identifier/grouped decflarator)
   afu <- arrfuncdecl -- array or function suffixes, if any
-  pure $ appEndo . getDual $ mconcat [ptr, bas, afu]
+  -- why pointer -> array/function -> base?
+  -- think about this:
+  --  *[2] ...... should parse as array of pointers.
+  --       ...... ptr * [2]
+  --       ...... bas _ [2]
+  --       ...... afu [2] <empty>
+  --       ...... ptr -> afu, so array of pointers.
+  --  (*)[2] .... should parse as pointer to array.
+  --         .... ptr _ (*)[2]
+  --         .... bas (*) [2]
+  --         .... afu [2] <empty>
+  --         .... afu -> bas, so pointer [= base type] to array.
+  -- Notice that composition order doesn't exactly correspond to syntax order.
+  --
+  -- Another example:
+  --
+  --  int **(*)[2]
+  --
+  -- ... should parse as: (((int ptr) ptr) 2 arr) ptr
+  --
+  -- meaning, it designates:
+  --  a pointer to
+  --    a 2-element array of
+  --      pointers to
+  --        a pointer to
+  --          an int.
+  pure $ ptr <> afu <> bas
  where
   qualifier =
     $( switch_ws1
@@ -948,17 +1009,23 @@ commondeclarator declmode sym = do
      )
   qualifiers = chainl (<>) (pure mempty) qualifier
   qualifiers1 = chainl (<>) qualifier qualifier
-  pointer, arrfuncdecl :: Parser (Dual (Endo Type))
+  pointer, arrfuncdecl :: Parser Declarator
   pointer =
-    wrap <$> do
+    Declarator <$> do
       star
       flip cut (TypeParseError BadPointerSyntax) do
         attrs <- attrspecs
         qual <- qualifiers
-        pure $ over ty_base \bt -> BTPointer $ QualifiedType bt qual attrs
+        -- here, we are careful to qualify the *pointer* itself, not the
+        -- type that the pointer refers to.
+        pure \ty ->
+          set ty_qual qual
+            . set ty_attributes attrs
+            . set ty_base (BTPointer $ ty ^. ty_qualified)
+            $ ty
   arrfuncdecl = chainl (<>) (pure mempty) do
     branch_insqb array function <*> attrspecs
-  array, function :: Parser ([Attribute] -> Dual (Endo Type))
+  array, function :: Parser ([Attribute] -> Declarator)
   array = do
     let mkarrtype ty = ArrayType ArraySizeNone ty ASNoStatic mempty
         wraparrtype attrs arrty =
@@ -984,8 +1051,9 @@ commondeclarator declmode sym = do
           two arqua0 vlastar,
           three arqua1 static ordinary1
         ]
-    pure \as -> wrap $ wraparrtype as . f1 . mkarrtype
+    pure \as -> Declarator $ wraparrtype as . f1 . mkarrtype
   function = do
+    let chgfty as ty = basetype2type (BTFunc ty) & over ty_attributes (<> as)
     f1 <- inpar do
       (ps, var) <-
         branch
@@ -997,7 +1065,7 @@ commondeclarator declmode sym = do
                     partype1 <- typespecquals
                     sym2 <- newsymbol
                     dec <- declarator sym2 <|> absdeclarator sym2
-                    let partype2 = dec partype1
+                    let partype2 = apdecl dec partype1
                     let partype3 = set ty_attributes attrs partype2
                     pure $ Param partype3 sym2
               ps1 <- paramdecl `sepBy1` comma
@@ -1005,31 +1073,38 @@ commondeclarator declmode sym = do
               pure (ps1, var1)
           )
       pure \retty -> FuncInfo ps retty var
-    let chgfty as ty = basetype2type (BTFunc ty) & over ty_attributes (<> as)
-    pure \as -> wrap $ chgfty as . f1
-  wrap = Dual . Endo
-  basedecl :: Parser (Dual (Endo Type))
-  basedecl =
-    wrap <$> do
-      branch_inpar (commondeclarator declmode sym) do
-        when (declmode == RequireIdentifier) do
-          identifier_def >>= symgivename sym
-        qual <- qualifiers
-        pure $ over ty_qual (<> qual)
+    pure \as -> Declarator $ chgfty as . f1
+  basedecl :: Parser Declarator
+  basedecl = do
+    branch_inpar (commondeclarator declmode sym) do
+      when (declmode == RequireIdentifier) do
+        identifier_def >>= symgivename sym
+      qual <- qualifiers
+      pure $ Declarator $ over ty_qual (<> qual)
 
 -- | Construct the body of a record type, which may be a struct or a union.
 --
 -- This parser can parse either a declaration or a definition. It assigns
 -- a new symbol and optionally tag.
 structorunion_body ::
-  Str2Symbol -> Parser ((Symbol -> RecordInfo -> Str2Symbol -> a) -> a)
+  Str2Symbol ->
+  Parser
+    ( ( Symbol ->
+        RecordInfo ->
+        [Attribute] ->
+        Str2Symbol ->
+        a
+      ) ->
+      a
+    )
 structorunion_body tab = do
+  as <- attrspecs
   f <-
     withOption
       identifier_def
       (\i -> branch_incur (def $ Just i) (decl i))
-      (def Nothing)
-  pure \con -> f con tab
+      (incur $ def Nothing)
+  pure \con -> f con as tab
  where
   -- [struct|union] identifier
   decl i = do
@@ -1042,19 +1117,19 @@ structorunion_body tab = do
     whenjust (symgivename sym) maybename
     inscope tab do
       flip cut (TypeParseError BadStructOrUnionDefinition) do
-        attrs <- attrspecs
-        typebase <- typespecquals
         let static_assert = do
               inpar do
                 e <- CIEUnresolved <$> expr_
                 l <- optional (comma >> string_literal_val)
                 pure . pure $ RecordStaticAssertion $ StaticAssertion e l
             field = do
+              attrs <- attrspecs
+              typebase <- typespecquals
               membsym <- newsymbol
               withOption
                 (declarator membsym)
                 ( \dec -> do
-                    let membtype = dec typebase
+                    let membtype = apdecl dec typebase
                     branch
                       colon
                       ( do
@@ -1121,4 +1196,4 @@ enum_body = do
 typename :: Parser Type
 typename = do
   sym <- newsymbol
-  typespecquals <**> option id (absdeclarator sym)
+  typespecquals <**> option id (coerce $ absdeclarator sym)

@@ -154,6 +154,9 @@ module Language.NC.Internal.Types.Parse (
   comp_allow_block_shadowing,
   comp_separate_typedef_variable_ns,
   mkstate0,
+
+  -- * Debugging
+  traceIO,
 ) where
 
 import Control.Exception
@@ -176,6 +179,7 @@ import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Unique
 import Data.Word (Word64)
+import Debug.Trace qualified as DT
 import FlatParse.Stateful (
   ParserIO,
   Span (..),
@@ -1248,7 +1252,7 @@ pfinally p q = do
 
 -- | Parse; on error, record error and then rethrow.
 p_onexception :: Parser a -> (Parser b) -> Parser a
-p_onexception p q = pcatch p (\e -> q >> err e) <* q
+p_onexception p q = pcatch p (\e -> q >> err e)
 
 -- | Run a parser and return a 'WithSpan'.
 runandgetspan :: Parser a -> Parser (WithSpan a)
@@ -1272,7 +1276,7 @@ emitwarning e s = emitdiagnostic e s SeverityWarning
 
 -- | Is the type atomic or cvr-qualified?
 ty_nontrivialquals :: Type -> Bool
-ty_nontrivialquals ty = ty._ty_qual == mempty
+ty_nontrivialquals ty = ty._ty_qual /= mempty
 
 -- | Focus on the qualified portion of a full type.
 ty_qualified :: Lens' Type QualifiedType
@@ -1290,6 +1294,10 @@ ty_qualified = lens getter setter
 -- | Create a new record in IO.
 mkrecord :: RecordType -> Symbol -> RecordInfo -> [Attribute] -> Parser Record
 mkrecord a b c d = Record a b c d <$> liftIO H.new
+
+-- | Lifted 'DT.traceIO'
+traceIO :: (MonadIO m) => String -> m ()
+traceIO = liftIO . DT.traceIO
 
 makeLenses ''Type
 

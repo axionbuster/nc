@@ -11,6 +11,7 @@ module Language.NC.Internal.Prelude (
   module Control.Monad.IO.Class,
   module Data.Bits,
   module Data.Char,
+  module Data.Coerce,
   module Data.Data,
   module Data.Dynamic,
   module Data.Function,
@@ -20,7 +21,6 @@ module Language.NC.Internal.Prelude (
   module Data.Sequence,
   module Data.Unique,
   module Data.Word,
-  module Debug.Trace,
   module FlatParse.Stateful,
   module GHC.Float,
   module GHC.Generics,
@@ -48,6 +48,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Char hiding (isDigit)
+import Data.Coerce
 import Data.Data hiding (Fixity, Infix, Prefix)
 import Data.Dynamic
 import Data.Function
@@ -58,7 +59,6 @@ import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Text (Text)
 import Data.Unique
 import Data.Word
-import Debug.Trace
 import FlatParse.Stateful hiding (Parser)
 import GHC.Float
 import GHC.Generics hiding (from, to)
