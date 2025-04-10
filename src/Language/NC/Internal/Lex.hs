@@ -829,17 +829,18 @@ integerneededbits x
 --    and input 8 that's left over. that's OK; you should use it with
 --    a word boundary parser like 'lx1' to reject such cases.
 integer_constant_val =
-  $( switch
-       [|
-         case _ of
-           "0x" -> hex
-           "0X" -> hex
-           "0b" -> bin
-           "0B" -> bin
-           "0" -> option (False, 0) oct
-           _ -> dec
-         |]
-   )
+  lx0
+    $ $( switch
+           [|
+             case _ of
+               "0x" -> hex
+               "0X" -> hex
+               "0b" -> bin
+               "0B" -> bin
+               "0" -> option (False, 0) oct
+               _ -> dec
+             |]
+       )
     >>= \(wasdecimal, n) -> IntegerLiteral n <$> sfx wasdecimal n
  where
   -- the (-1) indicates max number of digits (unrestricted)
@@ -869,13 +870,16 @@ oneof_ascii _set = skipSatisfyAscii (`elem` _set)
 
 -- | Parse a floating-point literal. Discard the value.
 floating_constant =
-  -- TODO: move onto a parser that also produces the value.
-  -- Unfortunately, handling floating points correctly for the *target*
-  -- platform is a bit involved and I will need to invest more time
-  -- trying to support them.
-  -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
-  -- 2-page CFG down to like 3 PEG clauses.
-  (branch hexpfx hex dec) >> optional_ sfx
+  lx0
+    $
+    -- TODO: move onto a parser that also produces the value.
+    -- Unfortunately, handling floating points correctly for the *target*
+    -- platform is a bit involved and I will need to invest more time
+    -- trying to support them.
+    -- THANKS: Thanks a lot to Claude (AI) for shrinking the original
+    -- 2-page CFG down to like 3 PEG clauses.
+    (branch hexpfx hex dec)
+    >> optional_ sfx
  where
   -- floating-point suffix.
   sfx = do
@@ -918,7 +922,9 @@ char_encpfx =
 -- The range is NOT checked.
 character_constant_val = do
   typ <- option Int_ char_encpfx
-  val <- between quote quote value
+  -- 'quote' will consume any whitespace that comes after it.
+  -- it's undesirable to do that for the left single quote.
+  val <- between $(char '\'') quote value
   pure $ val typ
  where
   value =
@@ -967,7 +973,8 @@ string_literal_val = do
   let enc c
         | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
         | otherwise = err $ LiteralBadError BadChar
-  val <- between dbquote dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
+  -- dbquote will consume any whitespace that follows it, which is undesirable.
+  val <- between $(char '"') dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
   pure $ StringLiteral (BB.toLazyByteString val) typ
  where
   -- currently, no support for joining adjacent string literals, or

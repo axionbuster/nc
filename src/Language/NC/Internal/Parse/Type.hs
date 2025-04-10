@@ -8,9 +8,10 @@ module Language.NC.Internal.Parse.Type (
   -- * Type name
   typename,
 
-  -- * Declarators
+  -- * Declaration
   declarator,
   absdeclarator,
+  initializer,
 ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -1160,3 +1161,23 @@ typename :: Parser Type
 typename = do
   sym <- newsymbol
   typespecquals <**> option id (coerce $ absdeclarator sym)
+
+-- | Parse an initializer
+initializer :: Parser Initializer
+initializer = branch_incur bracedinitializer (InitExpr <$> assign)
+ where
+  bracedinitializer =
+    InitBraced
+      <$> do (InitItem <$> designator `manyTill` equal <*> initializer)
+                `sepEndBy` comma
+  designator = do
+    let ardsg = DesignatorIndex . CIEUnresolved <$> expr_
+    $( switch_ws0
+         [|
+           case _ of
+             "[" -> ardsg <* rsqb
+             "<:" -> ardsg <* rsqb
+             "." -> DesignatorMember . DMUnresolved <$> identifier
+             "=" -> failed
+           |]
+     )

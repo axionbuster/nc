@@ -260,25 +260,24 @@ postfix = primary >>= go
     if result == a
       then pure result
       else go result -- Recursively parse more postfix operators
-
-primary = branch _Generic' generic $ branch_inpar paren (ident <|> litexpr)
- where
-  generic =
-    inpar do
-      a <- assign <* cut comma (ExprParseError (MissingSeparator "comma"))
-      b <- genassoc `sepBy1` comma
-      pure $ ExprGeneric a b
+  primary = branch _Generic' generic $ branch_inpar paren (ident <|> litexpr)
    where
-    genassoc = do
-      let tynam = branch default' (pure Nothing) $ Just <$> typename
-      tt <- cut tynam (ExprParseError MalformedGenericExpression)
-      cut colon (ExprParseError MalformedGenericExpression)
-      GenAssoc tt <$> assign
-  paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
-   where
-    cut_expr_ = cut expr_ (ExprParseError ExpectedExpression)
-  ident = withSpan identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
-  litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
+    generic =
+      inpar do
+        a <- assign <* cut comma (ExprParseError (MissingSeparator "comma"))
+        b <- genassoc `sepBy1` comma
+        pure $ ExprGeneric a b
+     where
+      genassoc = do
+        let tynam = branch default' (pure Nothing) $ Just <$> typename
+        tt <- cut tynam (ExprParseError MalformedGenericExpression)
+        cut colon (ExprParseError MalformedGenericExpression)
+        GenAssoc tt <$> assign
+    paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
+     where
+      cut_expr_ = cut expr_ (ExprParseError ExpectedExpression)
+    ident = withSpan identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
+    litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
 binasgnop :: Parser (Expr -> Expr -> Expr)
 binasgnop =

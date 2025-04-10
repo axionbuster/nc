@@ -61,6 +61,7 @@ module Language.NC.Internal.Types.Parse (
 
   -- * C Initializers
   Designator (..),
+  DesignatorMember (..),
   InitItem (..),
   Initializer (..),
   init_designation,
@@ -408,16 +409,24 @@ newtype Declarator = Declarator {apdecl :: Type -> Type}
 
 -- | A designator for an initializer (array index or member access)
 data Designator
-  = -- | Array index designator: [constant-expression]
+  = -- | Array index designator: @[constant-expression]@
     DesignatorIndex ConstIntExpr
-  | -- | Member designator: .identifier
-    DesignatorMember Symbol
+  | -- | Member designator: @.identifier@
+    DesignatorMember DesignatorMember
+  deriving (Eq, Show)
+
+-- | Member designator (resolved or unresolved identifier).
+data DesignatorMember
+  = -- | Symbol is unresolved. Identifier is stored.
+    DMUnresolved !Str
+  | -- | Symbol has been resolved. It stores the symbol.
+    DMResolved !Str !Symbol
   deriving (Eq, Show)
 
 -- | A single item in an initializer list
 data InitItem = InitItem
-  { -- | Optional designation (when present, must be non-empty)
-    _init_designation :: Maybe [Designator],
+  { -- | Optional designation
+    _init_designation :: [Designator],
     -- | The initializer value
     _init_value :: Initializer
   }
