@@ -56,6 +56,9 @@ module Language.NC.Internal.Types.Parse (
   CharacterLiteral (..),
   StringLiteral (..),
 
+  -- * C Declarators
+  Declarator (..),
+
   -- * Supplemental information
   Str2Symbol,
   ConstIntExpr (..),
@@ -354,6 +357,38 @@ data StringLiteral
   = -- | Interpreted value, type of each element.
     StringLiteral LazyByteString !PrimType
   deriving (Show, Eq)
+
+-- | A declarator is what transforms a type.
+--
+-- Basically, a C declaration will have one or more declarators followed by
+-- a base type:
+--
+-- @
+-- static long _Complex double a, *b(void), (*c)[2];
+-- @
+--
+-- In the example above, the base type given is @static long \_Complex double@,
+-- and there are three declarators:
+--
+-- - @a@
+-- - @*b(void)@
+-- - @(*c)[2]@
+--
+-- Now, there are two types of declarators. (Regular) declarators give an
+-- identifier (like @a@, @b@, and @c@ in the example above), while *abstract*
+-- declarators do not (e.g., @(\*)(int, long a)@, which does not give an
+-- identifier to the function pointer).
+--
+-- So in the example above, to determine the type of @a@, we need to apply
+-- no transformation ('id') to the base type. To determine the type of @b@,
+-- we must apply the transformation to turn it into a function that returns
+-- a pointer to the base type (@return-type-of-void-function@ '.' @pointer@).
+-- For @c@, we need make it a pointer to the array of length 2 (which is
+-- because the parentheses around the pointer (@\*@) prioritizes the pointer
+-- declaration). It is for this reason a declarator is represented as
+-- a function.
+newtype Declarator = Declarator {apdecl :: Type -> Type}
+  deriving (Semigroup, Monoid) via (Dual (Endo Type))
 
 -- | Source storage class monoid.
 newtype StorageClass = StorageClass {unstorclass :: Int8}

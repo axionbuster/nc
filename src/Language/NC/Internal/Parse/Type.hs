@@ -3,12 +3,12 @@
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
+-- | Parse type names and declarators.
 module Language.NC.Internal.Parse.Type (
-  -- * Parsing an expression determining type
+  -- * Type name
   typename,
 
-  -- * Declarations
-  Declarator (..),
+  -- * Declarators
   declarator,
   absdeclarator,
 ) where
@@ -25,152 +25,155 @@ import Language.NC.Internal.Prelude hiding (L1, assign)
 
 -- we also define C types.
 
-{- Optimized C23 fragment (in PEG) of the type-name rule for typename implementation:
+{- Optimized C23 fragment (in PEG) of the type-name rule for
+  typename implementation:
 
-# Fully inlined and optimized for PEG parsing efficiency
-# Type name - entry point for parsing C types
+# Top-level type name rule
 type-name ←
-  # First collect all type specifiers and qualifiers
-  type-specifier-qualifier+ attribute-specifier-sequence?
-  # Then optionally parse abstract declarator
-  (
-    # Case 1: Pointer chain followed by optional direct part
-    ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)*
-    (
-      # Direct abstract declarator (parenthesized or array/function)
-      (
-        # Parenthesized abstract declarator
-        '(' (
-          # Either a full abstract declarator inside parentheses
-          ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)*
-           (direct-abstract-declarator)?) /
-          # Or just a direct abstract declarator
-          direct-abstract-declarator
-        ) ')' /
+  # Phase 1: Parse type specifiers and qualifiers
+  (type-specifier-qualifier ('[' '[' attribute? (',' attribute?)* ']' ']')?)+
 
-        # Array form with all variations in priority order
-        '[' (
-          'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
-          ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
-          ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
-          ('const'/'restrict'/'volatile'/'_Atomic')* '*'
-        ) ']' attribute-specifier-sequence? /
+  # Phase 2: Parse optional abstract declarator
+  (pointer direct-abstract-declarator? / direct-abstract-declarator)?
 
-        # Function form
-        '(' (
-          # Parameter list with variadic option
-          parameter-declaration (',' parameter-declaration)* (',' '...')? /
-          '...'
-        )? ')' attribute-specifier-sequence?
-      )
-
-      # Suffix decorators (array or function)
-      (
-        # Array suffix
-        '[' (
-          'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
-          ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
-          ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
-          ('const'/'restrict'/'volatile'/'_Atomic')* '*'
-        ) ']' attribute-specifier-sequence? /
-
-        # Function suffix
-        '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
-         attribute-specifier-sequence?
-      )*
-    )?
-  )?
-
-# Direct abstract declarator - factored out due to mutual recursion
-direct-abstract-declarator ←
-  # Parenthesized abstract declarator
-  '(' abstract-declarator ')' /
-
-  # Array form
-  '[' (
-    'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
-    ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
-    ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
-    ('const'/'restrict'/'volatile'/'_Atomic')* '*'
-  ) ']' attribute-specifier-sequence? /
-
-  # Function form
-  '(' (parameter-declaration (',' parameter-declaration)* (',' '...')? / '...')? ')'
-   attribute-specifier-sequence?
-
-# Abstract declarator - needed for parenthesized expressions
-abstract-declarator ←
-  ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic'*)*)+ direct-abstract-declarator? /
-  direct-abstract-declarator
-
-# Type specifier or qualifier - consolidated into one rule
+# Type specifier or qualifier (consolidated)
 type-specifier-qualifier ←
-  # Built-in types (ordered for quick recognition)
+  # Primitive types (ordered for parsing efficiency)
   'void' / 'char' / 'short' / 'int' / 'long' / 'float' / 'double' /
-  'signed' / 'unsigned' / '_Bool' / '_Complex' / '_Decimal32' / '_Decimal64' / '_Decimal128' /
-  '_BitInt' '(' constant-expression ')' /
-  # Type qualifiers (very common, parse early)
+  'signed' / 'unsigned' / '_Bool' / '_Complex' / '_Decimal32' / '_Decimal64' /
+  '_Decimal128' / '_BitInt' '(' constant-expression ')' /
+
+  # Type qualifiers (common, parse early)
   'const' / 'restrict' / 'volatile' / '_Atomic' /
-  # Compound type specifiers (more complex, parse later)
-  ('struct' / 'union') attribute-specifier-sequence? (
+
+  # _Atomic newtype
+  '_Atomic' '(' type-name ')' /
+
+  # Compound type
+  ('struct' / 'union') ('[' '[' attribute? (',' attribute?)* ']' ']')? (
     identifier? '{' (
-      attribute-specifier-sequence? type-specifier-qualifier+ (
-        (declarator? ':' constant-expression (',' declarator? ':' constant-expression)*) /
-        (declarator (',' declarator)*) /
-        ε
-      ) ';' /
+      # Member declaration list - inlined
+      (('[' '[' attribute? (',' attribute?)* ']' ']')? (type-specifier-qualifier
+        ('[' '[' attribute? (',' attribute?)* ']' ']')?)+ (
+        # Member declarator list - inlined
+        (declarator / (declarator? ':' constant-expression))
+        (',' (declarator / (declarator? ':' constant-expression)))*
+      )? ';' /
       'static_assert' '(' constant-expression (',' string-literal)? ')' ';'
     )+ '}' /
     identifier
   ) /
-  'enum' attribute-specifier-sequence? identifier? ('{' enumerator-list ','? '}')? /
-  '_Atomic' '(' type-name ')' /
+  'enum' ('[' '[' attribute? (',' attribute?)* ']' ']')? identifier?
+    (':' (type-specifier-qualifier ('[' '[' attribute? (',' attribute?)* ']'
+      ']')?)+ )?
+    ('{' (enumeration-constant ('[' '[' attribute? (',' attribute?)* ']' ']')?
+      ('=' constant-expression)?)
+      (',' (enumeration-constant ('[' '[' attribute? (',' attribute?)* ']' ']')?
+        ('=' constant-expression)?))* ','? '}')? /
+
+  # typeof and alignas
   ('typeof' / 'typeof_unqual') '(' (type-name / expression) ')' /
   'alignas' '(' (type-name / constant-expression) ')' /
-  typedef-name  # Check last to avoid conflicts with identifiers
 
-# Attribute specifier sequence - simplified
-attribute-specifier-sequence ←
-  ('[' '[' attribute? (',' attribute?)* ']' ']')*
+  # typedef-name. but typedef-name is just an identifier.
+  identifier
 
-# Parameter type list - function parameters with optional variadic suffix
-parameter-type-list ←
-  # Case 1: One or more parameter declarations with optional variadic suffix
-  parameter-declaration (',' parameter-declaration)* (',' '...')? /
-  # Case 2: Purely variadic function (no named parameters)
-  '...'
-
-# Parameter declaration - simplified for type-name context
-parameter-declaration ←
-  attribute-specifier-sequence? type-specifier-qualifier+ (declarator / abstract-declarator)?
-
-# Declarator - non-recursive form for PEG parsing
+# Declarator: A declarator that declares an identifier. See abstract declarator.
+# See also comments in Language.NC.Internal.Types.Parse (Declarator) for
+# the idea of a declarator vs. a declaration. Essentially, in the declaration:
+#   int a, b, *c, (*d)[2];
+# there are four declarators: [a], [b], [*c], and [(*d)[2]].
 declarator ←
-  # Step 1: Optional pointer chain
-  ('*' attribute-specifier-sequence? ('const'/'restrict'/'volatile'/'_Atomic')*)*
+  pointer? direct-declarator
 
-  # Step 2: Base declarator (identifier or grouped declarator)
+# Direct declarator: a declarator, but no pointer chain in the beginning.
+direct-declarator ←
+  (identifier ('[' '[' attribute? (',' attribute?)* ']' ']')? /
+    '(' declarator ')')
   (
-    # Named identifier with attributes
-    identifier attribute-specifier-sequence? /
-
-    # Parenthesized declarator for grouping
-    '(' declarator ')'
-  )
-
-  # Step 3: Array/function suffixes (zero or more)
-  (
-    # Array suffix forms - all variations in priority order
+    # Array suffix
     '[' (
-      'static' ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression /
-      ('const'/'restrict'/'volatile'/'_Atomic')+ 'static' assignment-expression /
-      ('const'/'restrict'/'volatile'/'_Atomic')* assignment-expression? /
-      ('const'/'restrict'/'volatile'/'_Atomic')* '*'
-    ) ']' attribute-specifier-sequence? /
+      'static' type-qualifier* assignment-expression /
+      type-qualifier+ 'static' assignment-expression /
+      type-qualifier* assignment-expression? /
+      type-qualifier* '*'
+    ) ']' ('[' '[' attribute? (',' attribute?)* ']' ']')? /
 
     # Function suffix
-    '(' parameter-type-list? ')' attribute-specifier-sequence?
+    '(' (
+      parameter-declaration (',' parameter-declaration)* (',' '...')? /
+      '...'
+    )? ')' ('[' '[' attribute? (',' attribute?)* ']' ']')?
   )*
+
+# Abstract declarator: is a declarator that does NOT declare an identifier.
+abstract-declarator ←
+  pointer direct-abstract-declarator? /
+  direct-abstract-declarator
+
+# Abstract declarator, but no pointer chain in the beginning.
+direct-abstract-declarator ←
+  # Parenthesized abstract declarator
+  ('(' abstract-declarator ')'
+    ('[' '[' attribute? (',' attribute?)* ']' ']')?) /
+
+  # Array form
+  (direct-abstract-declarator? '[' (
+    'static' type-qualifier* assignment-expression /
+    type-qualifier+ 'static' assignment-expression /
+    type-qualifier* assignment-expression? /
+    type-qualifier* '*'
+  ) ']' ('[' '[' attribute? (',' attribute?)* ']' ']')?) /
+
+  # Function form
+  (direct-abstract-declarator? '(' (
+    parameter-declaration (',' parameter-declaration)* (',' '...')? /
+    '...'
+  )? ')' ('[' '[' attribute? (',' attribute?)* ']' ']')?)
+
+  # Zero or more suffixes (array or function)
+  (
+    '[' (
+      'static' type-qualifier* assignment-expression /
+      type-qualifier+ 'static' assignment-expression /
+      type-qualifier* assignment-expression? /
+      type-qualifier* '*'
+    ) ']' ('[' '[' attribute? (',' attribute?)* ']' ']')? /
+
+    '(' (
+      parameter-declaration (',' parameter-declaration)* (',' '...')? /
+      '...'
+    )? ')' ('[' '[' attribute? (',' attribute?)* ']' ']')?
+  )*
+
+parameter-declaration ←
+  ('[' '[' attribute? (',' attribute?)* ']' ']')?
+  (type-specifier-qualifier ('[' '[' attribute? (',' attribute?)* ']' ']')?)+
+  (declarator / abstract-declarator)?
+
+pointer ←
+  '*' ('[' '[' attribute? (',' attribute?)* ']' ']')? type-qualifier* /
+  '*' ('[' '[' attribute? (',' attribute?)* ']' ']')? type-qualifier* pointer
+
+type-qualifier ← 'const' / 'restrict' / 'volatile' / '_Atomic'
+
+attribute ←
+  attribute-token attribute-argument-clause?
+
+attribute-token ←
+  identifier /
+  identifier '::' identifier
+
+attribute-argument-clause ←
+  '(' balanced-token-sequence? ')'
+
+balanced-token-sequence ←
+  # any-token-except-brackets: literally any token except parentheses,
+  # square brackets, and curly braces.
+  ('(' balanced-token-sequence? ')' /
+    '[' balanced-token-sequence? ']' /
+    '{' balanced-token-sequence? '}' /
+    any-token-except-brackets)*
 
 == Implementation strategy ==
 
@@ -194,14 +197,14 @@ declarator ←
    - Function pointer types: building correct nesting structure
    - Array of arrays: ensuring proper dimension ordering
 
-Key point: Rather than building a CST and then walking it, transform the Type node
-directly as parsing proceeds, from the base type outward.
+Key point: Rather than building a CST and then walking it, transform the Type
+node directly as parsing proceeds, from the base type outward.
 -}
 
 -- as you can see down here, quite a lot of effort was spent in
 -- the permutation parsing of type qualifiers and specifiers.
 
--- | Type Parsing System Overview
+-- | Permutation parsing system
 --
 --   This module implements C-style type parsing with these
 --   key components:
@@ -221,16 +224,8 @@ directly as parsing proceeds, from the base type outward.
 --       "unsigned long int" → ULong_)
 --     - Third phase: Apply decorators using `TSChangeType`
 --       transformations
---
---   3. Composition Order
---     - Type transformations use `Dual (Endo Type)` to apply in
---       reverse parsing order
---     - This handles C's inside-out declarations like "int
---       *(*foo[10])(void)"
---     - The innermost type (int) is modified by each operation
---       working outward
 
--- Type specifier token - used to count occurrences in parsing
+-- | Type specifier token - used to count occurrences in parsing
 data TSTok
   = -- Type specifiers
 
@@ -319,15 +314,10 @@ data TSTok
   deriving (Eq, Enum, Show, Generic)
   deriving anyclass (Hashable)
 
--- Bitset for type specifier tokens
+-- | Bitset for type specifier tokens
 newtype TSToks = TSToks Word64
   deriving newtype (Eq, Num, Bits, FiniteBits)
-
-instance Semigroup TSToks where
-  TSToks i <> TSToks j = TSToks (i .|. j)
-
-instance Monoid TSToks where
-  mempty = TSToks 0
+  deriving (Semigroup, Monoid) via (Ior TSToks)
 
 instance Show TSToks where
   show toks =
@@ -611,6 +601,7 @@ tt2prim v =
 newtype TSChangeType = TSChangeType {apchgtyp :: Type -> Type}
   deriving (Monoid, Semigroup) via (Dual (Endo Type))
 
+-- | Compute the type qualifiers (e.g., @const@) to attach.
 tt2typequal :: TSToks -> Parser TSChangeType
 tt2typequal v = do
   -- four qualifiers: const, volatile, restrict, and _Atomic. any combo.
@@ -625,6 +616,7 @@ tt2typequal v = do
         pass 0x8_0000 tq_atomic
       ]
 
+-- | Compute storage class specifier (e.g., @extern@) to attach.
 tt2storage :: TSToks -> Parser TSChangeType
 tt2storage v =
   -- bit range for formal storage class specifiers:
@@ -641,6 +633,7 @@ tt2storage v =
     0x0400_0000 -> pure $ sc_constexpr
     _ -> _unktyptokcombo "tt2storage" v
 
+-- | Compute function specifiers to attach.
 tt2funcspec :: TSToks -> Parser TSChangeType
 tt2funcspec v = do
   -- inline and _Noreturn. any combo.
@@ -653,7 +646,7 @@ tt2funcspec v = do
         pass 0x1000_0000 fs_noreturn
       ]
 
--- add to the type token counts
+-- | For efficient collection of type specifier tokens.
 newtype SpecQual = SpecQual (TypeTokens -> TypeTokens)
   deriving (Monoid, Semigroup) via (Endo TypeTokens)
 
@@ -693,7 +686,7 @@ typespecqual = do
            "volatile" -> push TStVolatile tst_volatile
            "_Atomic" ->
              branch_inpar
-               handleatomicnewtype -- _Atomic (...); specifier. creates newtype
+               handleatomicnewtype -- _Atomic (...); specifier. newtype
                handleatomic -- _Atomic ...; qualifier. same type
            "_BitInt" -> (inpar $ decimal) >>= push_bitint
            "_Bool" -> push TStBool tst_bool
@@ -902,6 +895,7 @@ typespecquals = do
           else BTTypeof TQUnqual ti
   -- handle a typedef-name.
   handletypedefname = handle_generic "handletypedefname" tt_typedefname
+  -- handle an _Atomic (...) newtype specifier.
   handleatomicnewtype = handle_generic "handleatomicnewtype" tt_atomictype
 
 -- | Parse the attribute-specifier-sequence? rule
@@ -919,38 +913,6 @@ attrspecs = option [] $ indbsqb $ attribute `sepBy` comma
 -- | In declarator parsing, need identifier to be present or absent?
 data DeclMode = RequireIdentifier | RequireNoIdentifier
   deriving (Eq, Show)
-
--- | A declarator is what transforms a type.
---
--- Basically, a C declaration will have one or more declarators followed by
--- a base type:
---
--- @
--- static long _Complex double a, *b(void), (*c)[2];
--- @
---
--- In the example above, the base type given is @static long \_Complex double@,
--- and there are three declarators:
---
--- - @a@
--- - @*b(void)@
--- - @(*c)[2]@
---
--- Now, there are two types of declarators. (Regular) declarators give an
--- identifier (like @a@, @b@, and @c@ in the example above), while *abstract*
--- declarators do not (e.g., @(\*)(int, long a)@, which does not give an
--- identifier to the function pointer).
---
--- So in the example above, to determine the type of @a@, we need to apply
--- no transformation ('id') to the base type. To determine the type of @b@,
--- we must apply the transformation to turn it into a function that returns
--- a pointer to the base type (@return-type-of-void-function@ '.' @pointer@).
--- For @c@, we need make it a pointer to the array of length 2 (which is
--- because the parentheses around the pointer (@\*@) prioritizes the pointer
--- declaration). It is for this reason a declarator is represented as
--- a function.
-newtype Declarator = Declarator {apdecl :: Type -> Type}
-  deriving (Semigroup, Monoid) via (Dual (Endo Type))
 
 declarator, absdeclarator :: Symbol -> Parser Declarator
 
@@ -1114,7 +1076,7 @@ structorunion_body tab = do
   -- [struct|union] identifier? { ... }
   def maybename = do
     sym <- newsymbol
-    whenjust (symgivename sym) maybename
+    symgivename sym `whenjust` maybename
     inscope tab do
       flip cut (TypeParseError BadStructOrUnionDefinition) do
         let static_assert = do
@@ -1156,8 +1118,7 @@ enum_body :: Parser EnumType
 enum_body = do
   sym <- newsymbol
   let realenumbody attrs tag membtype = do
-        -- any of the three rules
-        whenjust (symgivename sym) tag
+        symgivename sym `whenjust` tag
         info <-
           EnumDef <$> flip sepEndBy comma do
             sym <- newsymbol
@@ -1172,8 +1133,8 @@ enum_body = do
   withOption
     attrspecs
     ( \attrs -> do
-        -- a declaration cannot have attributes for some reason,
-        -- so since we have attributes here we have a definition.
+        -- a declaration cannot have attributes according to the C23 standard,
+        -- so, since we have attributes here, we have a definition.
         tag <- optional identifier_def
         membtype <- optional (colon >> typespecquals)
         incur $ realenumbody attrs tag membtype
@@ -1184,11 +1145,11 @@ enum_body = do
         membtype <- optional (colon >> typespecquals)
         branch_incur
           (realenumbody [] tag membtype)
-          ( do
-              case tag of
-                Just tag ->
-                  symgivename sym tag $> EnumType sym EnumDecl [] membtype
-                Nothing -> failed
+          ( case tag of
+              Just tag ->
+                symgivename sym tag
+                  $> EnumType sym EnumDecl [] membtype
+              Nothing -> failed
           )
     )
 
