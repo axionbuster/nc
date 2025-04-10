@@ -59,6 +59,13 @@ module Language.NC.Internal.Types.Parse (
   -- * C Declarators
   Declarator (..),
 
+  -- * C Initializers
+  Designator (..),
+  InitItem (..),
+  Initializer (..),
+  init_designation,
+  init_value,
+
   -- * Supplemental information
   Str2Symbol,
   ConstIntExpr (..),
@@ -389,6 +396,31 @@ data StringLiteral
 -- a function.
 newtype Declarator = Declarator {apdecl :: Type -> Type}
   deriving (Semigroup, Monoid) via (Dual (Endo Type))
+
+-- | A designator for an initializer (array index or member access)
+data Designator
+  = -- | Array index designator: [constant-expression]
+    DesignatorIndex ConstIntExpr
+  | -- | Member designator: .identifier
+    DesignatorMember Symbol
+  deriving (Eq, Show)
+
+-- | A single item in an initializer list
+data InitItem = InitItem
+  { -- | Optional designation (when present, must be non-empty)
+    _init_designation :: Maybe [Designator],
+    -- | The initializer value
+    _init_value :: Initializer
+  }
+  deriving (Eq, Show)
+
+-- | An initializer expression
+data Initializer
+  = -- | Assignment expression initializer
+    InitExpr Expr
+  | -- | Braced initializer list (possibly empty)
+    InitBraced [InitItem]
+  deriving (Eq, Show)
 
 -- | Source storage class monoid.
 newtype StorageClass = StorageClass {unstorclass :: Int8}
@@ -1343,3 +1375,5 @@ makeLenses ''ArrayType
 makeLenses ''FuncInfo
 
 makeLenses ''EnumType
+
+makeLenses ''InitItem
