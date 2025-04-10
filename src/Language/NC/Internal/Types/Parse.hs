@@ -471,9 +471,79 @@ data Declaration
     AttributeDeclaration [Attribute]
   deriving (Show)
 
--- | FIXME: Dummy data for a compound statement.
-data CompoundStatement
+-- | A finger tree ('Seq') is used to organize statements for fast enough
+-- all-around performance for traversal, random access, merger, and manipulation
+type CompoundStatement = Seq Statement
+
+-- | A C statement
+data Statement
+  = -- | A labeled statement (@identifier:@, @case@, or @default@)
+    StmtLabeled Label Statement
+  | -- | An expression statement (possibly with attributes)
+    StmtExpr [Attribute] (Maybe Expr)
+  | -- | A compound statement (block)
+    StmtCompound (Seq BlockItem)
+  | -- | An if statement
+    StmtIf Expr Statement (Maybe Statement)
+  | -- | A switch statement
+    StmtSwitch Expr Statement
+  | -- | A while loop
+    StmtWhile Expr Statement
+  | -- | A do-while loop
+    StmtDoWhile Statement Expr
+  | -- | A for loop
+    StmtFor ForHeader Statement
+  | -- | A jump statement (@goto@, @continue@, @break@, @return@)
+    StmtJump JumpKind
+  | -- | A standalone attribute declaration
+    StmtAttribute [Attribute]
+  deriving (Show)
+
+-- | A block item (part of a compound statement)
+data BlockItem
+  = -- | Declaration in a block
+    BIDecl Declaration
+  | -- | Statement in a block
+    BIStmt Statement
+  | -- | Label alone in a block
+    BILabel Label
+  deriving (Show)
+
+-- | Label types
+data Label
+  = -- | Named label (@identifier:@)
+    LabelNamed [Attribute] Symbol
+  | -- | Case label (@case expr:@)
+    LabelCase [Attribute] ConstIntExpr  
+  | -- | Default label (@default:@)
+    LabelDefault [Attribute]
   deriving (Eq, Show)
+
+-- | A destination for a @goto@ statement.
+data JumpGoto
+  = JGUnresolved Str
+  | JGResolved Symbol
+  deriving (Eq, Show)
+
+-- | Jump statement types
+data JumpKind
+  = -- | @goto identifier;@
+    JumpGoto JumpGoto
+  | -- | @continue;@
+    JumpContinue
+  | -- | @break;@
+    JumpBreak
+  | -- | @return expr?;@
+    JumpReturn (Maybe Expr)
+  deriving (Eq, Show)
+
+-- | For loop header components
+data ForHeader
+  = -- | Traditional for(expr?; expr?; expr?) 
+    ForExpr (Maybe Expr) (Maybe Expr) (Maybe Expr)
+  | -- | C99 for(declaration expr?; expr?)
+    ForDecl Declaration (Maybe Expr) (Maybe Expr)
+  deriving (Show)
 
 -- | Source storage class monoid.
 newtype StorageClass = StorageClass {unstorclass :: Int8}

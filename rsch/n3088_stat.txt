@@ -1,0 +1,144 @@
+© ISO/IEC 2023 – All rights reserved
+
+ISO/IEC 9899:2023 (E)
+
+(6.7.10) designation:
+designator-list =
+(6.7.10) designator-list:
+designator
+designator-list designator
+(6.7.10) designator:
+
+[ constant-expression ]
+. identiﬁer
+
+(6.7.11) static_assert-declaration:
+
+static_assert ( constant-expression , string-literal ) ;
+static_assert ( constant-expression ) ;
+
+(6.7.12.1) attribute-speciﬁer-sequence:
+attribute-speciﬁer-sequenceopt attribute-speciﬁer
+(6.7.12.1) attribute-speciﬁer:
+[ [ attribute-list ] ]
+(6.7.12.1) attribute-list:
+attributeopt
+attribute-list , attributeopt
+(6.7.12.1) attribute:
+
+attribute-token attribute-argument-clauseopt
+
+(6.7.12.1) attribute-token:
+standard-attribute
+attribute-preﬁxed-token
+(6.7.12.1) standard-attribute:
+identiﬁer
+(6.7.12.1) attribute-preﬁxed-token:
+attribute-preﬁx :: identiﬁer
+(6.7.12.1) attribute-preﬁx:
+identiﬁer
+(6.7.12.1) attribute-argument-clause:
+( balanced-token-sequenceopt )
+(6.7.12.1) balanced-token-sequence:
+balanced-token
+balanced-token-sequence balanced-token
+(6.7.12.1) balanced-token:
+( balanced-token-sequenceopt )
+[ balanced-token-sequenceopt ]
+{ balanced-token-sequenceopt }
+any token other than a parenthesis, a bracket, or a brace
+
+A.2.3
+
+Statements
+
+(6.8) statement:
+
+labeled-statement
+unlabeled-statement
+
+(6.8) unlabeled-statement:
+expression-statement
+attribute-speciﬁer-sequenceopt primary-block
+attribute-speciﬁer-sequenceopt jump-statement
+464
+
+Language syntax summary
+
+§ A.2.3
+
+© ISO/IEC 2023 – All rights reserved
+
+(6.8) primary-block:
+
+ISO/IEC 9899:2023 (E)
+
+compound-statement
+selection-statement
+iteration-statement
+
+(6.8) secondary-block:
+statement
+(6.8.1) label:
+
+attribute-speciﬁer-sequenceopt identiﬁer :
+attribute-speciﬁer-sequenceopt case constant-expression :
+attribute-speciﬁer-sequenceopt default :
+
+(6.8.1) labeled-statement:
+label statement
+(6.8.2) compound-statement:
+{ block-item-listopt }
+(6.8.2) block-item-list:
+block-item
+block-item-list block-item
+(6.8.2) block-item:
+
+declaration
+unlabeled-statement
+label
+
+(6.8.3) expression-statement:
+expressionopt ;
+attribute-speciﬁer-sequence expression ;
+[-6ex]
+(6.8.4) selection-statement:
+if ( expression ) secondary-block
+if ( expression ) secondary-block else secondary-block
+switch ( expression ) secondary-block
+[-6ex]
+(6.8.5) iteration-statement:
+
+[-6ex]
+
+while ( expression ) secondary-block
+do secondary-block while ( expression ) ;
+for ( expressionopt ; expressionopt ; expressionopt ) secondary-block
+for ( declaration expressionopt ; expressionopt ) secondary-block
+
+(6.8.6) jump-statement:
+
+[-6ex]
+
+A.2.4
+
+goto identiﬁer ;
+continue ;
+break ;
+return expressionopt ;
+
+External deﬁnitions
+
+(6.9) translation-unit:
+external-declaration
+translation-unit external-declaration
+(6.9) external-declaration:
+function-deﬁnition
+declaration
+§ A.2.4
+
+Language syntax summary
+
+465
+
+
