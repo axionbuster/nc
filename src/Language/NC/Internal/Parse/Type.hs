@@ -1127,7 +1127,7 @@ enum_body = do
             attrs <- attrspecs
             value <- optional do
               equal
-              CIEUnresolved <$> expr_
+              cut (CIEUnresolved <$> expr_) (ExprParseError ExpectedExpression)
             pure $ EnumConst sym attrs value
         pure $ EnumType sym info attrs membtype
   withOption
