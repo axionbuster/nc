@@ -1030,7 +1030,8 @@ commondeclarator declmode sym = do
                     let partype2 = apdecl dec partype1
                     let partype3 = set ty_attributes attrs partype2
                     pure $ Param partype3 sym2
-              ps1 <- paramdecl `sepBy1` comma
+              tempsymtab <- liftIO H.new
+              ps1 <- inscope tempsymtab (paramdecl `sepBy1` comma)
               var1 <- option NotVariadic (comma >> tripledot $> Variadic)
               pure (ps1, var1)
           )

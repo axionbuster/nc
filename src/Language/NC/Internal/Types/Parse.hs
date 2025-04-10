@@ -167,14 +167,17 @@ module Language.NC.Internal.Types.Parse (
 
   -- * Debugging
   traceIO,
+  dbg_dumpsyms,
 ) where
 
 import Control.Exception
 import Control.Lens
+import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Bits
 import Data.ByteString (ByteString)
+import Data.ByteString.Char8 qualified as C8
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Functor
 import Data.HashTable.IO qualified as H
@@ -1365,6 +1368,25 @@ mkrecord a b c d = Record a b c d <$> liftIO H.new
 -- | Lifted 'DT.traceIO'
 traceIO :: (MonadIO m) => String -> m ()
 traceIO = liftIO . DT.traceIO
+
+-- | Dump the symbol table
+dbg_dumpsyms :: Parser ()
+dbg_dumpsyms = do
+  tab <- asktab
+  -- print the scopes...
+  let go i (sc : scs) = do
+        traceIO $ printf "Scope %v:" i
+        jj <- newIORef (0 :: Int)
+        flip H.mapM_ sc \(name, sym) -> do
+          typ <- H.lookup tab.symtab_types sym
+          let typst = maybe "" show typ
+          j <- readIORef jj <* modifyIORef' jj succ
+          traceIO $ printf "  %v: %s %s" j (C8.unpack name) typst
+        traceIO ""
+        go (i + 1) scs
+      go _ [] = pure ()
+  ScopeStack scopes <- readIORef tab.symtab_scopes
+  liftIO $ go (0 :: Int) scopes
 
 makeLenses ''Type
 
