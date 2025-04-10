@@ -50,13 +50,22 @@ module Language.NC.Internal.Types.Parse (
   PrimExpr (..),
   GenAssoc (..),
 
+  -- * C Statements
+  CompoundStatement,
+  Statement (..),
+  BlockItem (..),
+  Label (..),
+  JumpGoto (..),
+  JumpKind (..),
+  ForHeader (..),
+
   -- * C Literals
   Lit (..),
   IntegerLiteral (..),
   CharacterLiteral (..),
   StringLiteral (..),
 
-  -- * C Declarations.
+  -- * C Declarations
   Declaration (..),
   Declarator (..),
   DeclInit (..),
@@ -514,7 +523,7 @@ data Label
   = -- | Named label (@identifier:@)
     LabelNamed [Attribute] Symbol
   | -- | Case label (@case expr:@)
-    LabelCase [Attribute] ConstIntExpr  
+    LabelCase [Attribute] ConstIntExpr
   | -- | Default label (@default:@)
     LabelDefault [Attribute]
   deriving (Eq, Show)
@@ -539,7 +548,7 @@ data JumpKind
 
 -- | For loop header components
 data ForHeader
-  = -- | Traditional for(expr?; expr?; expr?) 
+  = -- | Traditional for(expr?; expr?; expr?)
     ForExpr (Maybe Expr) (Maybe Expr) (Maybe Expr)
   | -- | C99 for(declaration expr?; expr?)
     ForDecl Declaration (Maybe Expr) (Maybe Expr)
@@ -599,7 +608,7 @@ data BaseType
     BTArray ArrayType
   | -- | A pointer type.
     BTPointer QualifiedType
-  | -- | An atomic type specifier (_Atomic(...)). The type is not allowed
+  | -- | An atomic type specifier (@_Atomic(...)@). The type is not allowed
     -- to be atomic or cvr-qualified.
     BTAtomic Type
   | -- | @typeof@ or @typeof_unqual@
