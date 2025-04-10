@@ -1121,15 +1121,24 @@ structorunion_body sym tab = do
             <$> many (option [] $ branch static_assert' sa (field <* semicolon))
         pure \con tab -> con sym (RecordDef ri) tab
 
--- | Parse a static assertion.
+-- | Parse a static assertion, assuming @static\_assert@ (or the equivalent
+-- @\_Static\_assert@) has already been parsed. Thus, this parser will begin
+-- by matching the parentheses as in:
+--
+-- @
+-- static\_assert (1);
+-- @
+--
+-- The parser also requries the semicolon. If it isn't found, it will throw
+-- an error.
 static_assert :: Parser StaticAssertion
 static_assert = do
-  inpar do
+  s <- inpar do
     e <- CIEUnresolved <$> expr_
-    l <-
-      optional (comma >> string_literal_val)
-        <* cut semicolon (ExprParseError $ MissingSeparator ";")
+    l <- optional (comma >> string_literal_val)
     pure $ StaticAssertion e l
+  cut semicolon (ExprParseError $ MissingSeparator ";")
+  pure s
 
 -- | Parse an @enum@ declaration or definition.
 enum_body :: Parser EnumType
@@ -1208,5 +1217,6 @@ declaration = sa_or $ as_or $ regular <* semicolon
   sa_or = branch static_assert' (StaticAssertDeclaration <$> static_assert)
   as_or =
     branch ldbsqb (AttributeDeclaration <$> attrspecs <* rdbsqb <* semicolon)
-  decini = DeclInit <$> (newsymbol >>= declarator) <*> optional initializer
+  decini = DeclInit <$> (newsymbol >>= declarator) <*>
+    optional (equal >> initializer)
   regular = NormalDeclaration <$> typespecquals <*> (decini `sepBy1` comma)

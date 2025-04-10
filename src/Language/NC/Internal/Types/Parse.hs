@@ -453,6 +453,11 @@ data DeclInit
 data Declaration
   = -- | Define identifiers, their types, and any initialization.
     -- Attributes can be found inside the 'Type' field.
+    --
+    -- To properly construct the type for an identifier, it's necessary to
+    -- apply the 'Declarator' for each 'DeclInit' in the list. The 'Type'
+    -- given under 'NormalDeclaration' only gives the base type. For function
+    -- pointer declarations, it only gives the return type.
     NormalDeclaration Type [DeclInit]
   | -- | Encapsulate a static assertion.
     StaticAssertDeclaration StaticAssertion
@@ -726,7 +731,7 @@ data PrimTypeBadWhy
     --     \"mixing [void] with other types\" (replace [void] with the type).
     IncompatibleTypes String [String]
   | -- | Unrecognized or invalid _BitInt width
-    InvalidBitIntWidth BitIntWidth
+    InvalidBitIntWidth Integer
   | -- | Invalid _BitInt width due to overflow or bad formatting
     InvalidBitIntWidthOverflowOrBadFormat
   | -- | Invalid _Decimal bits specification
