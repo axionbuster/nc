@@ -535,7 +535,6 @@ tt_typeofspec2 = to \tt -> case tt ^. tt_typeofspec of
 _unktyptokcombo :: String -> TSToks -> Parser a
 _unktyptokcombo name v =
   err
-    $ TypeParseError
     $ InvalidTokenCombination
       (if null name then "" else name)
       (show v)
@@ -720,7 +719,6 @@ typespecqual = do
     if ty_nontrivialquals t
       then
         err
-          $ TypeParseError
           $ InvalidAtomicQualifiedType t
       else
         pure
@@ -846,7 +844,6 @@ typespecquals = do
             | HashMap.null map2 -> pure ()
             | otherwise ->
                 err
-                  $ TypeParseError
                   $ TooManyTypeSpecifiers (show map2)
   -- check exclusivity. e.g., "struct XXX" and "int" cannot appear together.
   checkexclusivity tt =
@@ -868,7 +865,7 @@ typespecquals = do
                   ]
      in case bad of
           (_ : []) -> pure ()
-          _ -> err $ TypeParseError $ IncompatibleTypeCategories $ unwords bad
+          _ -> err $ IncompatibleTypeCategories $ unwords bad
   -- handle primitive, non-derived types such as "int," "unsigned long,"
   -- "long double _Complex."
   handleprim tt tm = do
@@ -884,7 +881,6 @@ typespecquals = do
                 _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
               else
                 err
-                  $ PrimTypeBadError
                   $ InvalidBitIntWidth (fromIntegral bw)
     pure $ basetype2type bt1
   -- retrieve a property from TypeTokens or else throw an error.
@@ -985,7 +981,7 @@ commondeclarator declmode sym = do
   pointer =
     Declarator <$> do
       star
-      flip cut (TypeParseError BadPointerSyntax) do
+      flip cut BadPointerSyntax do
         attrs <- attrspecs
         qual <- qualifiers
         -- here, we are careful to qualify the *pointer* itself, not the
@@ -1090,7 +1086,7 @@ structorunion_body sym tab = do
   def maybename = do
     symgivename sym `whenjust` maybename
     inscope tab do
-      flip cut (TypeParseError BadStructOrUnionDefinition) do
+      flip cut BadStructOrUnionDefinition do
         let sa = pure . RecordStaticAssertion <$> static_assert
             field = do
               attrs <- attrspecs
@@ -1136,7 +1132,7 @@ static_assert = do
     e <- CIEUnresolved <$> expr_
     l <- optional (comma >> string_literal_val)
     pure $ StaticAssertion e l
-  cut semicolon (ExprParseError $ MissingSeparator ";")
+  cut semicolon (MissingSeparator ";")
   pure s
 
 -- | Parse an @enum@ declaration or definition.
@@ -1153,7 +1149,7 @@ enum_body = do
             attrs <- attrspecs
             value <- optional do
               equal
-              cut (CIEUnresolved <$> expr_) (ExprParseError ExpectedExpression)
+              cut (CIEUnresolved <$> expr_) ExpectedExpression
             pure $ EnumConst sym attrs value
         pure $ EnumType sym info attrs membtype
   withOption

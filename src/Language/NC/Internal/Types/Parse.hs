@@ -125,11 +125,6 @@ module Language.NC.Internal.Types.Parse (
 
   -- * Error types
   Error (..),
-  PrimTypeBadWhy (..),
-  LiteralBadWhy (..),
-  SymbolError (..),
-  TypeParseError (..),
-  ExprParseError (..),
   AnnotatedError (..),
   RelatedInfo (..),
   Severity (..),
@@ -142,7 +137,6 @@ module Language.NC.Internal.Types.Parse (
   -- * Symbol types and functions
   Symbol (..),
   SymbolKind (..),
-  SymbolInfo (..),
   SymbolTable (..),
   ScopeStack (..),
   ScopeInfo (..),
@@ -797,119 +791,90 @@ data Error
   = -- | Miscellaneous programming error. Before specific error variants
     -- are added, ad hoc errors go here.
     BasicError String
-  | -- | Bad primitive type
-    PrimTypeBadError PrimTypeBadWhy
-  | -- | Literal problem
-    LiteralBadError LiteralBadWhy
-  | -- | Type parsing error
-    TypeParseError TypeParseError
-  | -- | Unexpected end of file
-    UnexpectedEOFError
   | -- | Internal error
     InternalError String
-  | -- | Symbol error
-    SymbolError SymbolError
-  | -- | Expression parsing error
-    ExprParseError ExprParseError
-  deriving (Eq, Show)
-
--- | Why a primitive type couldn't be parsed, or is incorrect.
-data PrimTypeBadWhy
-  = -- | Too many specifiers of the same type (e.g. "multiple sign specifiers")
-    TooManyPrimSpecifiers String
+  | -- | Symbol already defined in current scope
+    AlreadyDefinedInScope
+  | -- | Bad character in a string or character literal.
+    BadChar
+  | -- | Bad pointer syntax
+    BadPointerSyntax
+  | -- | Bad struct or union definition
+    BadStructOrUnionDefinition
+  | -- | Expected an expression
+    ExpectedExpression
+  | -- | Expected an identifier
+    ExpectedIdentifier
+  | -- | Expected a literal
+    ExpectedLiteral
+  | -- | Expected a specific token but didn't find it
+    ExpectedToken String
+  | -- | Incompatible type categories
+    IncompatibleTypeCategories String
   | -- | Incompatible type combination (e.g. \"mixing void with float\")
     --
     --     If the list of \"other types\" is empty, then say,
     --     \"mixing [void] with other types\" (replace [void] with the type).
     IncompatibleTypes String [String]
-  | -- | Unrecognized or invalid _BitInt width
+  | -- | Incorrect integer suffix combo.
+    IncorrectIntSuffix
+  | -- | Invalid atomic type contains qualified types
+    InvalidAtomicQualifiedType Type
+  | -- | Invalid _BitInt width
     InvalidBitIntWidth Integer
   | -- | Invalid _BitInt width due to overflow or bad formatting
     InvalidBitIntWidthOverflowOrBadFormat
   | -- | Invalid _Decimal bits specification
     InvalidDecimalBits BitIntWidth
-  | -- | Giving signedness to non-integral type
-    InvalidSignedness String
   | -- | Constructing a decimal complex type
     InvalidDecimalComplex
-  | -- | Empty or unsupported type specification
-    InvalidTypeSpec String
-  deriving (Eq)
-
--- | Cause for literal processing failure.
-data LiteralBadWhy
-  = -- | Incorrect integer suffix combo.
-    IncorrectIntSuffix
-  | -- | Literal too large to fit.
-    LiteralTooLarge
-  | -- | Unsupported character encoding.
-    UnsupportedEncoding
-  | -- | Invalid character in a string or character literal.
-    BadChar
-  deriving (Eq)
-
--- | Errors related to type parsing
-data TypeParseError
-  = -- | Token combination is invalid or unknown
+  | -- | Invalid expression in a specific context
+    InvalidExpression String
+  | -- | Giving signedness to non-integral type
+    InvalidSignedness String
+  | -- | Token combination is invalid or unknown. Procedure name, and then
+    -- best reconstructed type name.
     InvalidTokenCombination
       -- | Procedure name
       String
       -- | Best reconstructed type name
       String
-  | -- | Too many type specifiers of a specific kind
-    TooManyTypeSpecifiers String
-  | -- | Unexpected abstract declarator in a context requiring an identifier
-    MissingRequiredIdentifier
-  | -- | Atomic type contains qualified types
-    InvalidAtomicQualifiedType Type
-  | -- | Unresolvable type name
-    UnknownTypedefName Str
-  | -- | Incompatible type categories
-    IncompatibleTypeCategories String
-  | -- | Bad pointer syntax
-    BadPointerSyntax
-  | -- | Bad struct or union definition
-    BadStructOrUnionDefinition
-  deriving (Eq, Show)
-
--- | Errors related to expression parsing
-data ExprParseError
-  = -- | Expected a specific token but didn't find it
-    ExpectedToken String
-  | -- | Missing comma or other separator
-    MissingSeparator String
-  | -- | Invalid expression in a specific context
-    InvalidExpression String
-  | -- | Expected an expression
-    ExpectedExpression
-  | -- | Expected a literal
-    ExpectedLiteral
-  | -- | Expected an identifier
-    ExpectedIdentifier
+  | -- | Empty or unsupported type specification
+    InvalidTypeSpec String
+  | -- | Literal too large to fit.
+    LiteralTooLarge
   | -- | Error while parsing a generic expression
     MalformedGenericExpression
-  deriving (Eq, Show)
-
--- | Symbol-related errors beyond redefinition
-data SymbolError
-  = -- | Symbol not found during lookup
-    SymbolNotFound Str
-  | -- | Used as the wrong kind (e.g., used a variable as a type)
-    WrongSymbolKind SymbolKind SymbolKind
+  | -- | Missing comma or other separator
+    MissingSeparator String
+  | -- | Unexpected abstract declarator in a context requiring an identifier
+    MissingRequiredIdentifier
   | -- | Symbol scope violation
     ScopeViolation String
-  | -- | Symbol already defined in current scope
-    AlreadyDefinedInScope
+  | -- | Symbol not found during lookup
+    SymbolNotFound Str
+  | -- | Too many specifiers of the same type (e.g. "multiple sign specifiers")
+    TooManyPrimSpecifiers String
+  | -- | Too many type specifiers of a specific kind
+    TooManyTypeSpecifiers String
   | -- | Type mismatch in redefinition
     TypeMismatch
-  deriving (Eq, Show)
+  | -- | Unexpected end of file
+    UnexpectedEOFError
+  | -- | Unrecognized or invalid _BitInt width
+    UnknownTypedefName Str
+  | -- | Unsupported character encoding.
+    UnsupportedEncoding
+  | -- | Used as the wrong kind (e.g., used a variable as a type)
+    WrongSymbolKind SymbolKind SymbolKind
+  deriving (Eq)
 
 -- | An error annotated with span, severity, and optional hints.
 data AnnotatedError = AnnotatedError
-  { aeerr :: !Error,
-    aespn :: !Span,
-    aesev :: !Severity,
-    aerel :: ![RelatedInfo]
+  { aeerr :: Error,
+    aespn :: Span,
+    aesev :: Severity,
+    aerel :: [RelatedInfo]
   }
   deriving (Eq, Show)
 
@@ -920,31 +885,16 @@ data RelatedInfo = RelatedInfo
   }
   deriving (Eq, Show)
 
--- | Memory used for strings. We take advantage of strict 'ByteString' sharing
--- done by "flatparse".
+-- | Memory used for strings. We take advantage of strict 'ByteString' sharing.
 type Str = ByteString
 
 -- | The kind of a symbol.
 data SymbolKind
-  = -- | The symbol is a typedef of another type.
-    SymIsTypedef
-  | -- | Symbol defines a type.
+  = -- | Symbol defines a type or typedef.
     SymIsType
+  | -- | Symbol defines neither a type nor a typedef.
+    SymIsVar
   deriving (Show, Eq)
-
--- | Information about a symbol.
--- This includes the symbol's name, kind, and location.
-data SymbolInfo = SymbolInfo
-  { -- | The symbol's name.
-    si_name :: !Str,
-    -- | The symbol's kind.
-    si_kind :: !SymbolKind,
-    -- | The symbol's location in the source code.
-    --   In rare occasions this may be a bogus location, that is,
-    --   0:0, if the symbol was created in thin air for various reasons.
-    si_loc :: !Span
-  }
-  deriving (Eq, Show)
 
 -- | Fast IO-based hash table for global symbol information
 type FastTable k v = H.BasicHashTable k v
@@ -955,7 +905,6 @@ data ScopeInfo = ScopeInfo
     scope_name :: !Str,
     -- | Symbol's kind
     scope_kind :: !SymbolKind
-    -- Add other properties as needed
   }
 
 -- | Stack of scopes for maintaining lexical environments
@@ -1117,31 +1066,58 @@ tq_atomic = TypeQual 8
 primtype2type :: PrimType -> Type
 primtype2type pt = Type mempty mempty (BTPrim pt) mempty mempty AlignNone
 
-instance Show PrimTypeBadWhy where
+instance Show Error where
   show = \case
-    TooManyPrimSpecifiers s -> printf "too many %s specifiers" s
+    BasicError s -> s
+    InternalError s -> printf "internal error: %s" s
+    AlreadyDefinedInScope -> "symbol already defined in current scope"
+    BadChar -> "invalid character in a string or character literal"
+    BadPointerSyntax -> "bad pointer syntax"
+    BadStructOrUnionDefinition -> "bad struct or union definition"
+    ExpectedExpression -> "expected an expression"
+    ExpectedIdentifier -> "expected an identifier"
+    ExpectedLiteral -> "expected a literal"
+    ExpectedToken s -> printf "expected token: %s" s
+    IncompatibleTypeCategories s -> printf "incompatible type categories: %s" s
     IncompatibleTypes s [] -> printf "mixing %s with other types" s
     IncompatibleTypes s ts -> printf "mixing %s with %s" s (show ts)
+    IncorrectIntSuffix -> "incorrect integer suffix"
+    InvalidAtomicQualifiedType t -> printf "atomic type cannot contain qualified types: %s" (show t)
     InvalidBitIntWidth w -> printf "invalid _BitInt width %v" w
     InvalidBitIntWidthOverflowOrBadFormat ->
       "invalid _BitInt width due to overflow or bad formatting"
     InvalidDecimalBits b -> printf "invalid _Decimal bits %v" b
+    InvalidDecimalComplex -> "constructing a decimal complex type"
+    InvalidExpression s -> printf "invalid expression: %s" s
     InvalidSignedness t ->
       printf "giving signedness to non-integral type %s" t
-    InvalidDecimalComplex -> "constructing a decimal complex type"
+    InvalidTokenCombination name typename ->
+      if null name
+        then printf "invalid token combination for type %s" typename
+        else printf "invalid token combination in %s for type %s" name typename
     InvalidTypeSpec t -> printf "empty or unsupported type specification %s" t
+    LiteralTooLarge -> "literal is too large to fit"
+    MalformedGenericExpression -> "malformed generic expression"
+    MissingRequiredIdentifier -> "missing required identifier"
+    MissingSeparator s -> printf "missing separator: %s" s
+    ScopeViolation s -> printf "scope violation: %s" s
+    SymbolNotFound s -> printf "symbol not found: %s" (C8.unpack s)
+    TooManyPrimSpecifiers s -> printf "too many %s specifiers" s
+    TooManyTypeSpecifiers s -> printf "too many type specifiers: %s" s
+    TypeMismatch -> "type mismatch in redefinition"
+    UnexpectedEOFError -> "unexpected end of file"
+    UnknownTypedefName s -> printf "unknown typedef name: %s" (C8.unpack s)
+    UnsupportedEncoding -> "unsupported character encoding"
+    WrongSymbolKind expected actual ->
+      printf
+        "wrong symbol kind: expected %s, got %s"
+        (show expected)
+        (show actual)
 
 instance Exception Error
 
 instance IsString Error where
   fromString = BasicError
-
-instance Show LiteralBadWhy where
-  show = \case
-    IncorrectIntSuffix -> "incorrect integer suffix"
-    LiteralTooLarge -> "literal is too large to fit"
-    UnsupportedEncoding -> "unsupported character encoding"
-    BadChar -> "invalid character in a string or character literal"
 
 -- | Lens for the clause part of an 'Attribute'
 attr_clause :: Lens' Attribute Str
@@ -1257,7 +1233,7 @@ __throwable_insert tab a b = do
     Nothing -> (Just b, False)
   comp <- _pscompliancesettings <$> ask
   if oopsies && not (comp ^. comp_allow_block_shadowing)
-    then err $ SymbolError AlreadyDefinedInScope
+    then err AlreadyDefinedInScope
     else pure ()
 
 -- | Associate a symbol with a type.

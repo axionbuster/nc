@@ -782,7 +782,7 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
   -- find: find first type that can contain the literal
   find bw = go2
    where
-    go2 [] = err $ LiteralBadError LiteralTooLarge
+    go2 [] = err $ LiteralTooLarge
     go2 (t : ts) = do
       tw <- ist_preciseposbw t
       if tw >= bw
@@ -790,7 +790,7 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
         else go2 ts
   gated_go bw
     | bw > fromIntegral (maxBound :: Word8) =
-        const $ err $ LiteralBadError LiteralTooLarge
+        const $ err LiteralTooLarge
     | otherwise = go (fromIntegral bw)
   -- ISFX_ (u or U) (l or L) (wb or WB)
   -- Table below is found in 6.4.4.1.6 (N3088)
@@ -808,7 +808,7 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
   go bw (ISFX_ 1 2 0) = find bw [ull_]
   go bw (ISFX_ 0 0 1) = pure $ BitInt_ $ min 2 bw
   go bw (ISFX_ 1 0 1) = pure $ UBitInt_ bw
-  go _ _ = err $ LiteralBadError IncorrectIntSuffix
+  go _ _ = err IncorrectIntSuffix
 
 -- used to compute bitwidth for _BitInt(N) literals.
 -- as an invariant, this is >= 1.
@@ -972,7 +972,7 @@ string_literal_val = do
         )
   let enc c
         | c < 0xd800 || (0xdfff <= c && c <= 0x10ffff) = pure $ BB.char8 $ chr c
-        | otherwise = err $ LiteralBadError BadChar
+        | otherwise = err BadChar
   -- dbquote will consume any whitespace that follows it, which is undesirable.
   val <- between $(char '"') dbquote $ chainl (<>) (pure mempty) (ch >>= enc)
   pure $ StringLiteral (BB.toLazyByteString val) typ

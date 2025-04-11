@@ -264,18 +264,16 @@ postfix = primary >>= go
    where
     generic =
       inpar do
-        a <- assign <* cut comma (ExprParseError (MissingSeparator "comma"))
+        a <- assign <* cut comma (MissingSeparator ",")
         b <- genassoc `sepBy1` comma
         pure $ ExprGeneric a b
      where
       genassoc = do
         let tynam = branch default' (pure Nothing) $ Just <$> typename
-        tt <- cut tynam (ExprParseError MalformedGenericExpression)
-        cut colon (ExprParseError MalformedGenericExpression)
+        tt <- cut tynam MalformedGenericExpression
+        cut colon MalformedGenericExpression
         GenAssoc tt <$> assign
-    paren = Expr <$> runandgetspan (PrimParen <$> cut_expr_)
-     where
-      cut_expr_ = cut expr_ (ExprParseError ExpectedExpression)
+    paren = Expr <$> runandgetspan (PrimParen <$> cut expr_ ExpectedExpression)
     ident = withSpan identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
     litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
