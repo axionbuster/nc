@@ -261,7 +261,7 @@ data Expr
   | -- | member access using arrow (->)
     ExprMemberPtr Expr Symbol
   | -- | compound literal, type and value
-    ExprCompoundLiteral Expr Expr
+    ExprCompoundLiteral Type Initializer
   | -- | generic selection
     ExprGeneric Expr [GenAssoc]
   | -- | prefix increment (++)
