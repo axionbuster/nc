@@ -22,7 +22,7 @@ module Language.NC.Internal.Parse.Op (
 ) where
 
 import Language.NC.Internal.Lex
-import Language.NC.Internal.Parse.Type
+import {-# SOURCE #-} Language.NC.Internal.Parse.Type
 import Language.NC.Internal.Prelude hiding (assign, shift)
 
 {- PEG grammar referenced; converted from C23 CFG grammar.
@@ -223,43 +223,28 @@ unary =
   sizeof = ExprSizeOf <$> branch_inpar (Left <$> typename) (Right <$> unary)
   alignof = ExprAlignOf . Left <$> inpar typename
 
-compound = do
-  -- For now, just handle the error since we need to refactor
-  -- the Expr and Type handling in the AST to properly implement
-  -- compound literals
-  inpar typename >> incur anyChar >> failed
-
 postfix = primary >>= go
  where
   go a = do
-    let getid = identifier
-        mksym i = do
-          s <- newsymbol
-          symgivename s i $> s
-        onsqb = do
-          b <- expr_
-          rsqb $> ExprArray a b
-        onpar = do
-          b <- assign `sepBy` comma
-          rpar $> ExprCall a b
+    let mksym i = newsymbol >>= \s -> symgivename s i $> s
+        doarr = expr_ >>= \b -> rsqb $> ExprArray a b
+        paren = (assign `sepBy` comma) >>= \b -> rpar $> ExprCall a b
+        compo = ExprCompoundLiteral <$> inpar typename <*> bracedinitializer
         sfxop =
           $( switch_ws0
                [|
                  case _ of
-                   "[" -> onsqb
-                   "<:" -> onsqb
-                   "(" -> onpar
-                   "." -> ExprMember a <$> (getid >>= mksym)
-                   "->" -> ExprMember a <$> (getid >>= mksym) -- FIXME
+                   "[" -> doarr
+                   "<:" -> doarr
+                   "(" -> paren
+                   "." -> ExprMember a <$> (identifier >>= mksym)
+                   "->" -> ExprMember (ExprDeref a) <$> (identifier >>= mksym)
                    "--" -> pure $ ExprPostDec a
                    "++" -> pure $ ExprPostInc a
-                   _ -> compound
+                   _ -> compo
                  |]
            )
-    result <- option a sfxop
-    if result == a
-      then pure result
-      else go result -- Recursively parse more postfix operators
+    withOption sfxop go (pure a) -- Recursively parse more postfix operators
   primary = branch _Generic' generic $ branch_inpar paren (ident <|> litexpr)
    where
     generic =

@@ -12,6 +12,7 @@ module Language.NC.Internal.Parse.Type (
   declaration,
   declarator,
   absdeclarator,
+  bracedinitializer,
   initializer,
 ) where
 
@@ -655,7 +656,12 @@ tt2funcspec v = do
 newtype SpecQual = SpecQual (TypeTokens -> TypeTokens)
   deriving (Monoid, Semigroup) via (Endo TypeTokens)
 
--- | Parse the "type-specifier-qualifier" rule
+-- | Parse the "type-specifier-qualifier" rule.
+--
+-- We are more liberal than the C23 standard in that we also parse
+-- storage-class-specifiers as well. This simplifies parsing a lot in different
+-- places, but may result in unexpected SCS's showing up here and there.
+-- Those will need to be culled at the semantic analysis phase.
 typespecqual :: Parser SpecQual
 typespecqual = do
   $( switch_ws1
@@ -1176,20 +1182,24 @@ enum_body = do
     )
 
 -- | Parse types
+--
+-- We are more liberal than the C23 standard in that we also parse
+-- storage-class-specifiers as well. This simplifies parsing a lot in different
+-- places, but may result in unexpected SCS's showing up here and there.
+-- Those will need to be culled at the semantic analysis phase.
 typename :: Parser Type
 typename = do
   sym <- newsymbol
   typespecquals <**> option id (coerce $ absdeclarator sym)
 
--- | Parse an initializer
-initializer :: Parser Initializer
-initializer = branch_incur bracedinitializer (InitExpr <$> assign)
+-- | Parse a braced initializer
+bracedinitializer :: Parser Initializer
+bracedinitializer =
+  InitBraced
+    <$> do
+      (InitItem <$> designator `manyTill` equal <*> initializer)
+        `sepEndBy` comma
  where
-  bracedinitializer =
-    InitBraced
-      <$> do
-        (InitItem <$> designator `manyTill` equal <*> initializer)
-          `sepEndBy` comma
   designator = do
     let ardsg = DesignatorIndex . CIEUnresolved <$> expr_
     $( switch_ws0
@@ -1201,6 +1211,10 @@ initializer = branch_incur bracedinitializer (InitExpr <$> assign)
              "=" -> failed
            |]
      )
+
+-- | Parse an initializer
+initializer :: Parser Initializer
+initializer = branch_incur bracedinitializer (InitExpr <$> assign)
 
 -- | Parse a declaration.
 --
