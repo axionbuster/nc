@@ -1,3 +1,5 @@
+{-# LANGUAGE StrictData #-}
+
 -- | Primitive non-derived unqualified C types.
 module Language.NC.Internal.Types.PrimTypes (
   PrimType (..),

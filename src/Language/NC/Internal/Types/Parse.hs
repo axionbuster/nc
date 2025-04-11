@@ -1,3 +1,14 @@
+-- On using StrictData. Theoretical justifications:
+--  - FlatParse scans a fully-loaded document in a single strict ByteString.
+--    Its combinators too are pretty strict, so it makes sense to use strict
+--    data structures.
+--  - Symbol resolution can happen during parsing; so most nodes will be needed
+--    immediately.
+--  - C type checking and analysis typically requires the full AST, and partial
+--    evaluation isn't beneficial.
+--  - The AST is constructed once during parsing and not changed much after.
+{-# LANGUAGE StrictData #-}
+
 -- | This giant module merges the parser definitions, C types, and
 -- everything else. Primitive non-derived C types are in
 -- 'Language.NC.Internal.Types.PrimTypes'.
