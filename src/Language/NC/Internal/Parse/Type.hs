@@ -21,7 +21,7 @@ import Data.HashTable.IO qualified as H
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
-import Language.NC.Internal.Prelude hiding (L1, assign)
+import Language.NC.Internal.Prelude hiding (assign)
 
 -- in this parser-lexer we parse type names.
 
@@ -1027,25 +1027,27 @@ commondeclarator declmode sym = do
   function = do
     let chgfty as ty = basetype2type (BTFunc ty) & over ty_attributes (<> as)
     f1 <- inpar do
+      -- we allocate a new scope (symbol table) for parameter names,
+      -- which will be embedded into the FuncInfo we return.
+      stab <- liftIO H.new
       (ps, var) <-
         branch
           tripledot
           (pure ([], Variadic))
           ( do
-              let paramdecl = do
-                    attrs <- attrspecs
-                    partype1 <- typespecquals
-                    sym2 <- newsymbol
-                    dec <- declarator sym2 <|> absdeclarator sym2
-                    let partype2 = apdecl dec partype1
-                    let partype3 = set ty_attributes attrs partype2
-                    pure $ Param partype3 sym2
-              tempsymtab <- liftIO H.new
-              ps1 <- inscope tempsymtab (paramdecl `sepBy1` comma)
+              ps1 <- inscope stab $ flip sepBy1 comma do
+                attrs <- attrspecs
+                partype1 <- typespecquals
+                sym2 <- newsymbol
+                -- Potential source of inefficiency due to backtracking.
+                dec <- declarator sym2 <|> absdeclarator sym2
+                let partype2 = apdecl dec partype1
+                let partype3 = set ty_attributes attrs partype2
+                pure $ Param partype3 sym2
               var1 <- option NotVariadic (comma >> tripledot $> Variadic)
               pure (ps1, var1)
           )
-      pure \retty -> FuncInfo ps retty var
+      pure \retty -> FuncInfo ps retty var stab
     pure \as -> Declarator $ chgfty as . f1
   basedecl :: Parser Declarator
   basedecl = do

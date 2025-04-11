@@ -121,6 +121,7 @@ module Language.NC.Internal.Types.Parse (
   fun_rettype,
   fun_pars,
   fun_variadic,
+  fun_paramnames,
 
   -- * Error types
   Error (..),
@@ -765,9 +766,11 @@ data FuncInfo = FuncInfo
     -- | Return type
     _fun_rettype :: Type,
     -- | Followed by a variadic argument list?
-    _fun_variadic :: Variadic
+    _fun_variadic :: Variadic,
+    -- | Names of parameters, linked to symbols.
+    _fun_paramnames :: Str2Symbol
   }
-  deriving (Eq, Show)
+  deriving (Show)
 
 -- | Function parameter
 data Param = Param Type Symbol | ParamUnnamed Type
@@ -1154,6 +1157,11 @@ attr_clause = lens getter setter
 -- for across translation units.
 instance Eq Record where
   r0 == r1 = r0._rec_sym == r1._rec_sym
+
+-- | The symbol table is ignored because parameter names don't matter at all.
+instance Eq FuncInfo where
+  FuncInfo p0 r0 v0 _ == FuncInfo p1 r1 v1 _ =
+    p0 == p1 && r0 == r1 && v0 == v1
 
 -- | Prism for the body of a record.
 recinfo_def :: Prism' RecordInfo [RecordField]
