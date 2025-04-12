@@ -531,7 +531,6 @@ data BlockItem
     BILabel Label
   deriving (Show)
 
-
 -- | Label types. We attach a 'Symbol' to all subtypes so that
 -- all labels can be treated uniformly if the situation calls for it.
 data Label
@@ -542,6 +541,7 @@ data Label
   | -- | Default label (@default:@)
     LabelDefault [Attribute] Symbol
   deriving (Eq, Show)
+
 -- | A destination for a @goto@ statement.
 data JumpGoto
   = JGUnresolved Str
