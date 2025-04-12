@@ -1113,13 +1113,13 @@ structorunion_body sym tab = do
                 ( do
                     membsym <- newsymbol
                     colon
-                    bitwidth <- optional $ CIEUnresolved <$> expr_
-                    pure $ RecordField attrs typebase membsym bitwidth
+                    bitwidth <- CIEUnresolved <$> expr_
+                    pure $ RecordField attrs typebase membsym $ Just bitwidth
                 )
                 `sepBy` comma
         ri <-
           concat
-            <$> many (option [] $ branch static_assert' sa (field <* semicolon))
+            <$> many (branch static_assert' sa (field <* semicolon))
         pure \con tab -> con sym (RecordDef ri) tab
 
 -- | Parse a static assertion, assuming @static\_assert@ (or the equivalent

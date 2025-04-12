@@ -1534,7 +1534,7 @@ init_isempty = to \case
   _ -> False
 
 instance Show DeclInit where
-  show (DeclInit _ mi) = show mi
+  show (DeclInit _ mi) = "DeclInit _ " ++ show mi
 
 makeLenses ''Type
 
