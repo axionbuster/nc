@@ -12,6 +12,7 @@ module Language.NC.Internal.Parse.Type (
   declaration,
   declarator,
   absdeclarator,
+  optid_declarator,
   bracedinitializer,
   initializer,
 ) where
@@ -923,16 +924,23 @@ attrspecs = chainr (<>) a (pure mempty)
       (ws0 >> dbcolon >> PrefixedAttribute tok1 <$> identifier)
 
 -- | In declarator parsing, need identifier to be present or absent?
-data DeclMode = RequireIdentifier | RequireNoIdentifier
-  deriving (Eq, Show)
+--
+--  - argument: action to parse an identifier and then give name to symbol
+--  - ('id'): bind the action if an identifier needs to be parsed
+--  - (@'const' ...@): ignore the action if an identifier is unexpected
+--  - ('optional_'): tolerate failure if an identifier may or may not exist
+type DeclMode = Parser () -> Parser ()
 
-declarator, absdeclarator :: Symbol -> Parser Declarator
+declarator, absdeclarator, optid_declarator :: Symbol -> Parser Declarator
 
 -- | Declarator (requires an identifier)
-declarator = commondeclarator RequireIdentifier
+declarator = commondeclarator id
 
 -- | Abstract declarator (does not accept an identifier)
-absdeclarator = commondeclarator RequireNoIdentifier
+absdeclarator = commondeclarator (const $ pure ())
+
+-- | Optionally identifying declarator (may or may declare an identifier)
+optid_declarator = commondeclarator optional_
 
 -- | Declarator (abstract or not)
 --
@@ -1027,8 +1035,7 @@ commondeclarator declmode sym = do
         ]
     pure \as -> Declarator $ wraparrtype as . f1 . mkarrtype
   function = do
-    let chgfty as ty = basetype2type (BTFunc ty) & over ty_attributes (<> as)
-    f1 <- inpar do
+    f <- inpar do
       -- we allocate a new scope (symbol table) for parameter names,
       -- which will be embedded into the FuncInfo we return.
       stab <- liftIO H.new
@@ -1041,21 +1048,37 @@ commondeclarator declmode sym = do
                 attrs <- attrspecs
                 partype1 <- typespecquals
                 sym2 <- newsymbol
-                -- Potential source of inefficiency due to backtracking.
-                dec <- declarator sym2 <|> absdeclarator sym2
+                dec <- optid_declarator sym2
                 let partype2 = apdecl dec partype1
                 let partype3 = set ty_attributes attrs partype2
                 pure $ Param partype3 sym2
               var1 <- option NotVariadic (comma >> tripledot $> Variadic)
               pure (ps1, var1)
           )
-      pure \retty -> FuncInfo ps retty var stab
-    pure \as -> Declarator $ chgfty as . f1
+      -- spaghetti code begin
+      pure \retty ->
+        -- we remove the storage class specifiers from the return type so that
+        -- something like:
+        --  static int hi();
+        -- is treated as returning 'int' instead of 'static int' (nonsense).
+        -- the above is necessary because of a quirk in how we're parsing the
+        -- types, where storage class specifiers are parsed alongside
+        -- type qualifiers, meaning they'll be attached to the return type.
+        ( retty ^. ty_storclass,
+          FuncInfo ps (retty & ty_storclass .~ mempty) var stab
+        )
+    pure \attributes -> Declarator \retty ->
+      let (storclass, functype) = f retty
+       in basetype2type (BTFunc functype)
+            & over ty_storclass (<> storclass)
+            & over ty_attributes (<> attributes)
+  -- end spaghetti code (you bet it ended ...)
   basedecl :: Parser Declarator
   basedecl = do
     branch_inpar (commondeclarator declmode sym) do
-      when (declmode == RequireIdentifier) do
-        identifier_def >>= symgivename sym
+      -- you see how useful making 'declmode' as a function is
+      -- from how it saves a branch.
+      declmode $ identifier_def >>= symgivename sym
       qual <- qualifiers
       pure $ Declarator $ over ty_qual (<> qual)
 
