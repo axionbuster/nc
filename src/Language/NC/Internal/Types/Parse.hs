@@ -69,6 +69,10 @@ module Language.NC.Internal.Types.Parse (
   JumpGoto (..),
   JumpKind (..),
   ForHeader (..),
+  clabel_sym,
+  cforh_init,
+  cforh_cond,
+  cforh_post,
 
   -- * C Literals
   Lit (..),
@@ -465,6 +469,8 @@ data DeclInit
 
 -- | A declaration or definition, including objects, arrays, functions, and
 -- typedefs. This encompasses top-level and block definitions.
+--
+-- A 'Declaration' can be viewed as the negative counterpart to a 'Statement'.
 data Declaration
   = -- | Define identifiers, their types, and any initialization.
     -- Attributes can be found inside the 'Type' field.
@@ -489,7 +495,9 @@ data Declaration
 -- all-around performance for traversal, random access, merger, and manipulation
 type CompoundStatement = Seq Statement
 
--- | A C statement
+-- | A C statement.
+--
+-- A 'Statement' can be viewed as the positive counterpart to a 'Declaration'.
 data Statement
   = -- | A labeled statement (@identifier:@, @case@, or @default@)
     StmtLabeled Label Statement
@@ -523,16 +531,17 @@ data BlockItem
     BILabel Label
   deriving (Show)
 
--- | Label types
+
+-- | Label types. We attach a 'Symbol' to all subtypes so that
+-- all labels can be treated uniformly if the situation calls for it.
 data Label
   = -- | Named label (@identifier:@)
     LabelNamed [Attribute] Symbol
   | -- | Case label (@case expr:@)
-    LabelCase [Attribute] ConstIntExpr
+    LabelCase [Attribute] ConstIntExpr Symbol
   | -- | Default label (@default:@)
-    LabelDefault [Attribute]
+    LabelDefault [Attribute] Symbol
   deriving (Eq, Show)
-
 -- | A destination for a @goto@ statement.
 data JumpGoto
   = JGUnresolved Str
@@ -1529,6 +1538,48 @@ init_isempty = to \case
 
 instance Show DeclInit where
   show (DeclInit _ mi) = "DeclInit _ " ++ show mi
+
+-- | Point to the 'Symbol' for a 'Label'.
+clabel_sym :: Lens' Label Symbol
+clabel_sym = lens g s
+  where
+    g = \case
+      LabelNamed _ y -> y
+      LabelCase _ _ y -> y
+      LabelDefault _ y -> y
+    s (LabelNamed a _) b = LabelNamed a b
+    s (LabelCase a b _) c = LabelCase a b c
+    s (LabelDefault a _) b = LabelDefault a b
+
+-- | Point to the initializer part of a C @for@ statement. It also allows
+-- changing the type of the @for@ statement.
+cforh_init :: Lens' ForHeader (Either (Maybe Expr) Declaration)
+cforh_init = lens g s
+  where
+    g (ForExpr a _ _) = Left a
+    g (ForDecl a _ _) = Right a
+    s (ForExpr _ b c) (Left a) = ForExpr a b c
+    s (ForExpr _ b c) (Right a) = ForDecl a b c
+    s (ForDecl _ b c) (Left a) = ForExpr a b c
+    s (ForDecl _ b c) (Right a) = ForDecl a b c
+
+-- | Point to  the condition part of a C @for@ statement
+cforh_cond :: Lens' ForHeader (Maybe Expr)
+cforh_cond = lens g s
+  where
+    g (ForExpr _ c _) = c
+    g (ForDecl _ c _) = c
+    s (ForExpr a _ c) b = ForExpr a b c
+    s (ForDecl a _ c) b = ForDecl a b c
+
+-- | Point to  the post-action part of a C @for@ statement
+cforh_post :: Lens' ForHeader (Maybe Expr)
+cforh_post = lens g s
+  where
+    g (ForExpr _ _ p) = p
+    g (ForDecl _ _ p) = p
+    s (ForExpr a b _) c = ForExpr a b c
+    s (ForDecl a b _) c = ForDecl a b c
 
 makeLenses ''Type
 
