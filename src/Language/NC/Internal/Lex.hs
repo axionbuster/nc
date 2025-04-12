@@ -773,12 +773,12 @@ instance Monoid ISFX_ where
 -- find integral type that fits literal or else throw error.
 isfx_2inttyp wasdecimal = gated_go . integerneededbits
  where
-  i_ = Int_
-  l_ = Long_
-  ll_ = LongLong_
-  u_ = UInt_
-  ul_ = ULong_
-  ull_ = ULongLong_
+  i_ = PTInt
+  l_ = PTLong
+  ll_ = PTLongLong
+  u_ = PTUInt
+  ul_ = PTULong
+  ull_ = PTULongLong
   -- find: find first type that can contain the literal
   find bw = go2
    where
@@ -806,8 +806,8 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
     | wasdecimal = find bw [ll_]
     | otherwise = find bw [ll_, ull_]
   go bw (ISFX_ 1 2 0) = find bw [ull_]
-  go bw (ISFX_ 0 0 1) = pure $ BitInt_ $ min 2 bw
-  go bw (ISFX_ 1 0 1) = pure $ UBitInt_ bw
+  go bw (ISFX_ 0 0 1) = pure $ PTBitInt $ min 2 bw
+  go bw (ISFX_ 1 0 1) = pure $ PTUBitInt bw
   go _ _ = err IncorrectIntSuffix
 
 -- used to compute bitwidth for _BitInt(N) literals.
@@ -921,7 +921,7 @@ char_encpfx =
 --
 -- The range is NOT checked.
 character_constant_val = do
-  typ <- option Int_ char_encpfx
+  typ <- option PTInt char_encpfx
   -- 'quote' will consume any whitespace that comes after it.
   -- it's undesirable to do that for the left single quote.
   val <- between $(char '\'') quote value
@@ -964,7 +964,7 @@ character_constant_val = do
 
 -- | Parse a string literal.
 string_literal_val = do
-  typ <- option Char_ do
+  typ <- option PTChar do
     char_encpfx
       >> err
         ( InternalError

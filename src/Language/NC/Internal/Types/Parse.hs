@@ -185,7 +185,6 @@ module Language.NC.Internal.Types.Parse (
   emitdiagnostic,
   ist_preciseposbw,
   ist_precisebw,
-  int_canrepresent,
   comp_allow_block_shadowing,
   comp_separate_typedef_variable_ns,
   mkstate0,
@@ -745,7 +744,7 @@ data EnumType
     { _enum_sym :: Symbol,
       _enum_info :: EnumInfo,
       _enum_attrs :: [Attribute],
-      -- | optional member type; 'Int_' by default.
+      -- | optional member type; 'PTInt' by default.
       _enum_membertype :: Maybe Type
     }
   deriving (Eq, Show)
@@ -962,7 +961,9 @@ data Endianness = LittleEndian | BigEndian
 -- that encode integer character literals into a custom target encoding
 -- that isn't necessarily in Unicode.
 
--- | Currently, the real type that is equal to @wchar_t@.
+-- | @char8_t@, @char16_t@, etc. settings.
+--
+-- For the signedness of @char@, see 'ComplianceSettings'.
 data CharSettings = CharSettings
   { -- | We'll make @wchar_t@ unsigned for many reasons.
     cst_wchar_type :: PrimType,
@@ -1289,49 +1290,57 @@ ain = _psintset <$> ask
 --
 -- Signed integers have one fewer bit than the unsigned counterpart.
 --
--- For @char@, it depends on the signedness.
+-- For @char@, it depends on the signedness, which is controlled by
+-- 'ComplianceSettings'
 ist_preciseposbw :: PrimType -> Parser BitIntWidth
-ist_preciseposbw (PTInt _ (ILBitInt n)) = pure n
-ist_preciseposbw (PTInt s a) = do
-  x <- ist_pbw' a
-  pure $ x - fromIntegral (fromEnum (s == Signed))
- where
-  ist_pbw' ILShort = _ist_shortbitwidth <$> ain
-  ist_pbw' ILInt = _ist_intbitwidth <$> ain
-  ist_pbw' ILLong = _ist_longbitwidth <$> ain
-  ist_pbw' ILLongLong = _ist_longlongbitwidth <$> ain
-  ist_pbw' _ = error "ist_pbw' on _BitInt(N) ... impossible"
-ist_preciseposbw (PTChar (Just Unsigned)) = _ist_charbitwidth <$> ain
-ist_preciseposbw (PTChar (Just Signed)) = pred . _ist_charbitwidth <$> ain
-ist_preciseposbw (PTChar Nothing) = do
-  csg <- _ist_charissigned <$> ain
-  if csg
-    then pred . _ist_charbitwidth <$> ain
-    else _ist_charbitwidth <$> ain
-ist_preciseposbw (PTFloat f)
-  | FTComplex a <- f = (2 *) <$> ist_preciseposbw (PTFloat $ FTReal a)
-  | FTReal RFFloat <- f = _ist_floatbitwidth <$> ain
-  | FTReal RFDouble <- f = _ist_doublebitwidth <$> ain
-  | FTReal RFLongDouble <- f = _ist_longdoublebitwidth <$> ain
-  | FTReal RFDecimal128 <- f = pure 128
-  | FTReal RFDecimal32 <- f = pure 32
-  | FTReal RFDecimal64 <- f = pure 64
-ist_preciseposbw t =
-  err $
-    InternalError $
-      "ist_preciseposbw called on unsupported type "
-        ++ show t
+ist_preciseposbw p = case p ^. pt_getinttype of
+  Just (ITBitInt; ITBool) -> ist_precisebw p
+  Just ITChar ->
+    ist_precisebw p >>= \q -> do
+      c <- view comp_char_is_signed . _pscompliancesettings <$> ask
+      pure
+        if c
+          then q - 1
+          else q
+  _ ->
+    ist_precisebw p <&> \q -> case p ^. pt_getsign of
+      Just Signed -> q - 1
+      _ -> q
 
--- | Recall the exact number of bits needed to represent a scalar type.
+-- | Recall the exact number of bits needed to represent an integral type.
 ist_precisebw :: PrimType -> Parser BitIntWidth
-ist_precisebw (PTInt _ a) = case a of
-  ILShort -> _ist_shortbitwidth <$> ain
-  ILInt -> _ist_intbitwidth <$> ain
-  ILLong -> _ist_longbitwidth <$> ain
-  ILLongLong -> _ist_longlongbitwidth <$> ain
-  ILBitInt n -> pure n
-ist_precisebw (PTChar _) = _ist_charbitwidth <$> ain
-ist_precisebw t = ist_preciseposbw t
+ist_precisebw p = case p ^. pt_getinttype of
+  Just it -> q it <$> ain
+  _ -> error "ist_precisebw called on non-integral type"
+ where
+  q ITBool = _ist_charbitwidth
+  q ITChar = _ist_charbitwidth
+  q ITInt = _ist_intbitwidth
+  q ITShort = _ist_shortbitwidth
+  q ITLong = _ist_longbitwidth
+  q ITLongLong = _ist_longlongbitwidth
+  q ITBitInt = case p ^. pt_getbitwidth of
+    Just bw -> const bw
+    _ -> const undefined
+
+-- int_canrepresent :: Integer -> PrimType -> Parser Bool
+-- int_canrepresent i = \case
+--   PTBool -> pure $ i == 0 || i == 1
+--   t@(PTInt Signed _; PTChar (Just Signed)) -> rep Signed t
+--   t@(PTInt Unsigned _; PTChar (Just Unsigned)) -> rep Unsigned t
+--   t@(PTChar Nothing) -> do
+--     s <- _ist_charissigned <$> ain
+--     rep (if s then Signed else Unsigned) t
+--   _ -> err (InternalError "int_canrepresent called on a non-integral type")
+--  where
+--   rep Signed t = do
+--     bw <- ist_precisebw t
+--     let rngtop = 2 ^ (bw - 1) - 1
+--     let rngbot = negate $ 2 ^ (bw - 1)
+--     pure $ rngbot <= i && i <= rngtop
+--   rep Unsigned t = do
+--     bw <- ist_precisebw t
+--     pure $ i <= 2 ^ bw
 
 __comp_boollens :: Word64 -> Lens' ComplianceSettings Bool
 __comp_boollens bitfield = lens getter setter
@@ -1378,6 +1387,11 @@ comp_allow_block_shadowing = __comp_boollens 1
 comp_separate_typedef_variable_ns :: Lens' ComplianceSettings Bool
 comp_separate_typedef_variable_ns = __comp_boollens 2
 
+-- | If on, @char@ is backed by @signed char@. Otherwise, it's backed by
+-- @unsigned char@. Either way, it remains a distinct type.
+comp_char_is_signed :: Lens' ComplianceSettings Bool
+comp_char_is_signed = __comp_boollens 4
+
 -- | Default compliance settings.
 --
 --  - Allow block shadowing: ON
@@ -1387,26 +1401,6 @@ defaultcompliancesettings =
   mempty
     & (comp_allow_block_shadowing .~ True)
       . (comp_separate_typedef_variable_ns .~ True)
-
--- | See if an integer constant can be represented by a given type.
-int_canrepresent :: Integer -> PrimType -> Parser Bool
-int_canrepresent i = \case
-  PTBool -> pure $ i == 0 || i == 1
-  t@(PTInt Signed _; PTChar (Just Signed)) -> rep Signed t
-  t@(PTInt Unsigned _; PTChar (Just Unsigned)) -> rep Unsigned t
-  t@(PTChar Nothing) -> do
-    s <- _ist_charissigned <$> ain
-    rep (if s then Signed else Unsigned) t
-  _ -> err (InternalError "int_canrepresent called on a non-integral type")
- where
-  rep Signed t = do
-    bw <- ist_precisebw t
-    let rngtop = 2 ^ (bw - 1) - 1
-    let rngbot = negate $ 2 ^ (bw - 1)
-    pure $ rngbot <= i && i <= rngtop
-  rep Unsigned t = do
-    bw <- ist_precisebw t
-    pure $ i <= 2 ^ bw
 
 -- | Create a starter state.
 --
@@ -1424,7 +1418,7 @@ mkstate0 = do
   e <- newIORef mempty
   symtab <- newsymtable
   let is0 = IntegerSettings 8 16 32 64 64 True 32 64 64
-  let cs0 = CharSettings UInt_ UChar_ UShort_ UInt_ LittleEndian
+  let cs0 = CharSettings PTUInt PTUChar PTUShort PTUInt LittleEndian
   pure (ParserState e is0 cs0 symtab defaultcompliancesettings defaultsevpolicy)
  where
   newsymtable = liftIO do

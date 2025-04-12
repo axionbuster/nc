@@ -4,6 +4,7 @@ module Language.NC.Internal.Prelude (
   LazyByteString,
   Text,
   module Control.Applicative,
+  module Control.Category,
   module Control.Lens,
   module Control.Monad,
   module Control.Monad.Combinators,
@@ -31,6 +32,7 @@ module Language.NC.Internal.Prelude (
 ) where
 
 import Control.Applicative hiding (many, optional, some, (<|>))
+import Control.Category ((<<<), (>>>))
 import Control.Lens
 import Control.Monad
 import Control.Monad.Combinators hiding (

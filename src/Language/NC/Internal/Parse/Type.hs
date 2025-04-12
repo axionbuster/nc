@@ -67,8 +67,7 @@ type-specifier-qualifier ←
     identifier
   ) /
   'enum' ('[' '[' attribute? (',' attribute?)* ']' ']')? identifier?
-    (':' (type-specifier-qualifier ('[' '[' attribute? (',' attribute?)* ']'
-      ']')?)+ )?
+    (':' (type-specifier-qualifier ('[' '[' attribute? (',' attribute?)* ']' ']')?)+ )?
     ('{' (enumeration-constant ('[' '[' attribute? (',' attribute?)* ']' ']')?
       ('=' constant-expression)?)
       (',' (enumeration-constant ('[' '[' attribute? (',' attribute?)* ']' ']')?
@@ -224,7 +223,7 @@ node directly as parsing proceeds, from the base type outward.
 --     - First phase: Collect all tokens using `SpecQual`
 --       transformations
 --     - Second phase: Convert tokens to a base type (e.g.,
---       "unsigned long int" → ULong_)
+--       "unsigned long int" → PTULong)
 --     - Third phase: Apply decorators using `TSChangeType`
 --       transformations
 
@@ -548,52 +547,52 @@ tt2prim v =
     -- void
     0x0001 -> pure PTVoid
     -- char variants
-    0x0002 -> pure Char_ -- char
-    0x0102 -> pure SChar_ -- signed char
-    0x0202 -> pure UChar_ -- unsigned char
+    0x0002 -> pure PTChar -- char
+    0x0102 -> pure PTSChar -- signed char
+    0x0202 -> pure PTUChar -- unsigned char
     -- int variants (0x8)
-    0x0008 -> pure Int_ -- (sim.)
-    0x0108 -> pure Int_
-    0x0208 -> pure UInt_
+    0x0008 -> pure PTInt -- (sim.)
+    0x0108 -> pure PTInt
+    0x0208 -> pure PTUInt
     -- short variants
-    0x0004 -> pure Short_ -- short
-    0x000c -> pure Short_ -- short int
-    0x0104 -> pure Short_ -- signed short
-    0x010c -> pure Short_ -- signed short int
-    0x0204 -> pure UShort_ -- (sim.)
-    0x020c -> pure UShort_ -- (sim.)
+    0x0004 -> pure PTShort -- short
+    0x000c -> pure PTShort -- short int
+    0x0104 -> pure PTShort -- signed short
+    0x010c -> pure PTShort -- signed short int
+    0x0204 -> pure PTUShort -- (sim.)
+    0x020c -> pure PTUShort -- (sim.)
     -- long variants
-    0x0010 -> pure Long_ -- long
-    0x0018 -> pure Long_ -- long int
-    0x0110 -> pure Long_ -- (etc.)
-    0x0118 -> pure Long_
-    0x0210 -> pure ULong_
-    0x0218 -> pure ULong_
+    0x0010 -> pure PTLong -- long
+    0x0018 -> pure PTLong -- long int
+    0x0110 -> pure PTLong -- (etc.)
+    0x0118 -> pure PTLong
+    0x0210 -> pure PTULong
+    0x0218 -> pure PTULong
     -- long long variants
-    0x0030 -> pure LongLong_ -- (sim.)
-    0x0038 -> pure LongLong_
-    0x0130 -> pure LongLong_
-    0x0138 -> pure LongLong_
-    0x0230 -> pure ULongLong_
-    0x0238 -> pure ULongLong_
+    0x0030 -> pure PTLongLong -- (sim.)
+    0x0038 -> pure PTLongLong
+    0x0130 -> pure PTLongLong
+    0x0138 -> pure PTLongLong
+    0x0230 -> pure PTULongLong
+    0x0238 -> pure PTULongLong
     -- floating point types
-    0x0040 -> pure Float_
-    0x0080 -> pure Double_
-    0x0090 -> pure LongDouble_
+    0x0040 -> pure PTFloat
+    0x0080 -> pure PTDouble
+    0x0090 -> pure PTLongDouble
     -- complex types
-    0x0840 -> pure ComplexFloat_
-    0x0880 -> pure ComplexDouble_
-    0x0890 -> pure ComplexLongDouble_
+    0x0840 -> pure PTComplexFloat
+    0x0880 -> pure PTComplexDouble
+    0x0890 -> pure PTComplexLongDouble
     -- bool
-    0x0400 -> pure Bool_
+    0x0400 -> pure PTBool
     -- decimal types
-    0x1000 -> pure Decimal32_
-    0x2000 -> pure Decimal64_
-    0x4000 -> pure Decimal128_
+    0x1000 -> pure PTDecimal32
+    0x2000 -> pure PTDecimal64
+    0x4000 -> pure PTDecimal128
     -- bit int types
-    0x8000 -> pure $ BitInt_ 0
-    0x8100 -> pure $ BitInt_ 0
-    0x8200 -> pure $ BitInt_ 0
+    0x8000 -> pure $ PTBitInt 0
+    0x8100 -> pure $ PTBitInt 0
+    0x8200 -> pure $ PTBitInt 0
     -- error case
     _ -> _unktyptokcombo "tt2prim" v
 
@@ -882,8 +881,9 @@ typespecquals = do
         let bw = tt ^. tt_bitintwidth
          in if 0 < bw && bw < fromIntegral (maxBound :: BitIntWidth)
               then case bt0 of
-                BTPrim (PTInt signed (ILBitInt _)) ->
-                  pure $ BTPrim $ PTInt signed (ILBitInt $ fromIntegral bw)
+                BTPrim p ->
+                  let p' = p & pt_setbitwidth .~ fromIntegral bw
+                   in pure $ BTPrim p'
                 _ -> err $ InternalError "typespecquals: bt0 not BTPrim"
               else
                 err
