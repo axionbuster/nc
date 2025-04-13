@@ -939,7 +939,9 @@ data SymbolTable = SymbolTable
     -- | Current scope stack
     symtab_scopes :: !(IORef ScopeStack),
     -- | Types
-    symtab_types :: !(FastTable Symbol Type)
+    symtab_types :: !(FastTable Symbol Type),
+    -- | Labels
+    symtab_labels :: !(FastTable Symbol Statement)
   }
 
 -- | Bit widths of primitive integers. Pay especially close attention to
@@ -1436,7 +1438,8 @@ mkstate0 = do
     n <- H.new
     s <- ScopeStack . pure <$> H.new >>= newIORef
     t <- H.new
-    pure $ SymbolTable n s t
+    l <- H.new
+    pure $ SymbolTable n s t l
 
 -- | Pure \"parser\" to return a 'WithSpan'.
 --
@@ -1542,44 +1545,44 @@ instance Show DeclInit where
 -- | Point to the 'Symbol' for a 'Label'.
 clabel_sym :: Lens' Label Symbol
 clabel_sym = lens g s
-  where
-    g = \case
-      LabelNamed _ y -> y
-      LabelCase _ _ y -> y
-      LabelDefault _ y -> y
-    s (LabelNamed a _) b = LabelNamed a b
-    s (LabelCase a b _) c = LabelCase a b c
-    s (LabelDefault a _) b = LabelDefault a b
+ where
+  g = \case
+    LabelNamed _ y -> y
+    LabelCase _ _ y -> y
+    LabelDefault _ y -> y
+  s (LabelNamed a _) b = LabelNamed a b
+  s (LabelCase a b _) c = LabelCase a b c
+  s (LabelDefault a _) b = LabelDefault a b
 
 -- | Point to the initializer part of a C @for@ statement. It also allows
 -- changing the type of the @for@ statement.
 cforh_init :: Lens' ForHeader (Either (Maybe Expr) Declaration)
 cforh_init = lens g s
-  where
-    g (ForExpr a _ _) = Left a
-    g (ForDecl a _ _) = Right a
-    s (ForExpr _ b c) (Left a) = ForExpr a b c
-    s (ForExpr _ b c) (Right a) = ForDecl a b c
-    s (ForDecl _ b c) (Left a) = ForExpr a b c
-    s (ForDecl _ b c) (Right a) = ForDecl a b c
+ where
+  g (ForExpr a _ _) = Left a
+  g (ForDecl a _ _) = Right a
+  s (ForExpr _ b c) (Left a) = ForExpr a b c
+  s (ForExpr _ b c) (Right a) = ForDecl a b c
+  s (ForDecl _ b c) (Left a) = ForExpr a b c
+  s (ForDecl _ b c) (Right a) = ForDecl a b c
 
 -- | Point to  the condition part of a C @for@ statement
 cforh_cond :: Lens' ForHeader (Maybe Expr)
 cforh_cond = lens g s
-  where
-    g (ForExpr _ c _) = c
-    g (ForDecl _ c _) = c
-    s (ForExpr a _ c) b = ForExpr a b c
-    s (ForDecl a _ c) b = ForDecl a b c
+ where
+  g (ForExpr _ c _) = c
+  g (ForDecl _ c _) = c
+  s (ForExpr a _ c) b = ForExpr a b c
+  s (ForDecl a _ c) b = ForDecl a b c
 
 -- | Point to  the post-action part of a C @for@ statement
 cforh_post :: Lens' ForHeader (Maybe Expr)
 cforh_post = lens g s
-  where
-    g (ForExpr _ _ p) = p
-    g (ForDecl _ _ p) = p
-    s (ForExpr a b _) c = ForExpr a b c
-    s (ForDecl a b _) c = ForDecl a b c
+ where
+  g (ForExpr _ _ p) = p
+  g (ForDecl _ _ p) = p
+  s (ForExpr a b _) c = ForExpr a b c
+  s (ForDecl a b _) c = ForDecl a b c
 
 makeLenses ''Type
 

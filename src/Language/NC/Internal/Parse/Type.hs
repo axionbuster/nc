@@ -8,6 +8,9 @@ module Language.NC.Internal.Parse.Type (
   -- * Type name
   typename,
 
+  -- * Attributes
+  attrspecs,
+
   -- * Declaration
   declaration,
   declarator,
