@@ -1265,6 +1265,11 @@ symassoctype sym ty = do
   st <- asktab
   __throwable_insert st.symtab_types sym ty
 
+symassoclabel :: Label -> Parser ()
+symassoclabel label = do
+  let sym = view clabel_sym label
+  error "symassoclabel: not implemented"
+
 -- | Get the latest scope as a list or error out.
 symlatestscope :: String -> Parser (NonEmpty Str2Symbol)
 symlatestscope procname = do
@@ -1333,25 +1338,6 @@ ist_precisebw p = case p ^. pt_getinttype of
   q ITBitInt = case p ^. pt_getbitwidth of
     Just bw -> const bw
     _ -> const undefined
-
--- int_canrepresent :: Integer -> PrimType -> Parser Bool
--- int_canrepresent i = \case
---   PTBool -> pure $ i == 0 || i == 1
---   t@(PTInt Signed _; PTChar (Just Signed)) -> rep Signed t
---   t@(PTInt Unsigned _; PTChar (Just Unsigned)) -> rep Unsigned t
---   t@(PTChar Nothing) -> do
---     s <- _ist_charissigned <$> ain
---     rep (if s then Signed else Unsigned) t
---   _ -> err (InternalError "int_canrepresent called on a non-integral type")
---  where
---   rep Signed t = do
---     bw <- ist_precisebw t
---     let rngtop = 2 ^ (bw - 1) - 1
---     let rngbot = negate $ 2 ^ (bw - 1)
---     pure $ rngbot <= i && i <= rngtop
---   rep Unsigned t = do
---     bw <- ist_precisebw t
---     pure $ i <= 2 ^ bw
 
 __comp_boollens :: Word64 -> Lens' ComplianceSettings Bool
 __comp_boollens bitfield = lens getter setter
@@ -1566,7 +1552,7 @@ cforh_init = lens g s
   s (ForDecl _ b c) (Left a) = ForExpr a b c
   s (ForDecl _ b c) (Right a) = ForDecl a b c
 
--- | Point to  the condition part of a C @for@ statement
+-- | Point to the condition part of a C @for@ statement
 cforh_cond :: Lens' ForHeader (Maybe Expr)
 cforh_cond = lens g s
  where
@@ -1575,7 +1561,7 @@ cforh_cond = lens g s
   s (ForExpr a _ c) b = ForExpr a b c
   s (ForDecl a _ c) b = ForDecl a b c
 
--- | Point to  the post-action part of a C @for@ statement
+-- | Point to the post-action part of a C @for@ statement
 cforh_post :: Lens' ForHeader (Maybe Expr)
 cforh_post = lens g s
  where

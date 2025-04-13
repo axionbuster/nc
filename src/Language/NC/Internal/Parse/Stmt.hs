@@ -24,88 +24,84 @@ seq_many (ParserT p) = ParserT do
 
 -- | Parse a statement
 statement :: Parser Statement
-statement = do
-  as <- attrspecs
-  let label_continue l = StmtLabeled l <$> (colon *> statement)
-  let label = undefined
-      primaryblock =
-        branch_incur
-          ( StmtCompound
-              <$> seq_many do
-                choice
-                  [ BIDecl <$> declaration,
-                    BIStmt <$> statement,
-                    BILabel <$> label
-                  ]
-          )
-          $( switch_ws1
-               [|
-                 case _ of
-                   "if" -> do
-                     cond <- inpar expr_
-                     thenclause <- statement
-                     elseclause <- optional (else' >> statement)
-                     pure $ StmtIf cond thenclause elseclause
-                   "switch" -> StmtSwitch <$> inpar expr_ <*> statement
-                   "while" -> StmtWhile <$> inpar expr_ <*> statement
-                   "do" ->
-                     StmtDoWhile
-                       <$> statement
-                       <*> (while' >> inpar expr_)
-                   "for" -> do
-                     initcl <-
-                       option (Left Nothing)
-                         $ (Right <$> declaration)
-                         <|> (Left . Just <$> expr_ <* semicolon)
-                     testcl <- optional expr_ <* semicolon
-                     postcl <- optional expr_ <* semicolon
-                     bodycl <- statement
-                     let fh =
-                           ForExpr Nothing testcl postcl
-                             & cforh_init
-                             .~ initcl
-                     pure $ StmtFor fh bodycl
-                 |]
-           )
-      jumpstmt =
-        $( switch_ws1
-             [|
-               case _ of
-                 "goto" -> flip cut (BasicError "expected label") do
-                   StmtJump . JumpGoto . JGUnresolved <$> identifier
-                 "continue" -> flip cut (BasicError "expected ;") do
-                   semicolon $> StmtJump JumpContinue
-                 "break" -> flip cut (BasicError "expected ;") do
-                   semicolon $> StmtJump JumpBreak
-                 "return" ->
-                   flip cut (BasicError "expected expression") do
-                     StmtJump . JumpReturn <$> optional expr_
-               |]
-         )
-  $( switch_ws0
-       [|
-         case _ of
-           "case" ->
-             LabelCase as
-               <$> (CIEUnresolved <$> expr_)
-               <*> newsymbol
-               >>= label_continue
-           "default" ->
-             LabelDefault as <$> newsymbol >>= label_continue
-           _ ->
-             -- this backtracking is due to the need to backtrack on
-             -- the colon (:) to distinguish between labeled statements
-             -- vs. (primary-block or jump-statement).
-             choice
-               [ do
-                   -- FIXME: labels should belong to a separate namespace.
-                   -- I need to fix the symbol table/hierarchy of scopes.
-                   labelname <- identifier_def
-                   labelsym <- newsymbol <* colon
-                   symgivename labelsym labelname -- BAD!
-                   label_continue $ LabelNamed as labelsym,
-                 primaryblock,
-                 jumpstmt
-               ]
-         |]
-   )
+statement =
+  let cutcolon = cut colon (BasicError "expected :")
+      cutsemicolon = cut semicolon (BasicError "expected ;")
+      cutstmt = statement `cut` BasicError "expected statement"
+      cutlpar = lpar `cut` BasicError "expected ("
+      cutrpar = rpar `cut` BasicError "expected )"
+      cutparexpr = do
+        cutlpar
+        e <- expr_ `cut` BasicError "expected expression"
+        cutrpar
+        pure e
+   in do
+        as <- attrspecs
+        let label =
+              $( switch_ws0
+                   [|
+                     case _ of
+                       "case" ->
+                         LabelCase as
+                           <$> (CIEUnresolved <$> expr_)
+                           <*> newsymbol
+                           <* cutcolon
+                       "default" ->
+                         LabelDefault as <$> newsymbol <* cutcolon
+                       _ -> do
+                         labname <- identifier_def <* colon
+                         undefined labname
+                     |]
+               )
+            primaryblock =
+              branch_incur
+                ( StmtCompound
+                    <$> seq_many do
+                      choice
+                        [ BIDecl <$> declaration,
+                          BIStmt <$> statement,
+                          BILabel <$> label
+                        ]
+                )
+                $( switch_ws1
+                     [|
+                       case _ of
+                         "if" -> do
+                           cond <- cutparexpr
+                           thenclause <- cutstmt
+                           elseclause <- optional $ else' >> cutstmt
+                           pure $ StmtIf cond thenclause elseclause
+                         "switch" -> StmtSwitch <$> cutparexpr <*> cutstmt
+                         "while" -> StmtWhile <$> cutparexpr <*> cutstmt
+                         "do" ->
+                           StmtDoWhile
+                             <$> statement
+                             <*> (while' >> cutparexpr)
+                         "for" -> do
+                           cutlpar
+                           initcl <-
+                             (ForDecl <$> declaration)
+                               <|> (ForExpr <$> optional expr_ <* cutsemicolon)
+                           testcl <- optional expr_ <* cutsemicolon
+                           postcl <- optional expr_
+                           cutrpar
+                           bodycl <- cutstmt
+                           pure $ StmtFor (initcl testcl postcl) bodycl
+                       |]
+                 )
+            jumpstmt =
+              $( switch_ws1
+                   [|
+                     case _ of
+                       "goto" -> flip cut (BasicError "expected label") do
+                         StmtJump . JumpGoto . JGUnresolved <$> identifier
+                       "continue" -> cutsemicolon $> StmtJump JumpContinue
+                       "break" -> cutsemicolon $> StmtJump JumpBreak
+                       "return" -> StmtJump . JumpReturn <$> optional expr_
+                     |]
+               )
+        withOption
+          label
+          (\l -> StmtLabeled l <$> statement)
+          do (StmtExpr as <$> optional expr_) <|> primaryblock <|> jumpstmt
+        <* cutsemicolon
