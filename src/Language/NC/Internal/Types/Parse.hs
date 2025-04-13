@@ -95,7 +95,6 @@ module Language.NC.Internal.Types.Parse (
   init_isempty,
 
   -- * Supplemental information
-  Str2Symbol,
   ConstIntExpr (..),
   Record (..),
   RecordInfo (..),
@@ -150,20 +149,23 @@ module Language.NC.Internal.Types.Parse (
   defaultsevpolicy,
 
   -- * Symbol types and functions
-  Symbol (..),
+  Str2Symbol,
+  Symbol,
   SymbolKind (..),
-  SymbolTable (..),
-  ScopeStack (..),
-  ScopeInfo (..),
+  SymbolTable,
+  ScopeStack,
+  Scope,
   Str,
   newsymbol,
+  newscope,
   enterscope,
   exitscope,
   inscope,
   symgivename,
-  symlookup,
+  symlookup_mainns,
   symgettype,
   symassoctype,
+  symassoclabel,
 
   -- * Parser types and functions
   Parser,
@@ -579,7 +581,7 @@ newtype FuncSpec = FuncSpec {unfuncspec :: Int8}
   deriving (Monoid, Semigroup) via (Ior FuncSpec)
 
 -- | An abstract, unique symbol.
-newtype Symbol = Symbol {unsymbol :: Unique}
+newtype Symbol = Symbol Unique
   deriving (Eq)
 
 -- | Source alignment specifier
@@ -641,9 +643,6 @@ data QualifiedType
   }
   deriving (Eq, Show)
 
--- | An IO-based hash table from identifier to symbol.
-type Str2Symbol = FastTable Str Symbol
-
 -- | Is this record a @union@ or a @struct@?
 data RecordType
   = RecordStruct
@@ -662,7 +661,7 @@ data Record
     -- | Any attributes
     _rec_attrs :: [Attribute],
     -- | Member name to symbol
-    _rec_membernames :: FastTable Str Symbol
+    _rec_membernames :: Scope
   }
   deriving (Show)
 
@@ -781,7 +780,7 @@ data FuncInfo = FuncInfo
     -- | Followed by a variadic argument list?
     _fun_variadic :: Variadic,
     -- | Names of parameters, linked to symbols.
-    _fun_paramnames :: Str2Symbol
+    _fun_paramnames :: Scope
   }
   deriving (Show)
 
@@ -918,30 +917,28 @@ data SymbolKind
 -- | Fast IO-based hash table for global symbol information
 type FastTable k v = H.BasicHashTable k v
 
--- | Information stored about a symbol within a scope
-data ScopeInfo = ScopeInfo
-  { -- | Symbol's name
-    scope_name :: !Str,
-    -- | Symbol's kind
-    scope_kind :: !SymbolKind
+-- | An IO-based hash table from identifier to symbol.
+type Str2Symbol = FastTable Str Symbol
+
+-- | A scope. We separate names into namespaces.
+data Scope = Scope
+  { _scope_mainns_str2sym :: Str2Symbol,
+    _scope_labns_str2sym :: Str2Symbol
   }
 
--- | Stack of scopes for maintaining lexical environments
-newtype ScopeStack = ScopeStack
-  { -- | Chain of scope tables, innermost first
-    unscopestack :: [FastTable Str Symbol]
-  }
+-- | Stack of scopes for maintaining lexical environments.
+newtype ScopeStack = ScopeStack [Scope] -- innermost on top
 
 -- | Complete symbol table consisting of global and scoped information
 data SymbolTable = SymbolTable
   { -- | Fast global unique -> identifier table
-    symtab_names :: !(FastTable Symbol Str),
+    _symtab_names :: !(FastTable Symbol Str),
     -- | Current scope stack
-    symtab_scopes :: !(IORef ScopeStack),
+    _symtab_scopes :: !(IORef ScopeStack),
     -- | Types
-    symtab_types :: !(FastTable Symbol Type),
+    _symtab_types :: !(FastTable Symbol Type),
     -- | Labels
-    symtab_labels :: !(FastTable Symbol Statement)
+    _symtab_labels :: !(FastTable Symbol Statement)
   }
 
 -- | Bit widths of primitive integers. Pay especially close attention to
@@ -1142,6 +1139,9 @@ instance Exception Error
 instance IsString Error where
   fromString = BasicError
 
+instance Show Scope where
+  show _ = "<Scope>"
+
 -- | Lens for the clause part of an 'Attribute'
 attr_clause :: Lens' Attribute Str
 attr_clause = lens getter setter
@@ -1218,28 +1218,28 @@ asktab = _pssymtab <$> ask
 symgivename :: Symbol -> Str -> Parser ()
 symgivename sym name = do
   st <- asktab
-  __throwable_insert st.symtab_names sym name
+  __throwable_insert st._symtab_names sym name
   (s :| _) <- symlatestscope "symgivename"
-  __throwable_insert s name sym
+  __throwable_insert s._scope_mainns_str2sym name sym
 
 -- | Do a cascading lookup for a symbol given the name from the current
 -- symbol scope. If the symbol cannot be found, fail the parser instead of
 -- throwing an error. Note: if the scope doesn't exist at all (empty stack),
 -- then it is considered an error, so an error will be thrown.
-symlookup :: Str -> Parser Symbol
-symlookup name = do
-  (s :| ss) <- symlatestscope "symlookup"
+symlookup_mainns :: Str -> Parser Symbol
+symlookup_mainns name = do
+  (s :| ss) <- symlatestscope "symlookup_mainns"
   (s : ss) & fix \r -> \case
     [] -> failed
     (t : tt) -> do
-      liftIO (H.lookup t name) >>= \case
+      liftIO (H.lookup t._scope_mainns_str2sym name) >>= \case
         Nothing -> r tt
         Just sym -> pure sym
 
 -- | Look up the type for a symbol. If it isn't registered, fail.
 symgettype :: Symbol -> Parser Type
 symgettype sym = do
-  tys <- symtab_types <$> asktab
+  tys <- _symtab_types <$> asktab
   liftIO (H.lookup tys sym) >>= \case
     Nothing -> failed
     Just ty -> pure ty
@@ -1255,34 +1255,43 @@ __throwable_insert tab a b = do
     Just{} -> (Just b, True)
     Nothing -> (Just b, False)
   comp <- _pscompliancesettings <$> ask
-  if oopsies && not (comp ^. comp_allow_block_shadowing)
-    then err AlreadyDefinedInScope
-    else pure ()
+  when (oopsies && not (comp ^. comp_allow_block_shadowing)) do
+    err AlreadyDefinedInScope
 
 -- | Associate a symbol with a type.
 symassoctype :: Symbol -> Type -> Parser ()
 symassoctype sym ty = do
   st <- asktab
-  __throwable_insert st.symtab_types sym ty
+  __throwable_insert st._symtab_types sym ty
 
-symassoclabel :: Label -> Parser ()
-symassoclabel label = do
+-- | It's like 'symgivename', but it is for labels, not the main namespace
+-- (of functions, objects, and typedefs).
+symassoclabel :: Label -> Str -> Parser ()
+symassoclabel label name = do
+  st <- asktab
   let sym = view clabel_sym label
+  __throwable_insert st._symtab_names sym name
+  (s :| _) <- symlatestscope "symassoclabel"
+  __throwable_insert s._scope_labns_str2sym name sym
   error "symassoclabel: not implemented"
 
 -- | Get the latest scope as a list or error out.
-symlatestscope :: String -> Parser (NonEmpty Str2Symbol)
+symlatestscope :: String -> Parser (NonEmpty Scope)
 symlatestscope procname = do
-  s <- symtab_scopes <$> asktab
+  s <- _symtab_scopes <$> asktab
   readIORef s >>= \case
     ScopeStack [] -> err $ InternalError $ procname ++ ": empty stack"
     ScopeStack (t : ts) -> pure (t :| ts)
 
+-- | Create a brand-new 'Scope'
+newscope :: Parser Scope
+newscope = liftIO $ Scope <$> H.new <*> H.new
+
 -- | Enter a new scope
-enterscope :: Str2Symbol -> Parser ()
+enterscope :: Scope -> Parser ()
 enterscope nametab = do
   st <- asktab
-  modifyIORef' (symtab_scopes st) \(ScopeStack scopes) ->
+  modifyIORef' (_symtab_scopes st) \(ScopeStack scopes) ->
     ScopeStack (nametab : scopes)
 
 -- | Exit the current scope
@@ -1290,10 +1299,10 @@ exitscope :: Parser ()
 exitscope = do
   st <- asktab
   (_ :| s) <- symlatestscope "exitscope"
-  writeIORef st.symtab_scopes (ScopeStack s)
+  writeIORef st._symtab_scopes (ScopeStack s)
 
 -- | Parse @p@ in the given symbol table and then after @p@ finishes pop it.
-inscope :: Str2Symbol -> Parser a -> Parser a
+inscope :: Scope -> Parser a -> Parser a
 inscope nametab p = do
   enterscope nametab
   pfinally p exitscope
@@ -1422,7 +1431,7 @@ mkstate0 = do
     -- create a new symbol table and also the initial (global)
     -- stack scope.
     n <- H.new
-    s <- ScopeStack . pure <$> H.new >>= newIORef
+    s <- ScopeStack . pure <$> (Scope <$> H.new <*> H.new) >>= newIORef
     t <- H.new
     l <- H.new
     pure $ SymbolTable n s t l
@@ -1494,7 +1503,7 @@ ty_qualified = lens getter setter
 
 -- | Create a new record in IO.
 mkrecord :: RecordType -> Symbol -> RecordInfo -> [Attribute] -> Parser Record
-mkrecord a b c d = Record a b c d <$> liftIO H.new
+mkrecord a b c d = Record a b c d <$> newscope
 
 -- | Lifted 'DT.traceIO'
 traceIO :: (MonadIO m) => String -> m ()
@@ -1505,19 +1514,21 @@ dbg_dumpsyms :: Parser ()
 dbg_dumpsyms = do
   tab <- asktab
   -- print the scopes...
-  let go i (sc : scs) = do
+  let go i projection (sc : scs) = do
         traceIO $ printf "Scope %v:" i
         jj <- newIORef (0 :: Int)
-        flip H.mapM_ sc \(name, sym) -> do
-          typ <- H.lookup tab.symtab_types sym
+        flip H.mapM_ (projection sc) \(name, sym) -> do
+          typ <- H.lookup tab._symtab_types sym
           let typst = maybe "" show typ
           j <- readIORef jj <* modifyIORef' jj succ
           traceIO $ printf "  %v: %s %s" j (C8.unpack name) typst
         traceIO ""
-        go (i + 1) scs
-      go _ [] = pure ()
-  ScopeStack scopes <- readIORef tab.symtab_scopes
-  liftIO $ go (0 :: Int) scopes
+        go (i + 1) projection scs
+      go _ _ [] = pure ()
+  ScopeStack scopes <- readIORef tab._symtab_scopes
+  traceIO "Main namespace:"
+  liftIO $ go (0 :: Int) _scope_mainns_str2sym scopes
+  liftIO $ go (0 :: Int) _scope_labns_str2sym scopes
 
 -- | A 'Getter' to quickly decide if an initializer is empty (i.e., @{}@).
 init_isempty :: Getter Initializer Bool

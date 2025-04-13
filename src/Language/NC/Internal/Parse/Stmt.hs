@@ -50,7 +50,8 @@ statement =
                          LabelDefault as <$> newsymbol <* cutcolon
                        _ -> do
                          labname <- identifier_def <* colon
-                         undefined labname
+                         l <- LabelNamed as <$> newsymbol
+                         symassoclabel l labname $> l
                      |]
                )
             primaryblock =

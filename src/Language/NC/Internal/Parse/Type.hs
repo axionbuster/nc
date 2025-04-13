@@ -22,7 +22,6 @@ module Language.NC.Internal.Parse.Type (
 
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
-import Data.HashTable.IO qualified as H
 import Data.Monoid
 import Language.NC.Internal.Lex
 import {-# SOURCE #-} Language.NC.Internal.Parse.Op
@@ -768,7 +767,7 @@ typespecqual = do
   con_struct a b c d = pure $ Record RecordStruct a b c d
   con_union a b c d = pure $ Record RecordUnion a b c d
   handlerecord tok bit con = do
-    membernames <- liftIO H.new
+    membernames <- newscope
     sym <- newsymbol
     record <-
       structorunion_body sym membernames
@@ -789,7 +788,7 @@ typespecqual = do
           prepush TStEnum tst_enum
         ]
   handletypedefname = do
-    ty <- identifier >>= symlookup >>= symgettype
+    ty <- identifier >>= symlookup_mainns >>= symgettype
     pure
       . mconcat
       . map SpecQual
@@ -1041,7 +1040,7 @@ commondeclarator declmode sym = do
     f <- inpar do
       -- we allocate a new scope (symbol table) for parameter names,
       -- which will be embedded into the FuncInfo we return.
-      stab <- liftIO H.new
+      stab <- newscope
       (ps, var) <-
         branch
           tripledot
@@ -1091,12 +1090,12 @@ commondeclarator declmode sym = do
 -- a new symbol and optionally tag.
 structorunion_body ::
   Symbol ->
-  Str2Symbol ->
+  Scope ->
   Parser
     ( ( Symbol ->
         RecordInfo ->
         [Attribute] ->
-        Str2Symbol ->
+        Scope ->
         a
       ) ->
       a
