@@ -127,7 +127,7 @@ pr_info = lens getter setter
         0x00C0 -> PrimLongLong Unsigned -- bits 5-6-7=110: unsigned long long
         0x0060 -> PrimBool -- bits 5-6-7=011: _Bool
         0x00E0 -> PrimVoid -- bits 5-6-7=111: void
-         -- Handle special cases and signed variants
+        -- Handle special cases and signed variants
         0x00F0 -> PrimNullptr -- nullptr_t
         0x8000 -> PrimInt Signed -- signed int
         0x8080 -> PrimShort Signed -- signed short
