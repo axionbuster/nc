@@ -201,7 +201,7 @@ cast_ =
   ( lpar
       >> ExprCast
       <$> (typename <* cutrpar)
-      <*> cut cast_ (BasicError "expected an expression (cast_)")
+      <*> pcut cast_ (BasicError "expected an expression (cast_)")
   )
     <|> unary
 
@@ -259,14 +259,14 @@ postfix = primary >>= go
    where
     generic =
       inpar do
-        a <- assign <* cut comma (MissingSeparator ",")
+        a <- assign <* pcut comma (MissingSeparator ",")
         b <- genassoc `sepBy1` comma
         pure $ ExprGeneric a b
      where
       genassoc = do
         let tynam = branch default' (pure Nothing) $ Just <$> typename
-        tt <- cut tynam MalformedGenericExpression
-        cut colon MalformedGenericExpression
+        tt <- pcut tynam MalformedGenericExpression
+        pcut colon MalformedGenericExpression
         GenAssoc tt <$> assign
     -- we need 'paren' to cope with failure because we parse this and
     -- if it doesn't work we will try to parse a cast_ expression.

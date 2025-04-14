@@ -279,13 +279,13 @@ _rsq = lx0 $(switch [|case _ of "]" -> pure (); ":>" -> pure ()|])
   closing = $(switch [|case _ of "}" -> pure (); "%>" -> pure ()|])
 
 -- some cut versions of closing tokens
-cutrpar = rpar `cut` BasicError "expected )"
+cutrpar = rpar `pcut` BasicError "expected )"
 
-cutrcur = rcur `cut` BasicError "expected }"
+cutrcur = rcur `pcut` BasicError "expected }"
 
-cutrsqb = rsqb `cut` BasicError "expected ]"
+cutrsqb = rsqb `pcut` BasicError "expected ]"
 
-cutrdbsqb = rdbsqb `cut` BasicError "expcted ]]"
+cutrdbsqb = rdbsqb `pcut` BasicError "expcted ]]"
 
 -- | Parse o. If ok, parse p and then parse c and return what p returns.
 -- If o doesn't parse, then parse q. Usage: @branch_between o c p q@

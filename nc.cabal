@@ -22,7 +22,8 @@ common lang
                             TemplateHaskell, OrPatterns, MagicHash,
                             ExtendedLiterals, PatternSynonyms,
                             OverloadedRecordDot, MultiWayIf, RecordWildCards,
-                            DerivingStrategies, DerivingVia
+                            DerivingStrategies, DerivingVia,
+                            MultilineStrings
     default-language:       GHC2024
 
 common optim

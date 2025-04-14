@@ -55,13 +55,13 @@ zerostmt = StmtExpr [] Nothing
 statement_ :: OnEmpty Statement -> Parser Statement
 statement_ oespolicy =
   let self = statement_ oespolicy
-      cutcolon = cut colon (BasicError "expected :")
-      cutsemicolon = cut semicolon (BasicError "expected ;")
-      cutstmt = statement `cut` BasicError "expected statement"
-      cutlpar = lpar `cut` BasicError "expected ("
+      cutcolon = pcut colon (BasicError "expected :")
+      cutsemicolon = pcut semicolon (BasicError "expected ;")
+      cutstmt = statement `pcut` BasicError "expected statement"
+      cutlpar = lpar `pcut` BasicError "expected ("
       cutparexpr = do
         cutlpar
-        e <- expr_ `cut` BasicError "expected expression"
+        e <- expr_ `pcut` BasicError "expected expression"
         cutrpar
         pure e
    in do
@@ -123,7 +123,7 @@ statement_ oespolicy =
               $( switch_ws1
                    [|
                      case _ of
-                       "goto" -> flip cut (BasicError "expected label") do
+                       "goto" -> flip pcut (BasicError "expected label") do
                          StmtJump . JumpGoto . JGUnresolved <$> identifier
                        "continue" -> pure $ StmtJump JumpContinue
                        "break" -> pure $ StmtJump JumpBreak

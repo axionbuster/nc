@@ -185,6 +185,8 @@ module Language.NC.Internal.Types.Parse (
   runandgetspan,
   pwithspan,
   pcatch,
+  pcatchlog,
+  pcut,
   pfinally,
   p_onexception,
   emiterror,
@@ -200,6 +202,7 @@ module Language.NC.Internal.Types.Parse (
   traceIO,
   dbg_dumpsyms,
   dbg_runp,
+  dbg_dumperrs,
 ) where
 
 import Control.Exception
@@ -211,6 +214,7 @@ import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as C8
 import Data.ByteString.Lazy (LazyByteString)
+import Data.Foldable
 import Data.Functor
 import Data.HashTable.IO qualified as H
 import Data.Hashable (Hashable (..))
@@ -1450,6 +1454,15 @@ mkstate0 = do
 pwithspan :: a -> Span -> Parser (WithSpan a)
 pwithspan = (pure .) . flip WithSpan
 
+-- | Catch, log and propagate the error.
+pcatchlog :: Parser a -> Parser a
+pcatchlog p = pcatch p err
+
+-- | Like 'FP.cut', but automatically catch, log, and propagate
+-- the error.
+pcut :: Parser a -> Error -> Parser a
+pcut p e = pcatchlog (p `FP.cut` e)
+
 -- | Parse with @p@; on error, record with span and then handle
 -- it with @q@. Usage: @pcatch p q@.
 pcatch :: Parser a -> (Error -> Parser a) -> Parser a
@@ -1469,8 +1482,57 @@ pfinally p q = do
   q $> a
 
 -- | Parse; on error, record error and then rethrow.
-p_onexception :: Parser a -> (Parser b) -> Parser a
+p_onexception :: Parser a -> Parser b -> Parser a
 p_onexception p q = pcatch p (\e -> q >> err e)
+
+-- | Dump errors to the console.
+dbg_dumperrs :: ByteString -> Parser ()
+dbg_dumperrs orig = do
+  ask <&> _pserrors >>= readIORef >>= \es -> do
+    traceIO "dbg_dumperrs\n"
+    let positions2 = es <&> aespn
+        positions = es & concatMap \e -> let Span s t = e.aespn in [s, t]
+        -- FlatParse (line, col) are zero-based. That's not what
+        -- we usually expect. posLineCols uses an algorithm that
+        -- only traverses the orig ByteString once, so we provide
+        -- it the positions in bulk, and then reassemble the s-t pairs
+        -- that represents the spans.
+        strposes = FP.posLineCols orig positions <&> bimap succ succ
+        strspans =
+          strposes & fix \r -> \case
+            [] -> []
+            _ : [] -> []
+            x : y : zs -> (x, y) : r zs
+    forM_ (zip3 (toList es) (toList positions2) strspans)
+      \(e, Span s t, ((sl, sc), (tl, tc))) -> do
+        let prettyshowlist [] = "<nothing>"
+            prettyshowlist xs = show xs
+        -- locate the lines for printing
+        FP.setPos s
+        ls <- fix \r -> do
+          here <- FP.getPos
+          if here <= t
+            then (:) <$> FP.takeLine <*> r
+            else pure []
+        traceIO $
+          printf
+            """
+            error: %s
+            where: (%v:%v)-(%v:%v)
+            level: %s
+            related:
+              %s
+            listing:
+            %s\n
+            """
+            (show e.aeerr)
+            sl
+            sc
+            tl
+            tc
+            (show e.aesev)
+            (prettyshowlist e.aerel)
+            (unlines ls)
 
 -- | Run a parser and return a 'WithSpan'.
 runandgetspan :: Parser a -> Parser (WithSpan a)
@@ -1590,10 +1652,12 @@ cforh_post = lens g s
   s (ForDecl a b _) c = ForDecl a b c
 
 -- | Run a parser. Note: it takes care of any initial whitespace.
+-- It also dumps any errors at the end for good measure to the console.
 dbg_runp :: (MonadIO m) => Parser a -> String -> m (Result a)
 dbg_runp p s = liftIO do
   st <- mkstate0
-  runParserIO (ws0 >> p) st 0 . strToUtf8 $ s
+  let t = strToUtf8 s
+  runParserIO (ws0 >> pfinally p (dbg_dumperrs t)) st 0 t
 
 makeLenses ''Type
 

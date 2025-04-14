@@ -915,7 +915,7 @@ typespecquals = do
 attrspecs :: Parser [Attribute]
 attrspecs = chainr (<>) a (pure mempty)
  where
-  a = branch_indbsqb (cut (attribute `sepBy` comma) e) failed
+  a = branch_indbsqb (pcut (attribute `sepBy` comma) e) failed
   e = BasicError "this attribute isn't understood"
   attribute = attrtok <*> option mempty (inpar baltoks)
   baltoks = byteStringOf $ skipMany $ skipSatisfy (`notElem` "(){}[]")
@@ -997,7 +997,7 @@ commondeclarator declmode sym = do
   pointer =
     Declarator <$> do
       star
-      flip cut BadPointerSyntax do
+      flip pcut BadPointerSyntax do
         attrs <- attrspecs
         qual <- qualifiers
         -- here, we are careful to qualify the *pointer* itself, not the
@@ -1117,7 +1117,7 @@ structorunion_body sym tab = do
   def maybename = do
     symgivename sym `whenjust` maybename
     inscope tab do
-      flip cut BadStructOrUnionDefinition do
+      flip pcut BadStructOrUnionDefinition do
         let sa = pure . RecordStaticAssertion <$> static_assert
             field = do
               attrs <- attrspecs
@@ -1163,7 +1163,7 @@ static_assert = do
     e <- CIEUnresolved <$> expr_
     l <- optional (comma >> string_literal_val)
     pure $ StaticAssertion e l
-  cut semicolon (MissingSeparator ";")
+  pcut semicolon (MissingSeparator ";")
   pure s
 
 -- | Parse an @enum@ declaration or definition.
@@ -1180,7 +1180,7 @@ enum_body = do
             attrs <- attrspecs
             value <- optional do
               equal
-              cut (CIEUnresolved <$> expr_) ExpectedExpression
+              pcut (CIEUnresolved <$> expr_) ExpectedExpression
             pure $ EnumConst sym attrs value
         pure $ EnumType sym info attrs membtype
   withOption
