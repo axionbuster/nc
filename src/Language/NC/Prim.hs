@@ -105,7 +105,7 @@ instance Show Prim where
     showParen (d > 10) $
       ("Prim " ++) . showsPrec 11 (s ^. pr_info)
 
--- | Goes back and forth between the real 'Prim' representation
+-- | Go back and forth between the real 'Prim' representation
 -- and the information stored.
 pr_info :: Lens' Prim PrimInfo
 pr_info = lens getter setter
