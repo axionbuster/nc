@@ -1222,9 +1222,10 @@ bracedinitializer :: Parser Initializer
 bracedinitializer =
   InitBraced
     <$> do
-      (InitItem <$> designator `manyTill` equal <*> initializer)
+      (InitItem <$> designators <*> initializer)
         `sepEndBy` comma
  where
+  designators = option [] $ designator `manyTill` equal
   designator = do
     let ardsg = DesignatorIndex . CIEUnresolved <$> expr_
     $( switch_ws0
@@ -1233,7 +1234,6 @@ bracedinitializer =
              "[" -> ardsg <* rsqb
              "<:" -> ardsg <* rsqb
              "." -> DesignatorMember . DMUnresolved <$> identifier
-             "=" -> failed
            |]
      )
 

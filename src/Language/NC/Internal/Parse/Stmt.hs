@@ -47,6 +47,10 @@ statement = statement_ (const id)
 statement0 :: Parser Statement
 statement0 = statement_ option
 
+-- | The zero statement
+zerostmt :: Statement
+zerostmt = StmtExpr [] Nothing
+
 -- | Parse a statement
 statement_ :: OnEmpty Statement -> Parser Statement
 statement_ oespolicy =
@@ -112,7 +116,7 @@ statement_ oespolicy =
                            testcl <- optional expr_ <* cutsemicolon
                            postcl <- optional expr_
                            cutrpar
-                           bodycl <- cutstmt
+                           bodycl <- statement <|> (cutsemicolon $> zerostmt)
                            pure $ StmtFor (initcl testcl postcl) bodycl
                        |]
                  )
@@ -153,10 +157,13 @@ _dbg_example0 =
       /* Switch with fallthrough cases, nested blocks and declarations */
       switch (argv[1][0]) {
         case 'a': case 'A': {
-          double temp = 0.0;
+          /* our parser does not support interpreting floating points yet */
+          /* double temp = 0.0; */
+          long temp = 0;
           for (int i = 0; i < count; ++i) {
             if (i % 2) continue;
-            temp += i * 3.14;
+            /* temp += i * 3.14; */
+            temp += i * 314;
           }
           result = (int)temp;
           /* Intentional fallthrough */

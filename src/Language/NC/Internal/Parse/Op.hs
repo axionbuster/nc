@@ -111,7 +111,14 @@ bitand = do
   go a
  where
   go a = option a do
-    ampersand
+    -- need to distinguish between:
+    --  a && b -- ExprAnd
+    -- and
+    --  a & & b -- ExprBitAnd and ExprAddrOf, thus a & (&b)
+    -- dbamp consumes whitespace that comes after so there's a potential
+    -- of inefficiency; i use the $(string "&&") parser, which
+    -- will not consume whitespace.
+    lookahead ($(string "&&") `fails`) >> ampersand
     b <- rel
     go (ExprBitAnd a b)
 
@@ -190,10 +197,7 @@ mul = do
 
 cast_ =
   -- can't really use branch_inpar because it needs to be followed up by cast_.
-  branch
-    $(char '(')
-    (skipBack 1 >> ws0 >> ExprCast <$> inpar typename <*> cast_)
-    unary
+  branch lpar (ExprCast <$> (typename <* rpar) <*> cast_) unary
 
 unary =
   $( switch_ws0
