@@ -1,12 +1,61 @@
+-- |
+-- Module      : Language.NC.Prim
+-- Description : Primitive C language types and their efficient encoding
+-- Copyright   : (c) 2024-2025
+-- License     : BSD-3-Clause
+-- Maintainer  : axionbuster@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
+--
+-- This module defines the representation of primitive C types in the NC
+-- compiler. Types are encoded in a space-efficient bit-packed representation as
+-- a 'Word16':
+--
+-- * Primitive types include standard C types like int, char, long, float, etc.
+-- * The bit layout encodes information about signedness, size, and special
+--   categories
+-- * Special provision is made for C23's _BitInt(N) type with variable bit width
+--
+-- The implementation uses a binary encoding that combines type category bits
+-- with additional metadata like signedness (bit 15) and whether it's a _BitInt
+-- (bit 14).
 module Language.NC.Prim (
+  -- * Types
   Prim,
   Sign (..),
   Complex (..),
   FloatCategory (..),
   PrimInfo (..),
   Word16,
+
+  -- * Lenses
   pr_info,
   pc_si,
+
+  -- * Common primitive type constants
+  pr_int,
+  pr_uint,
+  pr_long,
+  pr_ulong,
+  pr_short,
+  pr_ushort,
+  pr_char,
+  pr_uchar,
+  pr_schar,
+  pr_longlong,
+  pr_ulonglong,
+  pr_bool,
+  pr_void,
+  pr_nullptr,
+  pr_float,
+  pr_double,
+  pr_longdouble,
+  pr_cfloat,
+  pr_cdouble,
+  pr_clongdouble,
+  pr_decimal32,
+  pr_decimal64,
+  pr_decimal128,
 ) where
 
 import Control.Lens
@@ -42,7 +91,9 @@ newtype Prim = Prim Word16
   deriving (Eq) via Word16
 
 instance Show Prim where
-  showsPrec d s = ("Prim (" ++) . showsPrec d (s ^. pr_info) . (")" ++)
+  showsPrec d s =
+    showParen (d > 10) $
+      ("Prim " ++) . showsPrec 11 (s ^. pr_info)
 
 -- | Goes back and forth between the real 'Prim' representation
 -- and the information stored.
@@ -185,7 +236,7 @@ data PrimSignedInteger
 -- | Construct a 'PrimSignedInteger' with bit width 0, and match
 -- against a 'PrimSignedInteger' regardless of bit width.
 pattern PSI0 :: SIntegerCategory -> Sign -> PrimSignedInteger
-pattern PSI0 i s <- PSI i s _
+pattern PSI0 i s <- PSI i s ~_
   where
     PSI0 i s = PSI i s 0
 
@@ -197,9 +248,11 @@ instance Eq PrimSignedInteger where
 -- | Bit width information gets hidden except for @\_BitInt(...)@.
 instance Show PrimSignedInteger where
   showsPrec d (PSI SICBitInt s w) =
-    ("PSI SICBitInt " ++) . showsPrec d s . (" " ++) . showsPrec d w
+    showParen (d > 10) $
+      ("PSI SICBitInt " ++) . showsPrec 11 s . (" " ++) . showsPrec 11 w
   showsPrec d (PSI c s ~_) =
-    ("PSI " ++) . showsPrec d c . (" " ++) . showsPrec d s
+    showParen (d > 10) $
+      ("PSI " ++) . showsPrec 11 c . (" " ++) . showsPrec 11 s
 
 -- | For a signed or unsigned integer type, get the sign information.
 -- For @\_BitInt(...)@ types, also get the bit int width.
@@ -221,3 +274,97 @@ pc_si = prism' make destroy
     PrimLongLong s -> Just $ PSI0 SICLongLong s
     PrimBitInt s w -> Just $ PSI SICBitInt s w
     ~_ -> Nothing
+
+-- * Common primitive type constants for easier use
+
+-- | Signed @int@ type in C
+pr_int :: Prim
+pr_int = Prim 0x8000
+
+-- | Unsigned @int@ type in C
+pr_uint :: Prim
+pr_uint = Prim 0x0000
+
+-- | Signed @long@ type in C
+pr_long :: Prim
+pr_long = Prim 0x8040
+
+-- | Unsigned @long@ type in C
+pr_ulong :: Prim
+pr_ulong = Prim 0x0040
+
+-- | Signed @short@ type in C
+pr_short :: Prim
+pr_short = Prim 0x8080
+
+-- | Unsigned @short@ type in C
+pr_ushort :: Prim
+pr_ushort = Prim 0x0080
+
+-- | Regular @char@ type in C (no explicit sign)
+pr_char :: Prim
+pr_char = Prim 0x0020
+
+-- | Explicit @signed char@ type in C
+pr_schar :: Prim
+pr_schar = Prim 0x80A0
+
+-- | Explicit @unsigned char@ type in C
+pr_uchar :: Prim
+pr_uchar = Prim 0x00A0
+
+-- | Signed @long long@ type in C
+pr_longlong :: Prim
+pr_longlong = Prim 0x80C0
+
+-- | Unsigned @long long@ type in C
+pr_ulonglong :: Prim
+pr_ulonglong = Prim 0x00C0
+
+-- | Boolean type (@_Bool@) in C
+pr_bool :: Prim
+pr_bool = Prim 0x0060
+
+-- | The @void@ type in C
+pr_void :: Prim
+pr_void = Prim 0x00E0
+
+-- | The @nullptr_t@ type in C++
+pr_nullptr :: Prim
+pr_nullptr = Prim 0x00F0
+
+-- | Real @float@ type in C
+pr_float :: Prim
+pr_float = Prim 0x0010
+
+-- | Real @double@ type in C
+pr_double :: Prim
+pr_double = Prim 0x0008
+
+-- | Real @long double@ type in C
+pr_longdouble :: Prim
+pr_longdouble = Prim 0x0018
+
+-- | Complex @float@ type in C
+pr_cfloat :: Prim
+pr_cfloat = Prim 0x0014
+
+-- | Complex @double@ type in C
+pr_cdouble :: Prim
+pr_cdouble = Prim 0x000C
+
+-- | Complex @long double@ type in C
+pr_clongdouble :: Prim
+pr_clongdouble = Prim 0x001C
+
+-- | IEEE 754-2008 @_Decimal32@ type
+pr_decimal32 :: Prim
+pr_decimal32 = Prim 0x0030
+
+-- | IEEE 754-2008 @_Decimal64@ type
+pr_decimal64 :: Prim
+pr_decimal64 = Prim 0x0031
+
+-- | IEEE 754-2008 @_Decimal128@ type
+pr_decimal128 :: Prim
+pr_decimal128 = Prim 0x0032
