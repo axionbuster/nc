@@ -1,0 +1,749 @@
+# C LANGUAGE SYNTAX (ISO/IEC 9899:2023) - AI-FRIENDLY VERSION
+
+## SECTION: LEXICAL GRAMMAR
+
+### TOKENS
+token:
+  - keyword
+  - identifier
+  - constant
+  - string-literal
+  - punctuator
+
+preprocessing-token:
+  - header-name
+  - identifier
+  - pp-number
+  - character-constant
+  - string-literal
+  - punctuator
+  - universal-character-name (that cannot be one of the above)
+  - non-white-space character (that cannot be one of the above)
+
+### KEYWORDS
+keyword: one of
+  alignas alignof auto bool break case char const constexpr continue default do double else
+  enum extern false float for goto if inline int long nullptr register restrict return
+  short signed sizeof static static_assert struct switch thread_local true typedef typeof
+  typeof_unqual union unsigned void volatile while _Atomic _BitInt _Complex _Decimal128
+  _Decimal32 _Decimal64 _Generic _Imaginary _Noreturn
+
+### IDENTIFIERS
+identifier:
+  - identifier-start
+  - identifier identifier-continue
+
+identifier-start:
+  - nondigit
+  - XID_Start character
+  - universal-character-name of class XID_Start
+
+identifier-continue:
+  - digit
+  - nondigit
+  - XID_Continue character
+  - universal-character-name of class XID_Continue
+
+nondigit: one of
+  _ a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+
+digit: one of
+  0 1 2 3 4 5 6 7 8 9
+
+### UNIVERSAL CHARACTER NAMES
+universal-character-name:
+  - \u hex-quad
+  - \U hex-quad hex-quad
+
+hex-quad:
+  - hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
+
+### CONSTANTS
+constant:
+  - integer-constant
+  - floating-constant
+  - enumeration-constant
+  - character-constant
+  - predefined-constant
+
+integer-constant:
+  - decimal-constant integer-suffix[opt]
+  - octal-constant integer-suffix[opt]
+  - hexadecimal-constant integer-suffix[opt]
+  - binary-constant integer-suffix[opt]
+
+decimal-constant:
+  - nonzero-digit
+  - decimal-constant '[opt] digit
+
+octal-constant:
+  - 0
+  - octal-constant '[opt] octal-digit
+
+hexadecimal-constant:
+  - hexadecimal-prefix hexadecimal-digit-sequence
+
+binary-constant:
+  - binary-prefix binary-digit
+  - binary-constant '[opt] binary-digit
+
+hexadecimal-prefix: one of
+  0x 0X
+
+binary-prefix: one of
+  0b 0B
+
+nonzero-digit: one of
+  1 2 3 4 5 6 7 8 9
+
+octal-digit: one of
+  0 1 2 3 4 5 6 7
+
+hexadecimal-digit-sequence:
+  - hexadecimal-digit
+  - hexadecimal-digit-sequence '[opt] hexadecimal-digit
+
+hexadecimal-digit: one of
+  0 1 2 3 4 5 6 7 8 9 a b c d e f A B C D E F
+
+binary-digit: one of
+  0 1
+
+integer-suffix:
+  - unsigned-suffix long-suffix[opt]
+  - unsigned-suffix long-long-suffix
+  - unsigned-suffix bit-precise-int-suffix
+  - long-suffix unsigned-suffix[opt]
+  - long-long-suffix unsigned-suffix[opt]
+  - bit-precise-int-suffix unsigned-suffix[opt]
+
+bit-precise-int-suffix: one of
+  wb WB
+
+unsigned-suffix: one of
+  u U
+
+long-suffix: one of
+  l L
+
+long-long-suffix: one of
+  ll LL
+
+floating-constant:
+  - decimal-floating-constant
+  - hexadecimal-floating-constant
+
+decimal-floating-constant:
+  - fractional-constant exponent-part[opt] floating-suffix[opt]
+  - digit-sequence exponent-part floating-suffix[opt]
+
+hexadecimal-floating-constant:
+  - hexadecimal-prefix hexadecimal-fractional-constant binary-exponent-part floating-suffix[opt]
+  - hexadecimal-prefix hexadecimal-digit-sequence binary-exponent-part floating-suffix[opt]
+
+fractional-constant:
+  - digit-sequence[opt] . digit-sequence
+  - digit-sequence .
+
+exponent-part:
+  - e sign[opt] digit-sequence
+  - E sign[opt] digit-sequence
+
+sign: one of
+  + -
+
+digit-sequence:
+  - digit
+  - digit-sequence '[opt] digit
+
+hexadecimal-fractional-constant:
+  - hexadecimal-digit-sequence[opt] . hexadecimal-digit-sequence
+  - hexadecimal-digit-sequence .
+
+binary-exponent-part:
+  - p sign[opt] digit-sequence
+  - P sign[opt] digit-sequence
+
+floating-suffix: one of
+  f l F L df dd dl DF DD DL
+
+enumeration-constant:
+  - identifier
+
+character-constant:
+  - encoding-prefix[opt] ' c-char-sequence '
+
+encoding-prefix: one of
+  u8 u U L
+
+c-char-sequence:
+  - c-char
+  - c-char-sequence c-char
+
+c-char:
+  - any source character except single-quote ', backslash \, or new-line character
+  - escape-sequence
+
+escape-sequence:
+  - simple-escape-sequence
+  - octal-escape-sequence
+  - hexadecimal-escape-sequence
+  - universal-character-name
+
+simple-escape-sequence: one of
+  \' \" \? \\ \a \b \f \n \r \t \v
+
+octal-escape-sequence:
+  - \ octal-digit
+  - \ octal-digit octal-digit
+  - \ octal-digit octal-digit octal-digit
+
+hexadecimal-escape-sequence:
+  - \x hexadecimal-digit
+  - hexadecimal-escape-sequence hexadecimal-digit
+
+predefined-constant:
+  - false
+  - true
+  - nullptr
+
+### STRING LITERALS
+string-literal:
+  - encoding-prefix[opt] " s-char-sequence[opt] "
+
+s-char-sequence:
+  - s-char
+  - s-char-sequence s-char
+
+s-char:
+  - any source character except double-quote ", backslash \, or new-line character
+  - escape-sequence
+
+### PUNCTUATORS
+punctuator: one of
+  [ ] ( ) { } . -> ++ -- & * + - ~ ! / % << >> < > <= >= == != ^ | && || ? : :: ; ... 
+  = *= /= %= += -= <<= >>= &= ^= |= , # ## <: :> <% %> %: %:%:
+
+### HEADER NAMES
+header-name:
+  - < h-char-sequence >
+  - " q-char-sequence "
+
+h-char-sequence:
+  - h-char
+  - h-char-sequence h-char
+
+h-char:
+  - any source character except new-line character and >
+
+q-char-sequence:
+  - q-char
+  - q-char-sequence q-char
+
+q-char:
+  - any source character except new-line character and "
+
+### PREPROCESSING NUMBERS
+pp-number:
+  - digit
+  - . digit
+  - pp-number identifier-continue
+  - pp-number ' digit
+  - pp-number ' nondigit
+  - pp-number e sign
+  - pp-number E sign
+  - pp-number p sign
+  - pp-number P sign
+  - pp-number .
+
+## SECTION: PHRASE STRUCTURE GRAMMAR
+
+### EXPRESSIONS
+primary-expression:
+  - identifier
+  - constant
+  - string-literal
+  - ( expression )
+  - generic-selection
+
+generic-selection:
+  - _Generic ( assignment-expression , generic-assoc-list )
+
+generic-assoc-list:
+  - generic-association
+  - generic-assoc-list , generic-association
+
+generic-association:
+  - type-name : assignment-expression
+  - default : assignment-expression
+
+postfix-expression:
+  - primary-expression
+  - postfix-expression [ expression ]
+  - postfix-expression ( argument-expression-list[opt] )
+  - postfix-expression . identifier
+  - postfix-expression -> identifier
+  - postfix-expression ++
+  - postfix-expression --
+  - compound-literal
+
+argument-expression-list:
+  - assignment-expression
+  - argument-expression-list , assignment-expression
+
+compound-literal:
+  - ( storage-class-specifiers[opt] type-name ) braced-initializer
+
+storage-class-specifiers:
+  - storage-class-specifier
+  - storage-class-specifiers storage-class-specifier
+
+unary-expression:
+  - postfix-expression
+  - ++ unary-expression
+  - -- unary-expression
+  - unary-operator cast-expression
+  - sizeof unary-expression
+  - sizeof ( type-name )
+  - alignof ( type-name )
+
+unary-operator: one of
+  & * + - ~ !
+
+cast-expression:
+  - unary-expression
+  - ( type-name ) cast-expression
+
+multiplicative-expression:
+  - cast-expression
+  - multiplicative-expression * cast-expression
+  - multiplicative-expression / cast-expression
+  - multiplicative-expression % cast-expression
+
+additive-expression:
+  - multiplicative-expression
+  - additive-expression + multiplicative-expression
+  - additive-expression - multiplicative-expression
+
+shift-expression:
+  - additive-expression
+  - shift-expression << additive-expression
+  - shift-expression >> additive-expression
+
+relational-expression:
+  - shift-expression
+  - relational-expression < shift-expression
+  - relational-expression > shift-expression
+  - relational-expression <= shift-expression
+  - relational-expression >= shift-expression
+
+equality-expression:
+  - relational-expression
+  - equality-expression == relational-expression
+  - equality-expression != relational-expression
+
+AND-expression:
+  - equality-expression
+  - AND-expression & equality-expression
+
+exclusive-OR-expression:
+  - AND-expression
+  - exclusive-OR-expression ^ AND-expression
+
+inclusive-OR-expression:
+  - exclusive-OR-expression
+  - inclusive-OR-expression | exclusive-OR-expression
+
+logical-AND-expression:
+  - inclusive-OR-expression
+  - logical-AND-expression && inclusive-OR-expression
+
+logical-OR-expression:
+  - logical-AND-expression
+  - logical-OR-expression || logical-AND-expression
+
+conditional-expression:
+  - logical-OR-expression
+  - logical-OR-expression ? expression : conditional-expression
+
+assignment-expression:
+  - conditional-expression
+  - unary-expression assignment-operator assignment-expression
+
+assignment-operator: one of
+  = *= /= %= += -= <<= >>= &= ^= |=
+
+expression:
+  - assignment-expression
+  - expression , assignment-expression
+
+constant-expression:
+  - conditional-expression
+
+### DECLARATIONS
+declaration:
+  - declaration-specifiers init-declarator-list[opt] ;
+  - attribute-specifier-sequence declaration-specifiers init-declarator-list ;
+  - static_assert-declaration
+  - attribute-declaration
+
+declaration-specifiers:
+  - declaration-specifier attribute-specifier-sequence[opt]
+  - declaration-specifier declaration-specifiers
+
+declaration-specifier:
+  - storage-class-specifier
+  - type-specifier-qualifier
+  - function-specifier
+
+init-declarator-list:
+  - init-declarator
+  - init-declarator-list , init-declarator
+
+init-declarator:
+  - declarator
+  - declarator = initializer
+
+attribute-declaration:
+  - attribute-specifier-sequence ;
+
+storage-class-specifier:
+  - auto
+  - constexpr
+  - extern
+  - register
+  - static
+  - thread_local
+  - typedef
+
+type-specifier:
+  - void
+  - char
+  - short
+  - int
+  - long
+  - float
+  - double
+  - signed
+  - unsigned
+  - _BitInt ( constant-expression )
+  - bool
+  - _Complex
+  - _Decimal32
+  - _Decimal64
+  - _Decimal128
+  - atomic-type-specifier
+  - struct-or-union-specifier
+  - enum-specifier
+  - typedef-name
+  - typeof-specifier
+
+struct-or-union-specifier:
+  - struct-or-union attribute-specifier-sequence[opt] identifier[opt] { member-declaration-list }
+  - struct-or-union attribute-specifier-sequence[opt] identifier
+
+struct-or-union:
+  - struct
+  - union
+
+member-declaration-list:
+  - member-declaration
+  - member-declaration-list member-declaration
+
+member-declaration:
+  - attribute-specifier-sequence[opt] specifier-qualifier-list member-declarator-list[opt] ;
+  - static_assert-declaration
+
+specifier-qualifier-list:
+  - type-specifier-qualifier attribute-specifier-sequence[opt]
+  - type-specifier-qualifier specifier-qualifier-list
+
+type-specifier-qualifier:
+  - type-specifier
+  - type-qualifier
+  - alignment-specifier
+
+member-declarator-list:
+  - member-declarator
+  - member-declarator-list , member-declarator
+
+member-declarator:
+  - declarator
+  - declarator[opt] : constant-expression
+
+enum-specifier:
+  - enum attribute-specifier-sequence[opt] identifier[opt] enum-type-specifier[opt] { enumerator-list }
+  - enum attribute-specifier-sequence[opt] identifier[opt] enum-type-specifier[opt] { enumerator-list , }
+  - enum identifier enum-type-specifier[opt]
+
+enumerator-list:
+  - enumerator
+  - enumerator-list , enumerator
+
+enumerator:
+  - enumeration-constant attribute-specifier-sequence[opt]
+  - enumeration-constant attribute-specifier-sequence[opt] = constant-expression
+
+enum-type-specifier:
+  - : specifier-qualifier-list
+
+atomic-type-specifier:
+  - _Atomic ( type-name )
+
+typeof-specifier:
+  - typeof ( typeof-specifier-argument )
+  - typeof_unqual ( typeof-specifier-argument )
+
+typeof-specifier-argument:
+  - expression
+  - type-name
+
+type-qualifier:
+  - const
+  - restrict
+  - volatile
+  - _Atomic
+
+function-specifier:
+  - inline
+  - _Noreturn
+
+alignment-specifier:
+  - alignas ( type-name )
+  - alignas ( constant-expression )
+
+declarator:
+  - pointer[opt] direct-declarator
+
+direct-declarator:
+  - identifier attribute-specifier-sequence[opt]
+  - ( declarator )
+  - array-declarator attribute-specifier-sequence[opt]
+  - function-declarator attribute-specifier-sequence[opt]
+
+array-declarator:
+  - direct-declarator [ type-qualifier-list[opt] assignment-expression[opt] ]
+  - direct-declarator [ static type-qualifier-list[opt] assignment-expression ]
+  - direct-declarator [ type-qualifier-list static assignment-expression ]
+  - direct-declarator [ type-qualifier-list[opt] * ]
+
+function-declarator:
+  - direct-declarator ( parameter-type-list[opt] )
+
+pointer:
+  - * attribute-specifier-sequence[opt] type-qualifier-list[opt]
+  - * attribute-specifier-sequence[opt] type-qualifier-list[opt] pointer
+
+type-qualifier-list:
+  - type-qualifier
+  - type-qualifier-list type-qualifier
+
+parameter-type-list:
+  - parameter-list
+  - parameter-list , ...
+  - ...
+
+parameter-list:
+  - parameter-declaration
+  - parameter-list , parameter-declaration
+
+parameter-declaration:
+  - attribute-specifier-sequence[opt] declaration-specifiers declarator
+  - attribute-specifier-sequence[opt] declaration-specifiers abstract-declarator[opt]
+
+type-name:
+  - specifier-qualifier-list abstract-declarator[opt]
+
+abstract-declarator:
+  - pointer
+  - pointer[opt] direct-abstract-declarator
+
+direct-abstract-declarator:
+  - ( abstract-declarator )
+  - array-abstract-declarator attribute-specifier-sequence[opt]
+  - function-abstract-declarator attribute-specifier-sequence[opt]
+
+array-abstract-declarator:
+  - direct-abstract-declarator[opt] [ type-qualifier-list[opt] assignment-expression[opt] ]
+  - direct-abstract-declarator[opt] [ static type-qualifier-list[opt] assignment-expression ]
+  - direct-abstract-declarator[opt] [ type-qualifier-list static assignment-expression ]
+  - direct-abstract-declarator[opt] [ * ]
+
+function-abstract-declarator:
+  - direct-abstract-declarator[opt] ( parameter-type-list[opt] )
+
+typedef-name:
+  - identifier
+
+braced-initializer:
+  - { }
+  - { initializer-list }
+  - { initializer-list , }
+
+initializer:
+  - assignment-expression
+  - braced-initializer
+
+initializer-list:
+  - designation[opt] initializer
+  - initializer-list , designation[opt] initializer
+
+designation:
+  - designator-list =
+
+designator-list:
+  - designator
+  - designator-list designator
+
+designator:
+  - [ constant-expression ]
+  - . identifier
+
+static_assert-declaration:
+  - static_assert ( constant-expression , string-literal ) ;
+  - static_assert ( constant-expression ) ;
+
+### STATEMENTS
+statement:
+  - labeled-statement
+  - unlabeled-statement
+
+unlabeled-statement:
+  - expression-statement
+  - attribute-specifier-sequence[opt] primary-block
+  - attribute-specifier-sequence[opt] jump-statement
+
+primary-block:
+  - compound-statement
+  - selection-statement
+  - iteration-statement
+
+secondary-block:
+  - statement
+
+label:
+  - attribute-specifier-sequence[opt] identifier :
+  - attribute-specifier-sequence[opt] case constant-expression :
+  - attribute-specifier-sequence[opt] default :
+
+labeled-statement:
+  - label statement
+
+compound-statement:
+  - { block-item-list[opt] }
+
+block-item-list:
+  - block-item
+  - block-item-list block-item
+
+block-item:
+  - declaration
+  - unlabeled-statement
+  - label
+
+expression-statement:
+  - expression[opt] ;
+  - attribute-specifier-sequence expression ;
+
+selection-statement:
+  - if ( expression ) secondary-block
+  - if ( expression ) secondary-block else secondary-block
+  - switch ( expression ) secondary-block
+
+iteration-statement:
+  - while ( expression ) secondary-block
+  - do secondary-block while ( expression ) ;
+  - for ( expression[opt] ; expression[opt] ; expression[opt] ) secondary-block
+  - for ( declaration expression[opt] ; expression[opt] ) secondary-block
+
+jump-statement:
+  - goto identifier ;
+  - continue ;
+  - break ;
+  - return expression[opt] ;
+
+### EXTERNAL DEFINITIONS
+translation-unit:
+  - external-declaration
+  - translation-unit external-declaration
+
+external-declaration:
+  - function-definition
+  - declaration
+
+function-definition:
+  - attribute-specifier-sequence[opt] declaration-specifiers declarator function-body
+
+function-body:
+  - compound-statement
+
+## SECTION: PREPROCESSING DIRECTIVES
+
+preprocessing-file:
+  - group[opt]
+
+group:
+  - group-part
+  - group group-part
+
+group-part:
+  - if-section
+  - control-line
+  - text-line
+  - # non-directive
+
+if-section:
+  - if-group elif-groups[opt] else-group[opt] endif-line
+
+if-group:
+  - # if constant-expression new-line group[opt]
+  - # ifdef identifier new-line group[opt]
+  - # ifndef identifier new-line group[opt]
+
+elif-groups:
+  - elif-group
+  - elif-groups elif-group
+
+elif-group:
+  - # elif constant-expression new-line group[opt]
+  - # elifdef identifier new-line group[opt]
+  - # elifndef identifier new-line group[opt]
+
+else-group:
+  - # else new-line group[opt]
+
+endif-line:
+  - # endif new-line
+
+control-line:
+  - # include pp-tokens new-line
+  - # embed pp-tokens new-line
+  - # define identifier replacement-list new-line
+  - # define identifier lparen identifier-list[opt] ) replacement-list new-line
+  - # define identifier lparen ... ) replacement-list new-line
+  - # define identifier lparen identifier-list , ... ) replacement-list new-line
+  - # undef identifier new-line
+  - # line pp-tokens new-line
+  - # error pp-tokens[opt] new-line
+  - # warning pp-tokens[opt] new-line
+  - # pragma pp-tokens[opt] new-line
+  - # new-line
+
+text-line:
+  - pp-tokens[opt] new-line
+
+non-directive:
+  - pp-tokens new-line
+
+lparen:
+  - a ( character not immediately preceded by white space
+
+replacement-list:
+  - pp-tokens[opt]
+
+pp-tokens:
+  - preprocessing-token
+  - pp-tokens preprocessing-token
+
+new-line:
+  - the new-line character
