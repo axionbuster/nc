@@ -1,8 +1,13 @@
+{-# LANGUAGE MultilineStrings #-}
+
 module Language.NC.Internal.Parse.Stmt (
   -- * Statement parsers (debug)
   statement,
+  statement0,
+  _dbg_example0,
 ) where
 
+import Data.Sequence qualified as S
 import Language.NC.Internal.Lex
 import Language.NC.Internal.Parse.Op
 import Language.NC.Internal.Parse.Type
@@ -22,10 +27,31 @@ seq_many (ParserT p) = ParserT do
       Fail# st' -> OK# st' mempty s n
       e -> unsafeCoerce# e
 
--- | Parse a statement
+-- | Construct a compound statement type but with simple culling if there's only
+-- a single statement.
+conscompound :: Seq BlockItem -> Statement
+conscompound = \case
+  (BIStmt s :<| S.Empty) -> s
+  ss -> StmtCompound ss
+
+-- | Internal type. Decide what to do when statement parsing fails.
+-- Use backup or just fail?
+type OnEmpty a = a -> Parser a -> Parser a
+
+-- | Parse a statement. Fail on empty statement.
 statement :: Parser Statement
-statement =
-  let cutcolon = cut colon (BasicError "expected :")
+statement = statement_ (const id)
+
+-- | Parse a statement. Succeed with an empty expression statement
+-- on parse failure.
+statement0 :: Parser Statement
+statement0 = statement_ option
+
+-- | Parse a statement
+statement_ :: OnEmpty Statement -> Parser Statement
+statement_ oespolicy =
+  let self = statement_ oespolicy
+      cutcolon = cut colon (BasicError "expected :")
       cutsemicolon = cut semicolon (BasicError "expected ;")
       cutstmt = statement `cut` BasicError "expected statement"
       cutlpar = lpar `cut` BasicError "expected ("
@@ -56,11 +82,11 @@ statement =
                )
             primaryblock =
               branch_incur
-                ( StmtCompound
+                ( conscompound
                     <$> seq_many do
                       choice
                         [ BIDecl <$> declaration,
-                          BIStmt <$> statement,
+                          BIStmt <$> self,
                           BILabel <$> label
                         ]
                 )
@@ -96,13 +122,85 @@ statement =
                      case _ of
                        "goto" -> flip cut (BasicError "expected label") do
                          StmtJump . JumpGoto . JGUnresolved <$> identifier
-                       "continue" -> cutsemicolon $> StmtJump JumpContinue
-                       "break" -> cutsemicolon $> StmtJump JumpBreak
+                       "continue" -> pure $ StmtJump JumpContinue
+                       "break" -> pure $ StmtJump JumpBreak
                        "return" -> StmtJump . JumpReturn <$> optional expr_
                      |]
-               )
+               ) <* cutsemicolon
         withOption
           label
-          (\l -> StmtLabeled l <$> statement)
-          do (StmtExpr as <$> optional expr_) <|> primaryblock <|> jumpstmt
-        <* cutsemicolon
+          (\l -> StmtLabeled l <$> self)
+          $ oespolicy
+            (StmtExpr as Nothing) -- fallback; usage depends on oespolicy.
+            (StmtExpr as . Just <$> expr_ <* cutsemicolon)
+          <|> primaryblock
+          <|> jumpstmt
+
+_dbg_example0 :: String
+_dbg_example0 =
+  """
+    {
+    /* Complex nested control structures with mixed declarations */
+    start:
+    /* [[deprecated("Use new_api instead")]] int result = 0; */
+    int result = 0;
+    
+    /* Nested compound statements with various control flows */
+    if (argc > 1) {
+      /* Declaration with multiple variables and initializers */
+      register const volatile long *values[10], count = argc - 1, *ptr = NULL;
+      
+      /* Switch with fallthrough cases, nested blocks and declarations */
+      switch (argv[1][0]) {
+        case 'a': case 'A': {
+          double temp = 0.0;
+          for (int i = 0; i < count; ++i) {
+            if (i % 2) continue;
+            temp += i * 3.14;
+          }
+          result = (int)temp;
+          /* Intentional fallthrough */
+        }
+        case 'b': {
+          do {
+            /* Complex multiple declaration with function pointers */
+            void (*handlers[5])(int, void*), (*process)(void) = NULL;
+            
+            /* Nested if-else with goto */
+            if (count-- > 5) {
+              while (count > 0 && !ptr) {
+                ptr = count % 3 ? &count : NULL;
+                if (!ptr) break;
+              }
+            } else if (count == 0) {
+              goto end;
+            } else {
+              default_handler: 
+              result = -1;
+            }
+          } while (ptr && *ptr > 0);
+          break;
+        }
+        default:
+          result = -2;
+      }
+    } else {
+      [[unlikely]] for (struct { int x; char *y; } entry = {0, "test"}; 
+           entry.x < 10; 
+           entry.x++) {
+        if (entry.x == 5) {
+          entry.y = "halfway";
+          continue;
+        }
+        result += entry.x;
+      }
+    }
+    
+    /* Statement expressions and complex comma expressions */
+    /* (void)({int x = 5; x *= 2; result += x;}); */
+    result = (printf("Processing: %d\\n", result), result > 0 ? result * 2 : 0);
+  
+    end:
+    return result;
+  }
+  """

@@ -274,6 +274,15 @@ _rsq = lx0 $(switch [|case _ of "]" -> pure (); ":>" -> pure ()|])
   opening = $(switch [|case _ of "{" -> pure (); "<%" -> pure ()|])
   closing = $(switch [|case _ of "}" -> pure (); "%>" -> pure ()|])
 
+-- some cut versions of closing tokens
+rparcut = rpar `cut` BasicError "expected )"
+
+rcurcut = rcur `cut` BasicError "expected }"
+
+rsqbcut = rsqb `cut` BasicError "expected ]"
+
+rdbsqbcut = rdbsqb `cut` BasicError "expcted ]]"
+
 -- | Parse o. If ok, parse p and then parse c and return what p returns.
 -- If o doesn't parse, then parse q. Usage: @branch_between o c p q@
 branch_between ::
@@ -285,35 +294,35 @@ branch_between ::
 branch_between o c p = branch o (p <* c)
 
 -- | Enclose a thing in square brackets not followed by another square bracket.
-insqb = between lsqb rsqb
+insqb = between lsqb rsqbcut
 
 -- | Parse the first parser in square brackets if opening (left) square bracket
 -- is detected. Otherwise, parse q. This cuts down on needless backtracking.
-branch_insqb = branch_between lsqb rsqb
+branch_insqb = branch_between lsqb rsqbcut
 
 -- | Enclose a thing in double square brackets.
-indbsqb = between ldbsqb rdbsqb
+indbsqb = between ldbsqb rdbsqbcut
 
 -- | Parse the first parser in double square brackets if opening double
 -- square bracket is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_indbsqb = branch_between ldbsqb rdbsqb
+branch_indbsqb = branch_between ldbsqb rdbsqbcut
 
 -- | Enclose a thing in parentheses.
-inpar = between lpar rpar
+inpar = between lpar rparcut
 
 -- | Parse the first parser in parentheses if opening parenthesis
 -- is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_inpar = branch_between lpar rpar
+branch_inpar = branch_between lpar rparcut
 
 -- | Enclose a thing in braces.
-incur = between lcur rcur
+incur = between lcur rcurcut
 
 -- | Parse the first parser in (curly) braces if opening brace
 -- is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_incur = branch_between lcur rcur
+branch_incur = branch_between lcur rcurcut
 
 -- Important punctuations
 

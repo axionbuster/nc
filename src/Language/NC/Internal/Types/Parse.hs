@@ -1012,7 +1012,7 @@ type Parser = ParserIO ParserState Error
 
 -- | Data with span. Bogus span could exist if some construct was
 -- created in thin air by the parser. Bogus spans will be 0:0.
-data WithSpan a = WithSpan {-# UNPACK #-} !Span a
+data WithSpan a = WithSpan !Span a
   deriving (Eq, Show, Functor)
 
 instance Show Symbol where
@@ -1273,7 +1273,6 @@ symassoclabel label name = do
   __throwable_insert st._symtab_names sym name
   (s :| _) <- symlatestscope "symassoclabel"
   __throwable_insert s._scope_labns_str2sym name sym
-  error "symassoclabel: not implemented"
 
 -- | Get the latest scope as a list or error out.
 symlatestscope :: String -> Parser (NonEmpty Scope)
