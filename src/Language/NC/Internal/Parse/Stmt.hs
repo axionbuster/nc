@@ -153,7 +153,6 @@ _dbg_example0 =
     if (argc > 1) {
       /* Declaration with multiple variables and initializers */
       register const volatile long *values[10], count = argc - 1, *ptr = NULL;
-
       /* Switch with fallthrough cases, nested blocks and declarations */
       switch (argv[1][0]) {
         case 'a': case 'A': {
@@ -172,7 +171,6 @@ _dbg_example0 =
           do {
             /* Complex multiple declaration with function pointers */
             void (*handlers[5])(int, void*), (*process)(void) = NULL;
-
             /* Nested if-else with goto */
             if (count-- > 5) {
               while (count > 0 && !ptr) {
