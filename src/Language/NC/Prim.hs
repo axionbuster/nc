@@ -26,15 +26,18 @@
 module Language.NC.Prim (
   -- * Types
   Prim,
+  BitSize,
+  PrimInfo (..),
+  PrimSignedInteger (..),
+  SIntegerCategory (..),
   Sign (..),
   Complex (..),
   FloatCategory (..),
-  PrimInfo (..),
   Word16,
 
   -- * Lenses
   pr_info,
-  pc_si,
+  pi_si,
 
   -- * Other
   bitintwidth_ok,
@@ -66,12 +69,17 @@ module Language.NC.Prim (
   pr_cdecimal32,
   pr_cdecimal64,
   pr_cdecimal128,
+  pr_bitint,
+  pr_ubitint,
 ) where
 
 import Control.Lens
 import Data.Bits
 import Data.Word
 import Prelude
+
+-- | Bit sizes for stuff.
+type BitSize = Word16
 
 -- Bit layout of Word16 representation:
 --   Bit 15 (0x8000): Sign bit (1 = Signed, 0 = Unsigned)
@@ -107,8 +115,8 @@ instance Show Prim where
 
 -- | Go back and forth between the real 'Prim' representation
 -- and the information stored.
-pr_info :: Lens' Prim PrimInfo
-pr_info = lens getter setter
+pr_info :: Iso' Prim PrimInfo
+pr_info = iso getter setter
  where
   getter (Prim w)
     | w .&. 0x4000 /= 0 =
@@ -148,10 +156,10 @@ pr_info = lens getter setter
         0x0035 -> PrimFloat CxComplex FCDecimal64
         0x0036 -> PrimFloat CxComplex FCDecimal128
         _ -> error $ "Unknown bit pattern in Prim: " ++ show w
-  setter (Prim _) =
+  setter =
     Prim . \case
       i
-        | Just (PSI SICBitInt sign bw) <- i ^? pc_si ->
+        | Just (PSI SICBitInt sign bw) <- i ^? pi_si ->
             -- limited validation
             if bw .&. 0xC000 /= 0
               then
@@ -160,7 +168,7 @@ pr_info = lens getter setter
                     ++ show bw
                     ++ ") exceeds 14 bits"
               else bw .|. 0x4000 .|. case sign of Signed -> 0x8000; _ -> 0
-        | Just (PSI category sign _) <- i ^? pc_si ->
+        | Just (PSI category sign _) <- i ^? pi_si ->
             let cb = case category of
                   SICInt -> 0x0000 -- bits 5-6-7=000
                   SICShort -> 0x0080 -- bits 5-6-7=100
@@ -269,8 +277,8 @@ instance Show PrimSignedInteger where
 
 -- | For a signed or unsigned integer type, get the sign information.
 -- For @\_BitInt(...)@ types, also get the bit int width.
-pc_si :: Prism' PrimInfo PrimSignedInteger
-pc_si = prism' make destroy
+pi_si :: Prism' PrimInfo PrimSignedInteger
+pi_si = prism' make destroy
  where
   make = \case
     PSI SICInt s ~_ -> PrimInt s
@@ -403,3 +411,8 @@ pr_cdecimal64 = Prim 0x0035
 -- | Complex IEEE 754-2008 @_Decimal128@ type
 pr_cdecimal128 :: Prim
 pr_cdecimal128 = Prim 0x0036
+
+-- | @\_BitInt(...)@ type. May throw on invalid input.
+pr_bitint, pr_ubitint :: BitSize -> Prim
+pr_bitint w = PrimBitInt Signed w ^. re pr_info
+pr_ubitint w = PrimBitInt Unsigned w ^. re pr_info

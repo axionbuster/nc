@@ -10,11 +10,59 @@ import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.Functor
 import Data.Int
+import Data.Word
 import Debug.Trace qualified as Tr
 import FlatParse.Stateful
+import Language.NC.Prim
 import Text.Printf
 import UnliftIO.IORef
 import Prelude
+
+data Settings = Settings
+  { _setg_sizes :: SizeSettings,
+    _setg_encoding :: EncodingSettings
+  }
+
+-- | Our parsing environment.
+data PEnv = PEnv
+  { -- | A LIFO stack of messages.
+    _penv_messages :: !(IORef [AMessage]),
+    -- | Settings for various pluggable behaviors.
+    _penv_settings :: !Settings,
+    -- | Original string. This is needed for error reporting.
+    _penv_original :: !ByteString
+  }
+
+-- | Our parser type.
+type P = ParserIO PEnv AMessage
+
+-- | Determine the sizes of types.
+data SizeSettings
+  = IntegerSettings
+  { _szs_boolbits :: !Word8,
+    _szs_charbits :: !Word8,
+    _szs_shortbits :: !Word8,
+    _szs_intbits :: !Word8,
+    _szs_longbits :: !Word8,
+    _szs_longlongbits :: !Word8,
+    _szs_floatbits :: !Word8,
+    _szs_doublebits :: !Word8,
+    _szs_longdoublebits :: !Word8,
+    -- | 7.21.2.3: "The size and alignment of @nullptr\_t@ is the same as
+    -- for a pointer to character type"
+    _szs_charptrbits :: !Word8
+  }
+  deriving (Eq, Show)
+
+data EncodingSettings
+  = EncodingSettings
+  { _encset_charissigned :: !Bool,
+    _encset_wchartype :: !Prim,
+    _encset_char8type :: !Prim,
+    _encset_char16type :: !Prim,
+    _encset_char32type :: !Prim
+  }
+  deriving (Eq, Show)
 
 traceIO :: (MonadIO m) => String -> m ()
 traceIO = liftIO . Tr.traceIO
@@ -70,6 +118,8 @@ sp_end_pos = lens getter setter
 data Message
   = -- | an \'on-the-spot\' message
     MsgAdHoc String
+  | -- | an internal error message
+    MsgOops String
   | -- | @expected ...@
     MsgExpect String
   deriving (Eq)
@@ -77,17 +127,12 @@ data Message
 instance Show Message where
   showsPrec = prettymsg
 
-prettymsg :: Int -> Message -> ShowS
-prettymsg d =
-  showParen (d > 10) . \case
-    MsgAdHoc s -> (s ++)
-    MsgExpect s -> ("expected " ++) . showsPrec 11 s
-
 -- | Message with annotations.
 data AMessage = AMessage
   { -- | What message?
     _am_msg :: !Message,
-    -- | Who's sending this message?
+    -- | Who's sending this message, if any? Empty string to signal
+    -- no particular sender specified.
     _am_who :: !String,
     -- | This message is caused by ...
     _am_why :: !(Maybe AMessage),
@@ -98,18 +143,22 @@ data AMessage = AMessage
   }
   deriving (Eq, Show)
 
+prettymsg :: Int -> Message -> ShowS
+prettymsg d =
+  showParen (d > 10) . \case
+    MsgAdHoc s -> (s ++)
+    MsgOops s -> ("internal error: " ++) . showsPrec 11 s
+    MsgExpect s -> ("expected " ++) . showsPrec 11 s
+
+makeLenses ''PEnv
+
+makeLenses ''SizeSettings
+
+makeLenses ''EncodingSettings
+
+makeLenses ''Settings
+
 makeLenses ''AMessage
-
--- | Our parsing environment.
-data PEnv = PEnv
-  { -- | A LIFO stack of messages.
-    _penv_messages :: !(IORef [AMessage]),
-    -- | Original string. This is needed for error reporting.
-    _penv_original :: !ByteString
-  }
-
--- | Our parser type.
-type P = ParserIO PEnv AMessage
 
 -- | (I) Create a properly ordered 'Span64'.
 _mk64 :: Pos -> Pos -> Span64
@@ -130,6 +179,14 @@ _stretchspan64 (fromIntegral . coerce @Pos @Int -> p) (Span64 a b)
   | b < p = Span64 a p
   | otherwise = Span64 a b
 
+-- | Throw an internal compiler error.
+oops :: String -> String -> P a
+oops = pthrow . MsgOops
+
+-- | Throw an ad hoc error. Message then sender identification.
+adhoc :: String -> String -> P a
+adhoc = pthrow . MsgAdHoc
+
 -- | Annotate and then throw a 'Message'. One must clarify \'who\' is sending
 -- the message.
 pthrow :: Message -> String -> P a
@@ -140,11 +197,18 @@ pthrow m w = do
 
 -- | If the parser fails throw the message. If we get an error instead,
 -- cite the error as the cause and expand the span as needed.
-pcut :: P a -> Message -> String -> P a
-pcut p m w = do
+pcutfull :: P a -> Message -> String -> P a
+pcutfull p m w = do
   s <- getPos
   cutting p (AM0 m w s) \inner _ ->
     AMessage m w (Just inner) s Nothing
+
+pcut :: P a -> Message -> P a
+pcut p m = pcutfull p m ""
+
+-- | Flipped version of 'pcut'.
+pcut' :: Message -> P a -> P a
+pcut' m p = pcut p m
 
 -- | If it throws an error, log it and then fail.
 ptry :: P a -> P a
@@ -153,6 +217,10 @@ ptry p = do
     msgs <- _penv_messages <$> ask
     modifyIORef' msgs (e :)
     failed
+
+-- | Cut with 'MsgExpect'. Normally this is
+pcut_expect :: P a -> String -> P a
+pcut_expect p = pcut p . MsgExpect
 
 -- | If @p@ throws an error, log it. Then, continue until @q@ fails. Resume
 -- with @r@ from then on.
@@ -168,10 +236,6 @@ psync p q r = do
     msgs <- _penv_messages <$> ask
     modifyIORef' msgs (e' :)
     r
-
--- | Flipped version of 'pcut'.
-pcut' :: Message -> String -> P a -> P a
-pcut' m w p = pcut p m w
 
 -- | If there's an error, perform the second action and then rethrow
 -- the same error. Otherwise, don't do anything special.
@@ -244,9 +308,7 @@ _dbg_dumpmsgs orig = do
 -- Helper function to format nested messages with indentation
 _dbg_formatamsg :: Int -> AMessage -> String
 _dbg_formatamsg indent amsg =
-  let msg = case amsg._am_msg of
-        MsgAdHoc s -> s
-        MsgExpect s -> "expected " ++ s
+  let msg = show amsg
       who = amsg._am_who
       indentation = replicate indent ' '
       related =
@@ -255,3 +317,45 @@ _dbg_formatamsg indent amsg =
           (\m -> "\n" ++ indentation ++ "↳ " ++ _dbg_formatamsg (indent + 2) m)
           amsg._am_why
    in indentation ++ "from " ++ who ++ ": " ++ msg ++ related
+
+sizesettings :: P SizeSettings
+sizesettings = _setg_sizes . _penv_settings <$> ask
+
+posbwof_real :: PrimSignedInteger -> P BitSize
+posbwof_real = \case
+  PSI SICBitInt _ bw -> pure bw
+  PSI categ Signed bw -> posbwof_real (PSI categ Unsigned bw) <&> subtract 1
+  PSI categ _ _ -> case categ of
+    SICChar -> gg _szs_charbits
+    SICShort -> gg _szs_shortbits
+    SICInt -> gg _szs_intbits
+    SICLong -> gg _szs_longbits
+    SICLongLong -> gg _szs_longlongbits
+   where
+    gg h = fromIntegral @Word8 @Word16 . h <$> sizesettings
+
+-- | Find the number of consecutively laid out bits needed to represent
+-- the largest positive number representable in each type.
+-- This normally only makes sense for integral types, though.
+posbwof :: Prim -> P BitSize
+posbwof (view pr_info -> info) = case info ^? pi_si of
+  Just psi -> posbwof_real psi
+  Nothing -> case info of
+    PrimNSChar -> do
+      cb <- gg _szs_charbits
+      cs <- ask <&> view encset_charissigned . _setg_encoding . _penv_settings
+      cb & pure . if cs then subtract 1 else id
+    PrimFloat CxComplex float -> casefloat float <&> subtract 1 . (* 2)
+    PrimFloat _ float -> casefloat float <&> subtract 1
+    PrimNullptr -> gg _szs_charptrbits
+    PrimBool -> gg _szs_boolbits
+    _ -> pure 0
+   where
+    gg h = fromIntegral @Word8 @Word16 . h <$> sizesettings
+    casefloat = \case
+      FCFloat -> gg _szs_floatbits
+      FCDouble -> gg _szs_doublebits
+      FCLongDouble -> gg _szs_longdoublebits
+      FCDecimal32 -> pure 32
+      FCDecimal64 -> pure 64
+      FCDecimal128 -> pure 128

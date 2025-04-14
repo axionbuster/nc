@@ -31,7 +31,9 @@ common optim
 
 library
     import:             warnings, lang, optim
-    exposed-modules:    Language.NC.Prim, NC.Parser
+    exposed-modules:    Language.NC.Prim, NC.Parser,
+                        Language.NC.Lex,
+                        Language.NC.Type
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, unordered-containers,
                         hashable, data-fix,
