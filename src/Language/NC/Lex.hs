@@ -3,6 +3,7 @@
 -- | Lexers and basic parsers.
 --
 -- Lexing convention:
+--
 --  - Each parser\/lexer assumes the respective token begins directly rather
 --    than potentially starting with whitespace. Consequently, these primitives
 --    do not begin with whitespace parsing.
@@ -10,7 +11,7 @@
 --    punctuation, or comments---collectively refered to as \'space\'. This
 --    includes in-delimiter parsers like 'inpar'.
 --  - Keywords and identifiers will require some space to come afterward.
-module Language.NC.Internal.Lex (
+module Language.NC.Lex (
   -- * Whitespace and comments
   ws0,
   ws1,
@@ -115,7 +116,6 @@ module Language.NC.Internal.Lex (
   int',
   long',
   nullptr',
-  nullptr_t',
   register',
   restrict',
   return',
@@ -494,8 +494,6 @@ long' = lx1 $(string "long")
 
 nullptr' = lx1 $(string "nullptr")
 
-nullptr_t' = lx1 $(string "nullptr_t")
-
 register' = lx1 $(string "register")
 
 restrict' = lx1 $(string "restrict")
@@ -637,7 +635,6 @@ keyword =
              "int" -> pure ()
              "long" -> pure ()
              "nullptr" -> pure ()
-             "nullptr_t" -> pure ()
              "register" -> pure ()
              "restrict" -> pure ()
              "return" -> pure ()
@@ -681,7 +678,7 @@ keyword =
 
 -- optimized somewhat
 
--- | Any identifier. This allows reserved identifiers like @__func__@
+-- | Any identifier. This allows reserved identifiers like `__func__`
 -- to be used. For use in declarations, consider 'identifier_def' instead.
 identifier = lx1 $ byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
  where
@@ -694,7 +691,7 @@ identifier = lx1 $ byteStringOf $ (id_head >> skipMany id_tail) `butnot` keyword
   xids = C.property C.XidStart
   xidc = C.property C.XidContinue
 
--- | A user-definable identifier. Currently, only @__func__@ is banned.
+-- | A user-definable identifier. Currently, only `__func__` is banned.
 identifier_def = do
   i <- identifier
   guard (i /= C8.pack "__func__") $> i

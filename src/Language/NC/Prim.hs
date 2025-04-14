@@ -248,7 +248,8 @@ data SIntegerCategory
   | SICBitInt
   deriving (Eq, Show)
 
--- | Integer types where 'Sign' is applicable. 'Char' is excluded.
+-- | Integer types where 'Sign' is applicable. @char@ is excluded,
+-- though @signed char@ and @unsigned char@ are both included.
 data PrimSignedInteger
   = -- | The last field is only relevant for the case of 'SICBitInt'.
     -- If it's not an 'SICBitInt', then literally any number can go.

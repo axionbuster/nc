@@ -203,6 +203,8 @@ pcutfull p m w = do
   cutting p (AM0 m w s) \inner _ ->
     AMessage m w (Just inner) s Nothing
 
+-- | If the parser fails, throw the message, but without sender attribution.
+-- See 'pcutfull'.
 pcut :: P a -> Message -> P a
 pcut p m = pcutfull p m ""
 
@@ -224,7 +226,7 @@ pcut_expect p = pcut p . MsgExpect
 
 -- | If @p@ throws an error, log it. Then, continue until @q@ fails. Resume
 -- with @r@ from then on.
-psync :: P a -> P () -> P a -> P a
+psync :: P a -> P b -> P a -> P a
 psync p q r = do
   p `withError` \e -> do
     skipMany q
@@ -255,7 +257,7 @@ _dbg_dumpmsgs :: ByteString -> P ()
 _dbg_dumpmsgs orig = do
   env <- ask
   msgs <- liftIO $ readIORef (env._penv_messages)
-  traceIO $ printf "_dbg_dumpmsgs\n"
+  traceIO $ printf "_dbg_dumpmsgs"
 
   forM_ msgs \amsg -> do
     let msg = show amsg
