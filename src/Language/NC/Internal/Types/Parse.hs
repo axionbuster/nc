@@ -62,7 +62,6 @@ module Language.NC.Internal.Types.Parse (
   GenAssoc (..),
 
   -- * C Statements
-  CompoundStatement,
   Statement (..),
   BlockItem (..),
   Label (..),
@@ -496,17 +495,14 @@ data Declaration
     -- NOTE: function definitions are not given in 'NormalDeclaration'. Those
     -- go to 'FunctionDefinition'
     NormalDeclaration Type [DeclInit]
-  | -- | Define a single function.
-    FunctionDefinition Type CompoundStatement
+  | -- | Define a single function. In the syntax we require the statement to
+    -- be a compound statement.
+    FunctionDefinition Type Statement
   | -- | Encapsulate a static assertion.
     StaticAssertDeclaration StaticAssertion
   | -- | A declaration made purely of attributes.
     AttributeDeclaration [Attribute]
   deriving (Show)
-
--- | A finger tree ('Seq') is used to organize statements for fast enough
--- all-around performance for traversal, random access, merger, and manipulation
-type CompoundStatement = Seq Statement
 
 -- | A C statement.
 --

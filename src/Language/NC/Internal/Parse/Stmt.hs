@@ -1,9 +1,14 @@
 {-# LANGUAGE MultilineStrings #-}
 
 module Language.NC.Internal.Parse.Stmt (
-  -- * Statement parsers (debug)
+  -- * Statement parsers
   statement,
   statement0,
+
+  -- * Function parser
+  functiondef,
+
+  -- * Debugging
   _dbg_example0,
 ) where
 
@@ -13,6 +18,22 @@ import Language.NC.Internal.Parse.Op
 import Language.NC.Internal.Parse.Type
 import Language.NC.Internal.Prelude
 import Unsafe.Coerce
+
+-- | Parse a function declaration.
+functiondef :: Parser Declaration
+functiondef = do
+  -- we'll replace typename with a proper declaration-specifiers parser.
+  retty <- typename
+  proto <- newsymbol >>= declarator
+  let funty = apdecl proto retty
+  -- we don't pass it any attributes ([]) for the label part, because a label
+  -- cannot occur at this location.
+  stmts <-
+    pncut
+      "function definition"
+      (incur $ _compound_body [])
+      (BasicError "expected a compound statement")
+  pure $ FunctionDefinition funty stmts
 
 -- | Parse many items in a sequence. Code is adapted from
 -- the FlatParse source.
@@ -51,11 +72,73 @@ statement0 = statement_ option
 zerostmt :: Statement
 zerostmt = StmtExpr [] Nothing
 
+cutcolon :: Parser ()
+cutcolon = pcut colon (BasicError "expected :")
+
+-- We need attributes because of a quirk in how we parse a label,
+-- but we'll review that part later, because it seems odd to me.
+label :: [Attribute] -> Parser Label
+label as =
+  $( switch_ws1
+       [|
+         case _ of
+           "case" ->
+             LabelCase as
+               <$> ( CIEUnresolved
+                       <$> pncut
+                         "case"
+                         expr_
+                         (BasicError "expected expression")
+                   )
+               <*> newsymbol
+               <* cutcolon
+           "default" ->
+             LabelDefault as <$> newsymbol <* cutcolon
+         |]
+   )
+    -- on the use of <|> here...
+    --    yeah, normally <|> is frowned upon in recursive descent
+    -- parsers because backtracking is expensive. but here i
+    -- kind of don't have a choice, as FlatParse has a "bug" where
+    -- if the string "case" or "default" matches and then ws1
+    -- fails, it does not trigger the wildcard (_) case as expected;
+    -- instead, it simply fails the parser, simply because ws1 fails
+    -- in the wildcard case. arguably this is a
+    -- natural consequence of how things work under the hood,
+    -- but this is awful. it's probably unintended.
+    --    to curtail the dangers of <|>, i inserted as much cut
+    -- as possible in the clauses above to limit backtracking.
+    --    in short: FlatParse's switchWithPost may not be the right
+    -- way to get a whole-word match, but it does remain as one of
+    -- the fastest options out here.
+    <|> do
+      -- we gotta let this fail if needed, so that something like:
+      --    a + 3
+      -- is first matched against "a:", but ":" doesn't exist,
+      -- so it'll now backtrack and then try to parse it as a
+      -- primary block. thus it's pretty important for the
+      -- colon (:) parser to fail, not cut, as it signals
+      -- the backtracking.
+      labname <- identifier_def <* colon
+      l <- LabelNamed as <$> newsymbol
+      symassoclabel l labname $> l
+
+-- We need attributes because 'label' requires them.
+_compound_body :: [Attribute] -> Parser Statement
+_compound_body as =
+  ( conscompound
+      <$> seq_many do
+        choice
+          [ BIDecl <$> declaration,
+            BIStmt <$> statement,
+            BILabel <$> label as
+          ]
+  )
+
 -- | Parse a statement
 statement_ :: OnEmpty Statement -> Parser Statement
 statement_ oespolicy =
   let self = statement_ oespolicy
-      cutcolon = pcut colon (BasicError "expected :")
       cutsemicolon' n = pncut n semicolon (BasicError "expected ;")
       cutstmt = statement `pcut` BasicError "expected statement"
       cutlpar = lpar `pcut` BasicError "expected ("
@@ -66,110 +149,60 @@ statement_ oespolicy =
         pure e
    in do
         as <- attrspecs
-        let label =
+        let
+          primaryblock = do
+            branch_incur
+              (_compound_body as)
               $( switch_ws1
                    [|
                      case _ of
-                       "case" ->
-                         LabelCase as
-                           <$> ( CIEUnresolved
-                                   <$> pncut
-                                     "case"
-                                     expr_
-                                     (BasicError "expected expression")
-                               )
-                           <*> newsymbol
-                           <* cutcolon
-                       "default" ->
-                         LabelDefault as <$> newsymbol <* cutcolon
+                       "if" -> do
+                         cond <- cutparexpr
+                         thenclause <- cutstmt
+                         elseclause <- optional $ else' >> cutstmt
+                         pure $ StmtIf cond thenclause elseclause
+                       "switch" -> StmtSwitch <$> cutparexpr <*> cutstmt
+                       "while" -> StmtWhile <$> cutparexpr <*> cutstmt
+                       "do" ->
+                         StmtDoWhile
+                           <$> statement
+                           <*> (while' >> cutparexpr)
+                       "for" -> do
+                         cutlpar
+                         initcl <-
+                           (ForDecl <$> declaration)
+                             <|> ( ForExpr
+                                     <$> optional expr_
+                                     <* cutsemicolon' "for-loop initializer"
+                                 )
+                         testcl <-
+                           optional expr_
+                             <* cutsemicolon' "for-loop test"
+                         postcl <- optional expr_
+                         cutrpar
+                         bodycl <-
+                           statement
+                             <|> ( cutsemicolon'
+                                     "for-loop body"
+                                     $> zerostmt
+                                 )
+                         pure $ StmtFor (initcl testcl postcl) bodycl
                      |]
                )
-                -- on the use of <|> here...
-                --    yeah, normally <|> is frowned upon in recursive descent
-                -- parsers because backtracking is expensive. but here i
-                -- kind of don't have a choice, as FlatParse has a "bug" where
-                -- if the string "case" or "default" matches and then ws1
-                -- fails, it does not trigger the wildcard (_) case as expected;
-                -- instead, it simply fails the parser, simply because ws1 fails
-                -- in the wildcard case. arguably this is a
-                -- natural consequence of how things work under the hood,
-                -- but this is awful. it's probably unintended.
-                --    to curtail the dangers of <|>, i inserted as much cut
-                -- as possible in the clauses above to limit backtracking.
-                --    in short: FlatParse's switchWithPost may not be the right
-                -- way to get a whole-word match, but it does remain as one of
-                -- the fastest options out here.
-                <|> do
-                  -- we gotta let this fail if needed, so that something like:
-                  --    a + 3
-                  -- is first matched against "a:", but ":" doesn't exist,
-                  -- so it'll now backtrack and then try to parse it as a
-                  -- primary block. thus it's pretty important for the
-                  -- colon (:) parser to fail, not cut, as it signals
-                  -- the backtracking.
-                  labname <- identifier_def <* colon
-                  l <- LabelNamed as <$> newsymbol
-                  symassoclabel l labname $> l
-            primaryblock =
-              branch_incur
-                ( conscompound
-                    <$> seq_many do
-                      choice
-                        [ BIDecl <$> declaration,
-                          BIStmt <$> self,
-                          BILabel <$> label
-                        ]
-                )
-                $( switch_ws1
-                     [|
-                       case _ of
-                         "if" -> do
-                           cond <- cutparexpr
-                           thenclause <- cutstmt
-                           elseclause <- optional $ else' >> cutstmt
-                           pure $ StmtIf cond thenclause elseclause
-                         "switch" -> StmtSwitch <$> cutparexpr <*> cutstmt
-                         "while" -> StmtWhile <$> cutparexpr <*> cutstmt
-                         "do" ->
-                           StmtDoWhile
-                             <$> statement
-                             <*> (while' >> cutparexpr)
-                         "for" -> do
-                           cutlpar
-                           initcl <-
-                             (ForDecl <$> declaration)
-                               <|> ( ForExpr
-                                       <$> optional expr_
-                                       <* cutsemicolon' "for-loop initializer"
-                                   )
-                           testcl <-
-                             optional expr_
-                               <* cutsemicolon' "for-loop test"
-                           postcl <- optional expr_
-                           cutrpar
-                           bodycl <-
-                             statement
-                               <|> ( cutsemicolon'
-                                       "for-loop body"
-                                       $> zerostmt
-                                   )
-                           pure $ StmtFor (initcl testcl postcl) bodycl
-                       |]
-                 )
-            jumpstmt =
-              $( switch_ws1
-                   [|
-                     case _ of
-                       "goto" -> flip pcut (BasicError "expected label") do
-                         StmtJump . JumpGoto . JGUnresolved <$> identifier
-                       "continue" -> pure $ StmtJump JumpContinue
-                       "break" -> pure $ StmtJump JumpBreak
-                       "return" -> StmtJump . JumpReturn <$> optional expr_
-                     |]
-               )
-                <* cutsemicolon' "jump (goto, continue, break, or return)"
+          jumpstmt =
+            $( switch_ws1
+                 [|
+                   case _ of
+                     "goto" -> flip pcut (BasicError "expected label") do
+                       StmtJump . JumpGoto . JGUnresolved <$> identifier
+                     "continue" -> pure $ StmtJump JumpContinue
+                     "break" -> pure $ StmtJump JumpBreak
+                     "return" -> StmtJump . JumpReturn <$> optional expr_
+                   |]
+             )
+              <* cutsemicolon' "jump (goto, continue, break, or return)"
         withOption
-          label
+          (label as)
           (\l -> StmtLabeled l <$> self)
           $ oespolicy
             (StmtExpr as Nothing) -- fallback; usage depends on oespolicy.
