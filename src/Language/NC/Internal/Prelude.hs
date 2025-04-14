@@ -61,7 +61,7 @@ import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Text (Text)
 import Data.Unique
 import Data.Word
-import FlatParse.Stateful hiding (Parser)
+import FlatParse.Stateful hiding (Parser, Result)
 import GHC.Float
 import GHC.Generics hiding (from, to)
 import Language.NC.Internal.Types.Parse

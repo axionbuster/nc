@@ -21,6 +21,10 @@ module Language.NC.Internal.Lex (
 
   -- * Punctuation
   punct,
+  cutrpar,
+  cutrcur,
+  cutrdbsqb,
+  cutrsqb,
   ldbsqb,
   rdbsqb,
   lsqb,
@@ -275,13 +279,13 @@ _rsq = lx0 $(switch [|case _ of "]" -> pure (); ":>" -> pure ()|])
   closing = $(switch [|case _ of "}" -> pure (); "%>" -> pure ()|])
 
 -- some cut versions of closing tokens
-rparcut = rpar `cut` BasicError "expected )"
+cutrpar = rpar `cut` BasicError "expected )"
 
-rcurcut = rcur `cut` BasicError "expected }"
+cutrcur = rcur `cut` BasicError "expected }"
 
-rsqbcut = rsqb `cut` BasicError "expected ]"
+cutrsqb = rsqb `cut` BasicError "expected ]"
 
-rdbsqbcut = rdbsqb `cut` BasicError "expcted ]]"
+cutrdbsqb = rdbsqb `cut` BasicError "expcted ]]"
 
 -- | Parse o. If ok, parse p and then parse c and return what p returns.
 -- If o doesn't parse, then parse q. Usage: @branch_between o c p q@
@@ -294,35 +298,35 @@ branch_between ::
 branch_between o c p = branch o (p <* c)
 
 -- | Enclose a thing in square brackets not followed by another square bracket.
-insqb = between lsqb rsqbcut
+insqb = between lsqb cutrsqb
 
 -- | Parse the first parser in square brackets if opening (left) square bracket
 -- is detected. Otherwise, parse q. This cuts down on needless backtracking.
-branch_insqb = branch_between lsqb rsqbcut
+branch_insqb = branch_between lsqb cutrsqb
 
 -- | Enclose a thing in double square brackets.
-indbsqb = between ldbsqb rdbsqbcut
+indbsqb = between ldbsqb cutrdbsqb
 
 -- | Parse the first parser in double square brackets if opening double
 -- square bracket is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_indbsqb = branch_between ldbsqb rdbsqbcut
+branch_indbsqb = branch_between ldbsqb cutrdbsqb
 
 -- | Enclose a thing in parentheses.
-inpar = between lpar rparcut
+inpar = between lpar cutrpar
 
 -- | Parse the first parser in parentheses if opening parenthesis
 -- is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_inpar = branch_between lpar rparcut
+branch_inpar = branch_between lpar cutrpar
 
 -- | Enclose a thing in braces.
-incur = between lcur rcurcut
+incur = between lcur cutrcur
 
 -- | Parse the first parser in (curly) braces if opening brace
 -- is detected. Otherwise, parse q. This cuts down on needless
 -- backtracking.
-branch_incur = branch_between lcur rcurcut
+branch_incur = branch_between lcur cutrcur
 
 -- Important punctuations
 

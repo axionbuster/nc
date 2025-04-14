@@ -169,6 +169,7 @@ module Language.NC.Internal.Types.Parse (
 
   -- * Parser types and functions
   Parser,
+  Result,
   ParserState (..),
   WithSpan (..),
   IntegerSettings (..),
@@ -198,6 +199,7 @@ module Language.NC.Internal.Types.Parse (
   -- * Debugging
   traceIO,
   dbg_dumpsyms,
+  dbg_runp,
 ) where
 
 import Control.Exception
@@ -230,9 +232,13 @@ import FlatParse.Stateful (
   err,
   failed,
   getPos,
+  runParserIO,
+  strToUtf8,
   withError,
   withSpan,
  )
+import FlatParse.Stateful qualified as FP
+import {-# SOURCE #-} Language.NC.Internal.Lex
 import Language.NC.Internal.Types.PrimTypes
 import Text.Printf (printf)
 import UnliftIO.IORef
@@ -1010,6 +1016,9 @@ data ParserState = ParserState
 -- | The parser, which lives in IO.
 type Parser = ParserIO ParserState Error
 
+-- | Our result type.
+type Result = FP.Result Error
+
 -- | Data with span. Bogus span could exist if some construct was
 -- created in thin air by the parser. Bogus spans will be 0:0.
 data WithSpan a = WithSpan !Span a
@@ -1579,6 +1588,12 @@ cforh_post = lens g s
   g (ForDecl _ _ p) = p
   s (ForExpr a b _) c = ForExpr a b c
   s (ForDecl a b _) c = ForDecl a b c
+
+-- | Run a parser. Note: it takes care of any initial whitespace.
+dbg_runp :: (MonadIO m) => Parser a -> String -> m (Result a)
+dbg_runp p s = liftIO do
+  st <- mkstate0
+  runParserIO (ws0 >> p) st 0 . strToUtf8 $ s
 
 makeLenses ''Type
 

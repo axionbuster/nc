@@ -59,7 +59,6 @@ statement_ oespolicy =
       cutsemicolon = cut semicolon (BasicError "expected ;")
       cutstmt = statement `cut` BasicError "expected statement"
       cutlpar = lpar `cut` BasicError "expected ("
-      cutrpar = rpar `cut` BasicError "expected )"
       cutparexpr = do
         cutlpar
         e <- expr_ `cut` BasicError "expected expression"
@@ -130,7 +129,8 @@ statement_ oespolicy =
                        "break" -> pure $ StmtJump JumpBreak
                        "return" -> StmtJump . JumpReturn <$> optional expr_
                      |]
-               ) <* cutsemicolon
+               )
+                <* cutsemicolon
         withOption
           label
           (\l -> StmtLabeled l <$> self)
@@ -148,12 +148,12 @@ _dbg_example0 =
     start:
     /* [[deprecated("Use new_api instead")]] int result = 0; */
     int result = 0;
-    
+
     /* Nested compound statements with various control flows */
     if (argc > 1) {
       /* Declaration with multiple variables and initializers */
       register const volatile long *values[10], count = argc - 1, *ptr = NULL;
-      
+
       /* Switch with fallthrough cases, nested blocks and declarations */
       switch (argv[1][0]) {
         case 'a': case 'A': {
@@ -172,7 +172,7 @@ _dbg_example0 =
           do {
             /* Complex multiple declaration with function pointers */
             void (*handlers[5])(int, void*), (*process)(void) = NULL;
-            
+
             /* Nested if-else with goto */
             if (count-- > 5) {
               while (count > 0 && !ptr) {
@@ -202,11 +202,11 @@ _dbg_example0 =
         result += entry.x;
       }
     }
-    
+
     /* Statement expressions and complex comma expressions */
     /* (void)({int x = 5; x *= 2; result += x;}); */
     result = (printf("Processing: %d\\n", result), result > 0 ? result * 2 : 0);
-  
+
     end:
     return result;
   }

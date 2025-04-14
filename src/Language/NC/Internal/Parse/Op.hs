@@ -196,8 +196,14 @@ mul = do
      )
 
 cast_ =
-  -- can't really use branch_inpar because it needs to be followed up by cast_.
-  branch lpar (ExprCast <$> (typename <* rpar) <*> cast_) unary
+  -- we apply full backtracking in case the what was inside the parentheses
+  -- were not a type name.
+  ( lpar
+      >> ExprCast
+      <$> (typename <* cutrpar)
+      <*> cut cast_ (BasicError "expected an expression (cast_)")
+  )
+    <|> unary
 
 unary =
   $( switch_ws0
@@ -262,7 +268,9 @@ postfix = primary >>= go
         tt <- cut tynam MalformedGenericExpression
         cut colon MalformedGenericExpression
         GenAssoc tt <$> assign
-    paren = Expr <$> runandgetspan (PrimParen <$> cut expr_ ExpectedExpression)
+    -- we need 'paren' to cope with failure because we parse this and
+    -- if it doesn't work we will try to parse a cast_ expression.
+    paren = Expr <$> runandgetspan (PrimParen <$> expr_)
     ident = withSpan identifier \i s -> pure $ Expr $ WithSpan s $ PrimId i
     litexpr = Expr <$> runandgetspan (PrimLit <$> literal)
 
