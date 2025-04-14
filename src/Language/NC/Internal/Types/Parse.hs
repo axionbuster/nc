@@ -1012,7 +1012,7 @@ type Parser = ParserIO ParserState Error
 
 -- | Data with span. Bogus span could exist if some construct was
 -- created in thin air by the parser. Bogus spans will be 0:0.
-data WithSpan a = WithSpan !Span a
+data WithSpan a = WithSpan {-# UNPACK #-} !Span a
   deriving (Eq, Show, Functor)
 
 instance Show Symbol where
