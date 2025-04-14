@@ -56,7 +56,7 @@ statement_ :: OnEmpty Statement -> Parser Statement
 statement_ oespolicy =
   let self = statement_ oespolicy
       cutcolon = pcut colon (BasicError "expected :")
-      cutsemicolon = pcut semicolon (BasicError "expected ;")
+      cutsemicolon' n = pncut n semicolon (BasicError "expected ;")
       cutstmt = statement `pcut` BasicError "expected statement"
       cutlpar = lpar `pcut` BasicError "expected ("
       cutparexpr = do
@@ -72,17 +72,44 @@ statement_ oespolicy =
                      case _ of
                        "case" ->
                          LabelCase as
-                           <$> (CIEUnresolved <$> expr_)
+                           <$> ( CIEUnresolved
+                                   <$> pncut
+                                     "case"
+                                     expr_
+                                     (BasicError "expected expression")
+                               )
                            <*> newsymbol
                            <* cutcolon
                        "default" ->
                          LabelDefault as <$> newsymbol <* cutcolon
-                       _ -> do
-                         labname <- identifier_def <* colon
-                         l <- LabelNamed as <$> newsymbol
-                         symassoclabel l labname $> l
                      |]
                )
+                -- on the use of <|> here...
+                --    yeah, normally <|> is frowned upon in recursive descent
+                -- parsers because backtracking is expensive. but here i
+                -- kind of don't have a choice, as FlatParse has a "bug" where
+                -- if the string "case" or "default" matches and then ws1
+                -- fails, it does not trigger the wildcard (_) case as expected;
+                -- instead, it simply fails the parser, simply because ws1 fails
+                -- in the wildcard case. arguably this is a
+                -- natural consequence of how things work under the hood,
+                -- but this is awful. it's probably unintended.
+                --    to curtail the dangers of <|>, i inserted as much cut
+                -- as possible in the clauses above to limit backtracking.
+                --    in short: FlatParse's switchWithPost may not be the right
+                -- way to get a whole-word match, but it does remain as one of
+                -- the fastest options out here.
+                <|> do
+                  -- we gotta let this fail if needed, so that something like:
+                  --    a + 3
+                  -- is first matched against "a:", but ":" doesn't exist,
+                  -- so it'll now backtrack and then try to parse it as a
+                  -- primary block. thus it's pretty important for the
+                  -- colon (:) parser to fail, not cut, as it signals
+                  -- the backtracking.
+                  labname <- identifier_def <* colon
+                  l <- LabelNamed as <$> newsymbol
+                  symassoclabel l labname $> l
             primaryblock =
               branch_incur
                 ( conscompound
@@ -111,11 +138,21 @@ statement_ oespolicy =
                            cutlpar
                            initcl <-
                              (ForDecl <$> declaration)
-                               <|> (ForExpr <$> optional expr_ <* cutsemicolon)
-                           testcl <- optional expr_ <* cutsemicolon
+                               <|> ( ForExpr
+                                       <$> optional expr_
+                                       <* cutsemicolon' "for-loop initializer"
+                                   )
+                           testcl <-
+                             optional expr_
+                               <* cutsemicolon' "for-loop test"
                            postcl <- optional expr_
                            cutrpar
-                           bodycl <- statement <|> (cutsemicolon $> zerostmt)
+                           bodycl <-
+                             statement
+                               <|> ( cutsemicolon'
+                                       "for-loop body"
+                                       $> zerostmt
+                                   )
                            pure $ StmtFor (initcl testcl postcl) bodycl
                        |]
                  )
@@ -130,13 +167,13 @@ statement_ oespolicy =
                        "return" -> StmtJump . JumpReturn <$> optional expr_
                      |]
                )
-                <* cutsemicolon
+                <* cutsemicolon' "jump (goto, continue, break, or return)"
         withOption
           label
           (\l -> StmtLabeled l <$> self)
           $ oespolicy
             (StmtExpr as Nothing) -- fallback; usage depends on oespolicy.
-            (StmtExpr as . Just <$> expr_ <* cutsemicolon)
+            (StmtExpr as . Just <$> expr_ <* cutsemicolon' "asdfasdf")
           <|> primaryblock
           <|> jumpstmt
 

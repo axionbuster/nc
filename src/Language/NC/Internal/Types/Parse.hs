@@ -187,6 +187,7 @@ module Language.NC.Internal.Types.Parse (
   pcatch,
   pcatchlog,
   pcut,
+  pncut,
   pfinally,
   p_onexception,
   emiterror,
@@ -816,9 +817,13 @@ type SeverityPolicy = Error -> Severity -> Severity
 --
 -- Not all \"errors\" may be errors.
 data Error
-  = -- | Miscellaneous programming error. Before specific error variants
+  = -- | Miscellaneous programmer error. Before specific error variants
     -- are added, ad hoc errors go here.
     BasicError String
+  | -- | Miscellaneous programmer error, but the first component
+    -- indicates \"where\" it came from. Of course what \"where\"
+    -- means isn't well defined.
+    BasicNamedError String Error
   | -- | Internal error
     InternalError String
   | -- | Symbol already defined in current scope
@@ -1102,6 +1107,7 @@ primtype2type pt = Type mempty mempty (BTPrim pt) mempty mempty AlignNone
 instance Show Error where
   show = \case
     BasicError s -> s
+    BasicNamedError n s -> printf "in %s: %s" n (show s)
     InternalError s -> printf "internal error: %s" s
     AlreadyDefinedInScope -> "symbol already defined in current scope"
     BadChar -> "invalid character in a string or character literal"
@@ -1463,6 +1469,12 @@ pcatchlog p = pcatch p err
 pcut :: Parser a -> Error -> Parser a
 pcut p e = pcatchlog (p `FP.cut` e)
 
+-- | Like 'FP.cut', but automatically catch, log, and propagate
+-- the error, wrapped in a 'BasicNamedError' so that the responsible
+-- component can name itself.
+pncut :: String -> Parser a -> Error -> Parser a
+pncut n p e = pcatchlog (p `FP.cut` (BasicNamedError n e))
+
 -- | Parse with @p@; on error, record with span and then handle
 -- it with @q@. Usage: @pcatch p q@.
 pcatch :: Parser a -> (Error -> Parser a) -> Parser a
@@ -1503,7 +1515,8 @@ dbg_dumperrs orig = do
             [] -> []
             _ : [] -> []
             x : y : zs -> (x, y) : r zs
-    forM_ (zip3 (toList es) (toList positions2) strspans)
+    forM_
+      (zip3 (toList es) (toList positions2) strspans)
       \(e, Span s t, ((sl, sc), (tl, tc))) -> do
         let prettyshowlist [] = "<nothing>"
             prettyshowlist xs = show xs
