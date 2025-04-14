@@ -118,7 +118,7 @@ pr_info = lens getter setter
         PrimBitInt
           (if w .&. 0x8000 /= 0 then Signed else Unsigned)
           (w .&. 0x3FFF)
-    | otherwise = case w .&. 0x00E0 of -- Look at bits 5-6-7 first
+    | otherwise = case w of -- Look at bits 5-6-7 first
         0x0000 -> PrimInt Unsigned -- bits 5-6-7=000: unsigned int
         0x0080 -> PrimShort Unsigned -- bits 5-6-7=100: unsigned short
         0x0020 -> PrimNSChar -- bits 5-6-7=001: NSChar (char)
@@ -127,27 +127,27 @@ pr_info = lens getter setter
         0x00C0 -> PrimLongLong Unsigned -- bits 5-6-7=110: unsigned long long
         0x0060 -> PrimBool -- bits 5-6-7=011: _Bool
         0x00E0 -> PrimVoid -- bits 5-6-7=111: void
-        _ -> case w of -- Handle special cases and signed variants
-          0x00F0 -> PrimNullptr -- nullptr_t
-          0x8000 -> PrimInt Signed -- signed int
-          0x8080 -> PrimShort Signed -- signed short
-          0x80A0 -> PrimSUChar Signed -- signed char
-          0x8040 -> PrimLong Signed -- signed long
-          0x80C0 -> PrimLongLong Signed -- signed long long
-          -- floating points
-          0x0008 -> PrimFloat CxReal FCDouble
-          0x0010 -> PrimFloat CxReal FCFloat
-          0x0018 -> PrimFloat CxReal FCLongDouble
-          0x0030 -> PrimFloat CxReal FCDecimal32
-          0x0031 -> PrimFloat CxReal FCDecimal64
-          0x0032 -> PrimFloat CxReal FCDecimal128
-          0x000C -> PrimFloat CxComplex FCDouble
-          0x0014 -> PrimFloat CxComplex FCFloat
-          0x001C -> PrimFloat CxComplex FCLongDouble
-          0x0034 -> PrimFloat CxComplex FCDecimal32
-          0x0035 -> PrimFloat CxComplex FCDecimal64
-          0x0036 -> PrimFloat CxComplex FCDecimal128
-          _ -> error $ "Unknown bit pattern in Prim: " ++ show w
+         -- Handle special cases and signed variants
+        0x00F0 -> PrimNullptr -- nullptr_t
+        0x8000 -> PrimInt Signed -- signed int
+        0x8080 -> PrimShort Signed -- signed short
+        0x80A0 -> PrimSUChar Signed -- signed char
+        0x8040 -> PrimLong Signed -- signed long
+        0x80C0 -> PrimLongLong Signed -- signed long long
+        -- floating points
+        0x0008 -> PrimFloat CxReal FCDouble
+        0x0010 -> PrimFloat CxReal FCFloat
+        0x0018 -> PrimFloat CxReal FCLongDouble
+        0x0030 -> PrimFloat CxReal FCDecimal32
+        0x0031 -> PrimFloat CxReal FCDecimal64
+        0x0032 -> PrimFloat CxReal FCDecimal128
+        0x000C -> PrimFloat CxComplex FCDouble
+        0x0014 -> PrimFloat CxComplex FCFloat
+        0x001C -> PrimFloat CxComplex FCLongDouble
+        0x0034 -> PrimFloat CxComplex FCDecimal32
+        0x0035 -> PrimFloat CxComplex FCDecimal64
+        0x0036 -> PrimFloat CxComplex FCDecimal128
+        _ -> error $ "Unknown bit pattern in Prim: " ++ show w
   setter (Prim _) =
     Prim . \case
       i
