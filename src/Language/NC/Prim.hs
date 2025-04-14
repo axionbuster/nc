@@ -19,6 +19,10 @@
 -- The implementation uses a binary encoding that combines type category bits
 -- with additional metadata like signedness (bit 15) and whether it's a _BitInt
 -- (bit 14).
+--
+-- This module also includes support for parsing @\_Complex \_Decimal...@ types,
+-- which do not exist in standard C. However, it allows expressing the types
+-- which can be used for error reporting and perhaps more.
 module Language.NC.Prim (
   -- * Types
   Prim,
@@ -31,6 +35,9 @@ module Language.NC.Prim (
   -- * Lenses
   pr_info,
   pc_si,
+
+  -- * Other
+  bitintwidth_ok,
 
   -- * Common primitive type constants
   pr_int,
@@ -56,6 +63,9 @@ module Language.NC.Prim (
   pr_decimal32,
   pr_decimal64,
   pr_decimal128,
+  pr_cdecimal32,
+  pr_cdecimal64,
+  pr_cdecimal128,
 ) where
 
 import Control.Lens
@@ -134,6 +144,9 @@ pr_info = lens getter setter
           0x000C -> PrimFloat CxComplex FCDouble
           0x0014 -> PrimFloat CxComplex FCFloat
           0x001C -> PrimFloat CxComplex FCLongDouble
+          0x0034 -> PrimFloat CxComplex FCDecimal32
+          0x0035 -> PrimFloat CxComplex FCDecimal64
+          0x0036 -> PrimFloat CxComplex FCDecimal128
           _ -> error $ "Unknown bit pattern in Prim: " ++ show w
   setter (Prim _) =
     Prim . \case
@@ -275,6 +288,16 @@ pc_si = prism' make destroy
     PrimBitInt s w -> Just $ PSI SICBitInt s w
     ~_ -> Nothing
 
+-- | If the bitwidth is OK, wrap it inside 'Just'.
+--
+-- NOTE: for signed @\_BitInt@, bit width must be at least 2. For unsigned,
+-- it must be at least 1. The signed @\_BitInt@ case isn't checked.
+-- It only checks whether it is positive and fits in 14 bits.
+bitintwidth_ok :: Word16 -> Maybe Word16
+bitintwidth_ok a
+  | a > 0x3FFF || a == 0 = Nothing
+  | otherwise = Just a
+
 -- * Common primitive type constants for easier use
 
 -- | Signed @int@ type in C
@@ -368,3 +391,15 @@ pr_decimal64 = Prim 0x0031
 -- | IEEE 754-2008 @_Decimal128@ type
 pr_decimal128 :: Prim
 pr_decimal128 = Prim 0x0032
+
+-- | Complex IEEE 754-2008 @_Decimal32@ type
+pr_cdecimal32 :: Prim
+pr_cdecimal32 = Prim 0x0034
+
+-- | Complex IEEE 754-2008 @_Decimal64@ type
+pr_cdecimal64 :: Prim
+pr_cdecimal64 = Prim 0x0035
+
+-- | Complex IEEE 754-2008 @_Decimal128@ type
+pr_cdecimal128 :: Prim
+pr_cdecimal128 = Prim 0x0036
