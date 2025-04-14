@@ -1507,13 +1507,19 @@ dbg_dumperrs orig = do
       \(e, Span s t, ((sl, sc), (tl, tc))) -> do
         let prettyshowlist [] = "<nothing>"
             prettyshowlist xs = show xs
+            prettyseverity SeverityError = "ERROR"
+            prettyseverity SeverityWarning = "WARN"
+            prettyseverity SeverityNote = "NOTE"
         -- locate the lines for printing
         FP.setPos s
         ls <- fix \r -> do
           here <- FP.getPos
-          if here <= t
-            then (:) <$> FP.takeLine <*> r
-            else pure []
+          FP.branch
+            FP.eof
+            (pure ["<EOF>"])
+            if here <= t
+              then (:) <$> FP.takeLine <*> r
+              else pure []
         traceIO $
           printf
             """
@@ -1530,7 +1536,7 @@ dbg_dumperrs orig = do
             sc
             tl
             tc
-            (show e.aesev)
+            (prettyseverity e.aesev)
             (prettyshowlist e.aerel)
             (unlines ls)
 

@@ -67,7 +67,7 @@ statement_ oespolicy =
    in do
         as <- attrspecs
         let label =
-              $( switch_ws0
+              $( switch_ws1
                    [|
                      case _ of
                        "case" ->
