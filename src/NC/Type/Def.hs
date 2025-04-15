@@ -13,7 +13,7 @@
 module NC.Type.Def (
   -- * Symbols and names
   Name,
-  Symbol (..),
+  Symbol,
   Table,
 
   -- * Types and Symbols
