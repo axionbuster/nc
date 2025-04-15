@@ -1,10 +1,81 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module NC.Parser where
+-- |
+-- Module: NC.Parser
+-- Description: Define the parser, error handling, etc.
+module NC.Parser (
+  -- * Defining the parser
+  P,
+  PEnv (..),
+  Settings (..),
+  SizeSettings (..),
+  EncodingSettings (..),
+  penv_messages,
+  penv_original,
+  penv_settings,
+  penv_psym,
+  szs_boolbits,
+  szs_charbits,
+  szs_charptrbits,
+  szs_doublebits,
+  szs_floatbits,
+  szs_intbits,
+  szs_longbits,
+  szs_longlongbits,
+  szs_longdoublebits,
+  szs_shortbits,
+  encset_charissigned,
+  encset_wchartype,
+  encset_char8type,
+  encset_char16type,
+  encset_char32type,
+  setg_encoding,
+  setg_sizes,
+  am_msg,
+  am_pos,
+  am_spn,
+  am_who,
+  am_why,
+  sizesettings,
+  posbwof,
+
+  -- * Symbols and lookups
+  Str,
+  Lookup (..),
+  PNS (..),
+  PSym (..),
+  psym_stack,
+
+  -- * Span
+  Span64 (..),
+  i32topos,
+  postoi32,
+  span64,
+  sp_begin_pos,
+  sp_end_pos,
+
+  -- * Message production and error handling.
+  Message (..),
+  AMessage (..),
+  oops,
+  adhoc,
+  pthrow,
+  pcutfull,
+  pcut,
+  pcut',
+  ptry,
+  pcut_expect,
+  psync,
+  ponexception,
+  pfinally,
+
+  -- * Debugging.
+  _dbg_dumpmsgs,
+) where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Fix (fix)
+import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.Coerce
@@ -13,11 +84,18 @@ import Data.Int
 import Data.Word
 import Debug.Trace qualified as Tr
 import FlatParse.Stateful
+import Language.NC.ExprStmt
 import Language.NC.Prim
+import NC.Symbol
 import Text.Printf
 import UnliftIO.IORef
 import Prelude
 
+-- | Shared string type. FlatParse uses a single 'ByteString' and so
+-- any excerpts will also be shared with that buffer.
+type Str = ByteString
+
+-- | Parsing settings.
 data Settings = Settings
   { _setg_sizes :: SizeSettings,
     _setg_encoding :: EncodingSettings
@@ -30,7 +108,29 @@ data PEnv = PEnv
     -- | Settings for various pluggable behaviors.
     _penv_settings :: !Settings,
     -- | Original string. This is needed for error reporting.
-    _penv_original :: !ByteString
+    _penv_original :: !ByteString,
+    -- | Symbol tables.
+    _penv_psym :: !PSym
+  }
+
+-- | Result of a misc. symbol lookup.
+data Lookup
+  = LFunction
+  | LObject
+  | LTypedef
+  | LEnumConstant
+  deriving (Eq, Show)
+
+-- | Parser namespace
+data PNS = PNS
+  { _pns_labels :: Table Str LabelInfo,
+    _pns_tags :: Table Str Type,
+    _pns_others :: Table Str Lookup
+  }
+
+-- | Symbol environment
+newtype PSym = PSym
+  { _psym_stack :: [PNS]
   }
 
 -- | Our parser type.
@@ -149,6 +249,8 @@ prettymsg d =
     MsgAdHoc s -> (s ++)
     MsgOops s -> ("internal error: " ++) . showsPrec 11 s
     MsgExpect s -> ("expected " ++) . showsPrec 11 s
+
+makeLenses ''PSym
 
 makeLenses ''PEnv
 

@@ -11,7 +11,7 @@
 --    punctuation, or comments---collectively refered to as \'space\'. This
 --    includes in-delimiter parsers like 'inpar'.
 --  - Keywords and identifiers will require some space to come afterward.
-module Language.NC.Lex (
+module NC.Lex (
   -- * Whitespace and comments
   ws0,
   ws1,
