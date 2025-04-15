@@ -190,9 +190,22 @@ module NC.Type.Def (
   -- ** Initializer lenses
   init_designation,
   init_value,
+
+  -- ** 'Qual' values and lenses
+  _qu_none,
+  _qu_const,
+  _qu_restrict,
+  _qu_volatile,
+  _qu_atomic,
+  qu_none,
+  qu_any,
+  qu_const,
+  qu_restrict,
+  qu_volatile,
+  qu_atomic,
 ) where
 
-import Control.Lens.TH
+import Control.Lens
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
@@ -801,3 +814,34 @@ makeLenses ''EnumConst
 makeLenses ''FuncInfo
 makeLenses ''DeclInit
 makeLenses ''InitItem
+
+-- | Qualifier bases
+_qu_none, _qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
+_qu_none = mempty
+_qu_const = Qual 1
+_qu_restrict = Qual 2
+_qu_volatile = Qual 4
+_qu_atomic = Qual 8
+
+__bool :: (Bits a, Monoid a) => a -> Lens' a Bool
+__bool mask = lens getter setter
+ where
+  getter = (/= mempty) . (.&. mask)
+  setter a = \case
+    True -> a .|. mask
+    _ -> a .&. complement mask
+
+-- | Does the qualifier set have ...?
+qu_const, qu_restrict, qu_volatile, qu_atomic :: Lens' Qual Bool
+qu_const = __bool _qu_const
+qu_restrict = __bool _qu_restrict
+qu_volatile = __bool _qu_volatile
+qu_atomic = __bool _qu_atomic
+
+qu_any, qu_none :: Getter Qual Bool
+
+-- | Has any qualifier been set?
+qu_any = to (/= mempty)
+
+-- | Is it equal to '\_qu\_none'?
+qu_none = to (== mempty)
