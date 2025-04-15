@@ -779,7 +779,7 @@ data StringLiteral
     StringLiteral LazyByteString Prim
   deriving (Show, Eq)
 
--- | It will merely say @"\<symbol\>"@
+-- | It will merely say @\<symbol\>@.
 instance Show Symbol where
   show _ = "<symbol>"
 
