@@ -35,6 +35,7 @@ library
                         NC.Parser, NC.Symbol.Def,
                         NC.Symbol,
                         NC.Lex,
+                        NC.Parse.Type,
                         Language.NC.Type,
                         Language.NC.ExprStmt
     default-extensions: NoImplicitPrelude

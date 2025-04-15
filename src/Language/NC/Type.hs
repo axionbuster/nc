@@ -6,6 +6,7 @@ module Language.NC.Type (
   UQType (..),
   Qual,
   Stor (..),
+  RecMember (..),
   _qu_none,
   _qu_const,
   _qu_volatile,
