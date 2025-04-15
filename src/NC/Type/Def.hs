@@ -230,6 +230,7 @@ data Type
     _ty_qual :: Qual,
     _ty_align :: Alignment
   }
+  deriving (Show, Eq)
 
 -- | Unqualified type
 data UQType
@@ -241,6 +242,7 @@ data UQType
   | UQEnum EnumInfo
   | UQAtomic UQType
   | UQTypeof TypeofQual Typeof
+  deriving (Show, Eq)
 
 -- | A C attribute
 data Attribute = Attribute
@@ -248,10 +250,11 @@ data Attribute = Attribute
     _attr_basename :: Name,
     _attr_info :: Maybe Span64
   }
+  deriving (Show, Eq)
 
 -- | A C qualification
 newtype Qual = Qual Word16
-  deriving (Eq, Show, Bits)
+  deriving (Show, Eq, Bits)
   deriving (Semigroup, Monoid) via (Ior Qual)
 
 -- | A C alignment specification
@@ -259,6 +262,7 @@ data Alignment
   = AlignNone
   | AlignAs ConstIntExpr
   | AlignAsType Type
+  deriving (Show, Eq)
 
 -- *** C Record types (struct, union)
 
@@ -269,15 +273,18 @@ data RecInfo = RecInfo
     _rec_attrs :: [Attribute],
     _rec_def :: Maybe [RecMember]
   }
+  deriving (Show, Eq)
 
 -- | Is the record a @struct@ or a @union@?
 data RecType = RecStruct | RecUnion
+  deriving (Show, Eq)
 
 -- | A C record member may be a field, which can be a bitfield, or
 -- it may be a @static\_assert@.
 data RecMember
   = RMField [Attribute] Type Symbol (Maybe ConstIntExpr)
   | RMStaticAssertion StaticAssertion
+  deriving (Show, Eq)
 
 -- *** C Array
 
@@ -292,6 +299,7 @@ data ArrayInfo = ArrayInfo
     -- it's illegal for this to exist.
     _arr_paraminfo :: Maybe ParamArrayInfo
   }
+  deriving (Show, Eq)
 
 -- | The outermost derivation of an array in parameter position may be
 -- given extra annotations.
@@ -302,6 +310,7 @@ data ParamArrayInfo = ParamArrayInfo
     -- | Qualifications for the decayed pointer.
     _parr_qual :: Qual
   }
+  deriving (Show, Eq)
 
 -- | In parameter position, and in the outermost derivation, an array can be
 -- given a @static@ annotation. @static@ means that the array exists
@@ -309,6 +318,7 @@ data ParamArrayInfo = ParamArrayInfo
 data ArrayStatic
   = ASNoStatic
   | ASStatic
+  deriving (Show, Eq)
 
 -- *** C Enumeration types
 
@@ -319,6 +329,7 @@ data EnumInfo = EnumInfo
     _enum_membertype :: Type,
     _enum_members :: Maybe [EnumConst]
   }
+  deriving (Show, Eq)
 
 -- | A constant declared in a C @enum@
 data EnumConst = EnumConst
@@ -326,6 +337,7 @@ data EnumConst = EnumConst
     _ec_attrs :: [Attribute],
     _ec_explicitval :: Maybe ConstIntExpr
   }
+  deriving (Show, Eq)
 
 -- *** C Functions
 
@@ -335,21 +347,26 @@ data FuncInfo = FuncInfo
     _fun_pars :: [Param],
     _fun_variadic :: Variadic
   }
+  deriving (Show, Eq)
 
 -- | A function parameter that optionally introduces an identifier into
 -- scope.
 data Param = Param Type (Maybe Symbol)
+  deriving (Show, Eq)
 
 -- | Is a function variadic?
 data Variadic = Variadic | NotVariadic
+  deriving (Show, Eq)
 
 -- *** C Metaprogramming types
 
 -- | Argument of @typeof@ or @typeof\_unqual@
 data Typeof = TypeofType Type | TypeofExpr Expr
+  deriving (Show, Eq)
 
 -- | Is it a @typeof@ or @typeof\_unqual@?
 data TypeofQual = TQQual | TQUnqual
+  deriving (Show, Eq)
 
 -- ** C Declarations, expressions, statements, and initializers.
 
@@ -419,6 +436,7 @@ data Declaration
     StaticAssertDecl StaticAssertion
   | -- | A standalone attribute declaration.
     AttrDecl [Attribute]
+  deriving (Show, Eq)
 
 -- | A pair of declarator and optional initializer.
 data DeclInit
@@ -431,12 +449,14 @@ data DeclInit
       -- | Initializer (optional).
       _decl_init :: Maybe Initializer
     }
+  deriving (Show, Eq)
 
 -- | A @static\_assertion@.
 data StaticAssertion
   = -- | An expression that must not evaluate to 0, and optional message
     -- that should be emitted if it does.
     StaticAssertion ConstIntExpr (Maybe StringLiteral)
+  deriving (Show, Eq)
 
 -- | A C storage class specifier
 data StorageClass
@@ -447,6 +467,7 @@ data StorageClass
   | SRegister
   | SThreadLocal
   | SConstExpr
+  deriving (Show, Eq)
 
 -- *** C Expressions
 
@@ -456,6 +477,7 @@ data Expr
   | ExprUnary UnaryOp Expr
   | ExprBinary BinOp Expr Expr
   | ExprSpecial SpecialExpr
+  deriving (Show, Eq)
 
 pattern ExprPostInc, ExprPostDec, ExprPreInc, ExprPreDec :: Expr -> Expr
 pattern ExprPostInc e = ExprUnary UOPostInc e
@@ -574,6 +596,7 @@ data UnaryOp
   | UOBitNot
   | UODeref
   | UOAddrOf
+  deriving (Show, Eq)
 
 -- | Generic binary opration ('Expr' × 'Expr')
 data BinOp
@@ -614,6 +637,7 @@ data BinOp
   | BOAssignBitOr
   | -- | Comma (`,`)
     BOSequence
+  deriving (Show, Eq)
 
 -- | Expressions thare are not like anything else.
 data SpecialExpr
@@ -627,6 +651,7 @@ data SpecialExpr
   | -- | If-then-else expression (@?:@)
     SEITE Expr Expr Expr
   | SEAlignof (Either ConstIntExpr Type)
+  deriving (Show, Eq)
 
 -- | A primary expression.
 data PrimExpr
@@ -634,16 +659,19 @@ data PrimExpr
   | PrimLit Lit
   | PrimParen Expr
   | PrimGeneric Expr [GenAssoc]
+  deriving (Show, Eq)
 
 -- | A generic association, part of a generic selection.
 data GenAssoc
   = -- | if no type, then @default@ case.
     GenAssoc (Maybe Type) Expr
+  deriving (Show, Eq)
 
 -- | A constant integer expression.
 data ConstIntExpr
   = CIEResolved Integer
   | CIEUnresolved Expr
+  deriving (Show, Eq)
 
 -- *** C Statements
 
@@ -662,22 +690,26 @@ data StmtBody
   | StmtJump Jump
   | StmtLabeled Label (Maybe Statement)
   | StmtAttribute [Attribute]
+  deriving (Show, Eq)
 
 -- | A 'BlockItem' can either be a declaration, a statement, or a label.
 -- A standalone label is translated as a labeled null statement.
 data BlockItem
   = BIDecl Declaration
   | BIStmt Statement
+  deriving (Show, Eq)
 
 -- | A 'label' can be given by an identifier, a @case \_:@, or @default:@.
 data Label
   = LabelNamed [Attribute] Symbol
   | LabelCase [Attribute] Symbol ConstIntExpr
   | LabelDefault [Attribute] Symbol
+  deriving (Show, Eq)
 
 -- | The first clause of a @for@ declaration can either be a declaration
 -- or an expression. The expression can be null.
 data ForInit = FIDecl Declaration | FIExpr (Maybe Expr)
+  deriving (Show, Eq)
 
 -- | A jump can be either a @return \_@, @break@, @continue@,
 -- or a @goto \_@.
@@ -686,11 +718,13 @@ data Jump
   | JumpBreak
   | JumpContinue
   | JumpGoto Name
+  deriving (Show, Eq)
 
 -- *** C Initializers
 
 -- | An initializer.
 data Initializer = InitExpr Expr | InitBraced [InitItem]
+  deriving (Show, Eq)
 
 -- | Member of a braced initializer.
 data InitItem = InitItem
@@ -699,6 +733,7 @@ data InitItem = InitItem
     -- | Value. It recurses.
     _init_value :: Initializer
   }
+  deriving (Show, Eq)
 
 -- | A C designator may be an array index or a member access.
 data Designator
@@ -706,6 +741,7 @@ data Designator
     DesignatorIndex ConstIntExpr
   | -- | Syntax: @.identifier@
     DesignatorMember Name
+  deriving (Show, Eq)
 
 -- ** C Literals
 
@@ -717,12 +753,12 @@ data Lit
     LitChar CharacterLiteral
   | -- | String literal
     LitString StringLiteral
-  deriving (Eq, Show)
+  deriving (Show, Eq)
 
 -- | An integer literal, annotated with type
 data IntegerLiteral
   = IntegerLiteral Integer Prim
-  deriving (Eq, Show)
+  deriving (Show, Eq)
 
 -- | A character literal, annotated with type
 data CharacterLiteral
@@ -730,7 +766,7 @@ data CharacterLiteral
     CharacterLiteral Char Prim
   | -- | Specified in octal or hexadecimal.
     IntCharacterLiteral Integer Prim
-  deriving (Eq, Show)
+  deriving (Show, Eq)
 
 -- | A string literal; escape sequences have been interpreted, but
 -- a NUL byte has NOT been inserted at the end. The encoding is:
@@ -749,6 +785,10 @@ instance Show Symbol where
 
 instance Hashable Symbol where
   hashWithSalt salt sym = hashWithSalt @Int salt (coerce hashUnique sym)
+
+-- | It will merely say @\<declarator\>@.
+instance Show Declarator where
+  show _ = "<declarator>"
 
 -- Generate lenses for all record types
 makeLenses ''Type
