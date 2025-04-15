@@ -31,6 +31,7 @@ import Control.Lens
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
+import Data.Function
 import Data.Word
 import Language.NC.Prim
 import NC.Symbol
@@ -38,6 +39,8 @@ import Prelude
 
 -- | An unqualified C type
 data UQType
+  = UQPrim !Prim
+  | UQRec !Rec
   deriving (Eq, Show)
 
 -- | A fully-qualified C type
@@ -80,12 +83,16 @@ data Stor
   | SRegister
   | STypedef
 
+-- | in progres...
 data RecMember
+  = RecMember !Type
+  deriving (Eq, Show)
 
 -- | Is this a @struct@ or a @union@?
 data RecType
   = RecStruct
   | RecUnion
+  deriving (Eq, Show)
 
 type Str = ByteString
 
@@ -98,8 +105,17 @@ data RecBody
     _recb_names :: !(Table Str RecMember)
   }
 
+instance Show RecBody where
+  show _ = "RecBody"
+
 data Rec
-  = Rec {_rec_t :: !RecType, _rec_body :: !RecBody}
+  = Rec {_rec_sym :: Symbol, _rec_t :: !RecType, _rec_body :: !RecBody}
+
+instance Eq Rec where
+  (==) = (==) `on` _rec_sym
+
+instance Show Rec where
+  show _ = "Rec"
 
 -- | A C Literal
 data Lit
