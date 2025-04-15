@@ -20,26 +20,59 @@ module NC.Type.Def (
 
   -- ** C Type System
   Type (..),
+  ty_base,
+  ty_qual,
+  ty_align,
   UQType (..),
   Qual,
+  _qu_none,
+  _qu_const,
+  _qu_restrict,
+  _qu_volatile,
+  _qu_atomic,
+  qu_none,
+  qu_any,
+  qu_const,
+  qu_restrict,
+  qu_volatile,
+  qu_atomic,
   Alignment (..),
 
   -- ** Record Types
   RecInfo (..),
+  rec_type,
+  rec_sym,
+  rec_attrs,
+  rec_def,
   RecType (..),
   RecMember (..),
 
   -- ** Array Types
   ArrayInfo (..),
+  arr_size,
+  arr_type,
+  arr_paraminfo,
   ParamArrayInfo (..),
+  parr_static,
+  parr_qual,
   ArrayStatic (..),
 
   -- ** Enum Types
   EnumInfo (..),
+  enum_sym,
+  enum_attrs,
+  enum_membertype,
+  enum_members,
   EnumConst (..),
+  ec_sym,
+  ec_attrs,
+  ec_explicitval,
 
   -- ** Function Types
   FuncInfo (..),
+  fun_rettype,
+  fun_pars,
+  fun_variadic,
   Param (..),
   Variadic (..),
 
@@ -49,12 +82,20 @@ module NC.Type.Def (
 
   -- ** C Attributes
   Attribute (..),
+  attr_prefix,
+  attr_basename,
+  attr_info,
 
   -- * C Declarations
   Declaration (..),
   DeclInit (..),
+  decl_type,
+  decl_stor,
+  decl_init,
   Declarator (..),
   StaticAssertion (..),
+  sa_expr,
+  sa_mesg,
   StorageClass (..),
 
   -- * C Expressions
@@ -125,12 +166,16 @@ module NC.Type.Def (
   StmtBody (..),
   BlockItem (..),
   Label (..),
+  lab_attr,
+  lab_sym,
   ForInit (..),
   Jump (..),
 
   -- * C Initializers
   Initializer (..),
   InitItem (..),
+  init_designation,
+  init_value,
   Designator (..),
 
   -- * C Literals
@@ -138,71 +183,6 @@ module NC.Type.Def (
   IntegerLiteral (..),
   CharacterLiteral (..),
   StringLiteral (..),
-
-  -- * Lenses
-
-  -- ** Type lenses
-  ty_base,
-  ty_qual,
-  ty_align,
-
-  -- ** Attribute lenses
-  attr_prefix,
-  attr_basename,
-  attr_info,
-
-  -- ** Record lenses
-  rec_type,
-  rec_sym,
-  rec_attrs,
-  rec_def,
-
-  -- ** Array lenses
-  arr_size,
-  arr_type,
-  arr_paraminfo,
-
-  -- ** Parameter array lenses
-  parr_static,
-  parr_qual,
-
-  -- ** Enum lenses
-  enum_sym,
-  enum_attrs,
-  enum_membertype,
-  enum_members,
-
-  -- ** Enum constant lenses
-  ec_sym,
-  ec_attrs,
-  ec_explicitval,
-
-  -- ** Function lenses
-  fun_rettype,
-  fun_pars,
-  fun_variadic,
-
-  -- ** Declaration lenses
-  decl_type,
-  decl_stor,
-  decl_init,
-
-  -- ** Initializer lenses
-  init_designation,
-  init_value,
-
-  -- ** 'Qual' values and lenses
-  _qu_none,
-  _qu_const,
-  _qu_restrict,
-  _qu_volatile,
-  _qu_atomic,
-  qu_none,
-  qu_any,
-  qu_const,
-  qu_restrict,
-  qu_volatile,
-  qu_atomic,
 ) where
 
 import Control.Lens
@@ -468,7 +448,10 @@ data DeclInit
 data StaticAssertion
   = -- | An expression that must not evaluate to 0, and optional message
     -- that should be emitted if it does.
-    StaticAssertion ConstIntExpr (Maybe StringLiteral)
+    StaticAssertion
+    { _sa_expr :: ConstIntExpr,
+      _sa_mesg :: (Maybe StringLiteral)
+    }
   deriving (Show, Eq)
 
 -- | A C storage class specifier
@@ -487,81 +470,81 @@ data StorageClass
 -- | A C expression. We pay attention to have only up to four constructors.
 data Expr
   = Expr PrimExpr
-  | ExprUnary UnaryOp Expr
-  | ExprBinary BinOp Expr Expr
+  | Expr1 UnaryOp Expr
+  | Expr2 BinOp Expr Expr
   | ExprSpecial SpecialExpr
   deriving (Show, Eq)
 
 pattern ExprPostInc, ExprPostDec, ExprPreInc, ExprPreDec :: Expr -> Expr
-pattern ExprPostInc e = ExprUnary UOPostInc e
-pattern ExprPostDec e = ExprUnary UOPostDec e
-pattern ExprPreInc e = ExprUnary UOPreInc e
-pattern ExprPreDec e = ExprUnary UOPreDec e
+pattern ExprPostInc e = Expr1 UOPostInc e
+pattern ExprPostDec e = Expr1 UOPostDec e
+pattern ExprPreInc e = Expr1 UOPreInc e
+pattern ExprPreDec e = Expr1 UOPreDec e
 
 pattern ExprUnaryPlus, ExprUnaryMinus, ExprLogNot :: Expr -> Expr
-pattern ExprUnaryPlus e = ExprUnary UOPlus e
-pattern ExprUnaryMinus e = ExprUnary UOMinus e
-pattern ExprLogNot e = ExprUnary UOLogNot e
+pattern ExprUnaryPlus e = Expr1 UOPlus e
+pattern ExprUnaryMinus e = Expr1 UOMinus e
+pattern ExprLogNot e = Expr1 UOLogNot e
 
 pattern ExprBitNot, ExprDeref, ExprAddrOf :: Expr -> Expr
-pattern ExprBitNot e = ExprUnary UOBitNot e
-pattern ExprDeref e = ExprUnary UODeref e
-pattern ExprAddrOf e = ExprUnary UOAddrOf e
+pattern ExprBitNot e = Expr1 UOBitNot e
+pattern ExprDeref e = Expr1 UODeref e
+pattern ExprAddrOf e = Expr1 UOAddrOf e
 
 pattern ExprIndex, ExprTimes, ExprDiv :: Expr -> Expr -> Expr
 
 -- | @a[b]@ gets desugared into @*(a + b)@.
 pattern ExprIndex e f = ExprDeref (ExprPlus e f)
 
-pattern ExprTimes e f = ExprBinary BOTimes e f
+pattern ExprTimes e f = Expr2 BOTimes e f
 
-pattern ExprDiv e f = ExprBinary BODiv e f
+pattern ExprDiv e f = Expr2 BODiv e f
 
 pattern ExprMod, ExprPlus, ExprMinus :: Expr -> Expr -> Expr
-pattern ExprMod e f = ExprBinary BOMod e f
-pattern ExprPlus e f = ExprBinary BOPlus e f
-pattern ExprMinus e f = ExprBinary BOMinus e f
+pattern ExprMod e f = Expr2 BOMod e f
+pattern ExprPlus e f = Expr2 BOPlus e f
+pattern ExprMinus e f = Expr2 BOMinus e f
 
 pattern ExprShiftL, ExprShiftR, ExprLT :: Expr -> Expr -> Expr
-pattern ExprShiftL e f = ExprBinary BOShiftL e f
-pattern ExprShiftR e f = ExprBinary BOShiftR e f
-pattern ExprLT e f = ExprBinary BOLT e f
+pattern ExprShiftL e f = Expr2 BOShiftL e f
+pattern ExprShiftR e f = Expr2 BOShiftR e f
+pattern ExprLT e f = Expr2 BOLT e f
 
 pattern ExprGT, ExprLE, ExprGE :: Expr -> Expr -> Expr
-pattern ExprGT e f = ExprBinary BOGT e f
-pattern ExprLE e f = ExprBinary BOLE e f
-pattern ExprGE e f = ExprBinary BOGE e f
+pattern ExprGT e f = Expr2 BOGT e f
+pattern ExprLE e f = Expr2 BOLE e f
+pattern ExprGE e f = Expr2 BOGE e f
 
 pattern ExprEQ, ExprNE, ExprBitAnd :: Expr -> Expr -> Expr
-pattern ExprEQ e f = ExprBinary BOEQ e f
-pattern ExprNE e f = ExprBinary BONE e f
-pattern ExprBitAnd e f = ExprBinary BOBitAnd e f
+pattern ExprEQ e f = Expr2 BOEQ e f
+pattern ExprNE e f = Expr2 BONE e f
+pattern ExprBitAnd e f = Expr2 BOBitAnd e f
 
 pattern ExprBitXor, ExprBitOr, ExprLogAnd :: Expr -> Expr -> Expr
-pattern ExprBitXor e f = ExprBinary BOBitXor e f
-pattern ExprBitOr e f = ExprBinary BOBitOr e f
-pattern ExprLogAnd e f = ExprBinary BOLogAnd e f
+pattern ExprBitXor e f = Expr2 BOBitXor e f
+pattern ExprBitOr e f = Expr2 BOBitOr e f
+pattern ExprLogAnd e f = Expr2 BOLogAnd e f
 
 pattern ExprLogOr, ExprAssign, ExprAssignPlus :: Expr -> Expr -> Expr
-pattern ExprLogOr e f = ExprBinary BOLogOr e f
-pattern ExprAssign e f = ExprBinary BOAssign e f
-pattern ExprAssignPlus e f = ExprBinary BOAssignPlus e f
+pattern ExprLogOr e f = Expr2 BOLogOr e f
+pattern ExprAssign e f = Expr2 BOAssign e f
+pattern ExprAssignPlus e f = Expr2 BOAssignPlus e f
 
 pattern ExprAssignMinus, ExprAssignTimes, ExprAssignDiv :: Expr -> Expr -> Expr
-pattern ExprAssignMinus e f = ExprBinary BOAssignMinus e f
-pattern ExprAssignTimes e f = ExprBinary BOAssignTimes e f
-pattern ExprAssignDiv e f = ExprBinary BOAssignDiv e f
+pattern ExprAssignMinus e f = Expr2 BOAssignMinus e f
+pattern ExprAssignTimes e f = Expr2 BOAssignTimes e f
+pattern ExprAssignDiv e f = Expr2 BOAssignDiv e f
 
 pattern ExprAssignShiftL, ExprAssignShiftR :: Expr -> Expr -> Expr
-pattern ExprAssignShiftL e f = ExprBinary BOAssignShiftL e f
-pattern ExprAssignShiftR e f = ExprBinary BOAssignShiftR e f
+pattern ExprAssignShiftL e f = Expr2 BOAssignShiftL e f
+pattern ExprAssignShiftR e f = Expr2 BOAssignShiftR e f
 
 pattern ExprAssignBitAnd :: Expr -> Expr -> Expr
-pattern ExprAssignBitAnd e f = ExprBinary BOAssignBitAnd e f
+pattern ExprAssignBitAnd e f = Expr2 BOAssignBitAnd e f
 
 pattern ExprAssignBitOr, ExprSequence :: Expr -> Expr -> Expr
-pattern ExprAssignBitOr e f = ExprBinary BOAssignBitOr e f
-pattern ExprSequence e f = ExprBinary BOSequence e f
+pattern ExprAssignBitOr e f = Expr2 BOAssignBitOr e f
+pattern ExprSequence e f = Expr2 BOSequence e f
 
 pattern ExprCall :: Expr -> [Expr] -> Expr
 pattern ExprCall e fs = ExprSpecial (SECall e fs)
@@ -814,6 +797,7 @@ makeLenses ''EnumConst
 makeLenses ''FuncInfo
 makeLenses ''DeclInit
 makeLenses ''InitItem
+makeLenses ''StaticAssertion
 
 -- | Qualifier bases
 _qu_none, _qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
@@ -845,3 +829,29 @@ qu_any = to (/= mempty)
 
 -- | Is it equal to '\_qu\_none'?
 qu_none = to (== mempty)
+
+-- * Some extra lenses
+
+lab_attr :: Lens' Label [Attribute]
+lab_attr = lens getter setter
+ where
+  getter = \case
+    LabelNamed as _ -> as
+    LabelCase as _ _ -> as
+    LabelDefault as _ -> as
+  setter = \case
+    LabelNamed _ b -> (`LabelNamed` b)
+    LabelCase _ b c -> \a -> LabelCase a b c
+    LabelDefault _ b -> (`LabelDefault` b)
+
+lab_sym :: Lens' Label Symbol
+lab_sym = lens getter setter
+ where
+  getter = \case
+    LabelNamed _ s -> s
+    LabelCase _ s _ -> s
+    LabelDefault _ s -> s
+  setter = \case
+    LabelNamed as _ -> LabelNamed as
+    LabelCase as _ c -> \b -> LabelCase as b c
+    LabelDefault as _ -> LabelDefault as
