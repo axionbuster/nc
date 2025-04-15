@@ -1,13 +1,207 @@
 {-# LANGUAGE StrictData #-}
 
-module NC.Type.Def where
+-- |
+-- Module      : NC.Type.Def
+-- Description : Core type definitions for the C language
+-- License     : BSD-3-Clause
+-- Maintainer  : axionbuster@gmail.com
+--
+-- This module defines all the core data types for representing C language
+-- constructs including types, expressions, statements, declarations, and
+-- literals. It provides a complete AST (Abstract Syntax Tree) representation
+-- for parsing and manipulating C code.
+module NC.Type.Def (
+  -- * Symbols and names
+  Name,
+  Symbol (..),
+  Table,
 
+  -- * Types and Symbols
+
+  -- ** C Type System
+  Type (..),
+  UQType (..),
+  Qual,
+  Alignment (..),
+
+  -- ** Record Types
+  RecInfo (..),
+  RecType (..),
+  RecMember (..),
+
+  -- ** Array Types
+  ArrayInfo (..),
+  ParamArrayInfo (..),
+  ArrayStatic (..),
+
+  -- ** Enum Types
+  EnumInfo (..),
+  EnumConst (..),
+
+  -- ** Function Types
+  FuncInfo (..),
+  Param (..),
+  Variadic (..),
+
+  -- ** Metaprogramming Types
+  Typeof (..),
+  TypeofQual (..),
+
+  -- ** C Attributes
+  Attribute (..),
+
+  -- * C Declarations
+  Declaration (..),
+  DeclInit (..),
+  Declarator (..),
+  StaticAssertion (..),
+  StorageClass (..),
+
+  -- * C Expressions
+
+  -- ** Expression Types
+  Expr (..),
+  PrimExpr (..),
+  UnaryOp (..),
+  BinOp (..),
+  SpecialExpr (..),
+  GenAssoc (..),
+  ConstIntExpr (..),
+
+  -- ** Expression Pattern Synonyms
+  pattern ExprPostInc,
+  pattern ExprPostDec,
+  pattern ExprPreInc,
+  pattern ExprPreDec,
+  pattern ExprUnaryPlus,
+  pattern ExprUnaryMinus,
+  pattern ExprLogNot,
+  pattern ExprBitNot,
+  pattern ExprDeref,
+  pattern ExprAddrOf,
+  pattern ExprIndex,
+  pattern ExprTimes,
+  pattern ExprDiv,
+  pattern ExprMod,
+  pattern ExprPlus,
+  pattern ExprMinus,
+  pattern ExprShiftL,
+  pattern ExprShiftR,
+  pattern ExprLT,
+  pattern ExprGT,
+  pattern ExprLE,
+  pattern ExprGE,
+  pattern ExprEQ,
+  pattern ExprNE,
+  pattern ExprBitAnd,
+  pattern ExprBitXor,
+  pattern ExprBitOr,
+  pattern ExprLogAnd,
+  pattern ExprLogOr,
+  pattern ExprAssign,
+  pattern ExprAssignPlus,
+  pattern ExprAssignMinus,
+  pattern ExprAssignTimes,
+  pattern ExprAssignDiv,
+  pattern ExprAssignShiftL,
+  pattern ExprAssignShiftR,
+  pattern ExprAssignBitAnd,
+  pattern ExprAssignBitOr,
+  pattern ExprSequence,
+  pattern ExprCall,
+  pattern ExprMember,
+  pattern ExprCompoundLiteral,
+  pattern ExprSizeof,
+  pattern ExprAlignof,
+  pattern ExprITE,
+  pattern ExprId,
+  pattern ExprLit,
+  pattern ExprParen,
+  pattern ExprGeneric,
+
+  -- * C Statements
+  Statement,
+  StmtBody (..),
+  BlockItem (..),
+  Label (..),
+  ForInit (..),
+  Jump (..),
+
+  -- * C Initializers
+  Initializer (..),
+  InitItem (..),
+  Designator (..),
+
+  -- * C Literals
+  Lit (..),
+  IntegerLiteral (..),
+  CharacterLiteral (..),
+  StringLiteral (..),
+
+  -- * Lenses
+
+  -- ** Type lenses
+  ty_base,
+  ty_qual,
+  ty_align,
+
+  -- ** Attribute lenses
+  attr_prefix,
+  attr_basename,
+  attr_info,
+
+  -- ** Record lenses
+  rec_type,
+  rec_sym,
+  rec_attrs,
+  rec_def,
+
+  -- ** Array lenses
+  arr_size,
+  arr_type,
+  arr_paraminfo,
+
+  -- ** Parameter array lenses
+  parr_static,
+  parr_qual,
+
+  -- ** Enum lenses
+  enum_sym,
+  enum_attrs,
+  enum_membertype,
+  enum_members,
+
+  -- ** Enum constant lenses
+  ec_sym,
+  ec_attrs,
+  ec_explicitval,
+
+  -- ** Function lenses
+  fun_rettype,
+  fun_pars,
+  fun_variadic,
+
+  -- ** Declaration lenses
+  decl_type,
+  decl_stor,
+  decl_init,
+
+  -- ** Initializer lenses
+  init_designation,
+  init_value,
+) where
+
+import Control.Lens.TH
+import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Coerce
 import Data.HashTable.IO qualified as H
 import Data.Hashable
+import Data.Semigroup
+import Data.Sequence (Seq)
 import Data.Unique
+import {-# SOURCE #-} NC.Parser.Def
 import NC.Type.Prim
 import Prelude
 
@@ -45,7 +239,7 @@ data UQType
   | UQRecord RecInfo
   | UQEnum EnumInfo
   | UQAtomic UQType
-  | UQTypeof TypeofQual TypeofInfo
+  | UQTypeof TypeofQual Typeof
 
 -- | A C attribute
 data Attribute = Attribute
@@ -109,8 +303,8 @@ data ParamArrayInfo = ParamArrayInfo
   }
 
 -- | In parameter position, and in the outermost derivation, an array can be
--- given a @static@ annotation, then the array exists (is not null), and
--- there will be _at least_ a given number of elements.
+-- given a @static@ annotation. @static@ means that the array exists
+-- (is not null), and there will be /at least/ a given number of elements.
 data ArrayStatic
   = ASNoStatic
   | ASStatic
@@ -179,7 +373,6 @@ data Declaration
 -- | A pair of declarator and optional initializer.
 data DeclInit
   = -- | Fully determined type for each declarator, and optional initializer.
-    -- DeclInit Type StorageClass (Maybe Initializer)
     DeclInit
     { -- | Fully determined type.
       _decl_type :: Type,
@@ -220,19 +413,23 @@ pattern ExprPostDec e = ExprUnary UOPostDec e
 pattern ExprPreInc e = ExprUnary UOPreInc e
 pattern ExprPreDec e = ExprUnary UOPreDec e
 
-pattern ExprUnaryPlus, ExprUnaryMinus, ExprLogNot :: Type -> Type
+pattern ExprUnaryPlus, ExprUnaryMinus, ExprLogNot :: Expr -> Expr
 pattern ExprUnaryPlus e = ExprUnary UOPlus e
 pattern ExprUnaryMinus e = ExprUnary UOMinus e
-pattern ExprLogNot e = ExprUnary UONot e
+pattern ExprLogNot e = ExprUnary UOLogNot e
 
-pattern ExprBitNot, ExprDeref, ExprAddrOf :: Type -> Type
+pattern ExprBitNot, ExprDeref, ExprAddrOf :: Expr -> Expr
 pattern ExprBitNot e = ExprUnary UOBitNot e
 pattern ExprDeref e = ExprUnary UODeref e
 pattern ExprAddrOf e = ExprUnary UOAddrOf e
 
-pattern ExprArray, ExprTimes, ExprDiv :: Expr -> Expr -> Expr
-pattern ExprArray e f = ExprBinary BOArray e f
+pattern ExprIndex, ExprTimes, ExprDiv :: Expr -> Expr -> Expr
+
+-- | @a->b@ gets desugared into @*(a + b)@.
+pattern ExprIndex e f = ExprDeref (ExprPlus e f)
+
 pattern ExprTimes e f = ExprBinary BOTimes e f
+
 pattern ExprDiv e f = ExprBinary BODiv e f
 
 pattern ExprMod, ExprPlus, ExprMinus :: Expr -> Expr -> Expr
@@ -262,23 +459,23 @@ pattern ExprLogAnd e f = ExprBinary BOLogAnd e f
 
 pattern ExprLogOr, ExprAssign, ExprAssignPlus :: Expr -> Expr -> Expr
 pattern ExprLogOr e f = ExprBinary BOLogOr e f
-pattern ExprAssign e f = ExprBinary BOAssignExprAssign e f
+pattern ExprAssign e f = ExprBinary BOAssign e f
 pattern ExprAssignPlus e f = ExprBinary BOAssignPlus e f
 
 pattern ExprAssignMinus, ExprAssignTimes, ExprAssignDiv :: Expr -> Expr -> Expr
-pattern ExprAssignMinus e f = ExprBinary BOAssignMinusExprAssignMinus e f
-pattern ExprAssignTimes e f = ExprBinary BOAssignTimesExprAssignTimes e f
+pattern ExprAssignMinus e f = ExprBinary BOAssignMinus e f
+pattern ExprAssignTimes e f = ExprBinary BOAssignTimes e f
 pattern ExprAssignDiv e f = ExprBinary BOAssignDiv e f
 
 pattern ExprAssignShiftL, ExprAssignShiftR :: Expr -> Expr -> Expr
-pattern ExprAssignShiftL e f = ExprBinary BOAssignShiftLExprAssignShiftL e f
-pattern ExprAssignShiftR e f = ExprBinary BOAssignShiftRExprAssignShiftR e f
+pattern ExprAssignShiftL e f = ExprBinary BOAssignShiftL e f
+pattern ExprAssignShiftR e f = ExprBinary BOAssignShiftR e f
 
 pattern ExprAssignBitAnd :: Expr -> Expr -> Expr
 pattern ExprAssignBitAnd e f = ExprBinary BOAssignBitAnd e f
 
 pattern ExprAssignBitOr, ExprSequence :: Expr -> Expr -> Expr
-pattern ExprAssignBitOr e f = ExprBinary BOAssignBitOrExprAssignBitOr e f
+pattern ExprAssignBitOr e f = ExprBinary BOAssignBitOr e f
 pattern ExprSequence e f = ExprBinary BOSequence e f
 
 pattern ExprCall :: Expr -> [Expr] -> Expr
@@ -324,10 +521,9 @@ data UnaryOp
   | UODeref
   | UOAddrOf
 
--- | Generic binary opration ('Expr' x 'Expr')
+-- | Generic binary opration ('Expr' &times; 'Expr')
 data BinOp
-  = BOArray
-  | BOTimes
+  = BOTimes
   | BODiv
   | BOMod
   | BOPlus
@@ -354,6 +550,7 @@ data BinOp
   | BOAssign
   | BOAssignPlus
   | BOAssignMinus
+  | BOAssignTimes
   | BOAssignDiv
   | BOAssignMod
   | BOAssignShiftL
@@ -498,3 +695,15 @@ instance Show Symbol where
 
 instance Hashable Symbol where
   hashWithSalt salt sym = hashWithSalt @Int salt (coerce hashUnique sym)
+
+-- Generate lenses for all record types
+makeLenses ''Type
+makeLenses ''Attribute
+makeLenses ''RecInfo
+makeLenses ''ArrayInfo
+makeLenses ''ParamArrayInfo
+makeLenses ''EnumInfo
+makeLenses ''EnumConst
+makeLenses ''FuncInfo
+makeLenses ''DeclInit
+makeLenses ''InitItem

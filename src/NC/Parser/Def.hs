@@ -43,8 +43,7 @@ module NC.Parser.Def (
   Str,
   Lookup (..),
   PNS (..),
-  PSym (..),
-  psym_stack,
+  PSym,
 
   -- * Span
   Span64 (..),
@@ -84,9 +83,8 @@ import Data.Int
 import Data.Word
 import Debug.Trace qualified as Tr
 import FlatParse.Stateful
-import Language.NC.ExprStmt
-import Language.NC.Prim
-import NC.Symbol
+import NC.Type.Def
+import NC.Type.Prim
 import Text.Printf
 import UnliftIO.IORef
 import Prelude
@@ -113,6 +111,7 @@ data PEnv = PEnv
     _penv_psym :: !PSym
   }
 
+-- | Stack of symbol tables.
 type PSym = [PNS]
 
 -- | Result of a misc. symbol lookup.
@@ -125,8 +124,7 @@ data Lookup
 
 -- | Parser namespace
 data PNS = PNS
-  { _pns_labels :: Table Str LabelInfo,
-    _pns_tags :: Table Str Type,
+  { _pns_tags :: Table Str Type,
     _pns_others :: Table Str Lookup
   }
 
@@ -247,8 +245,6 @@ prettymsg d =
     MsgOops s -> ("internal error: " ++) . showsPrec 11 s
     MsgExpect s -> ("expected " ++) . showsPrec 11 s
 
-makeLenses ''PSym
-
 makeLenses ''PEnv
 
 makeLenses ''SizeSettings
@@ -319,7 +315,7 @@ ptry p = do
     modifyIORef' msgs (e :)
     failed
 
--- | Cut with 'MsgExpect'. Normally this is
+-- | Cut with 'MsgExpect'.
 pcut_expect :: P a -> String -> P a
 pcut_expect p = pcut p . MsgExpect
 

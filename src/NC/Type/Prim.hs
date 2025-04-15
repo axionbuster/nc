@@ -104,7 +104,15 @@ type BitSize = Word16
 --       Bits 0-4: Encode float category
 --       Bit 2 (0x0004): Complex flag (1 = Complex, 0 = Real)
 
--- | Primitive, non-derived types.
+-- | Primitive, non-derived types. To extract information, use the isomorphism
+-- provided by 'pr_info'. Example:
+--
+-- @
+-- p :: Prim
+--
+-- q :: PrimInfo
+-- q = p '^.' pr_info
+-- @
 newtype Prim = Prim Word16
   deriving newtype (Eq)
 
@@ -214,21 +222,21 @@ data FloatCategory
 -- | Normally you would derive a 'PrimInfo' from a 'Prim' first
 -- to extract useful information.
 data PrimInfo
-  = -- | @int@
+  = -- | C @int@
     PrimInt !Sign
-  | -- | @\_Bool@
+  | -- | C @\_Bool@
     PrimBool
   | -- | @signed char@ or @unsigned char@, but not regular @char@.
     PrimSUChar !Sign
   | -- | no-sign @char@ (regular @char@)
     PrimNSChar
-  | -- | @short@
+  | -- | C @short@
     PrimShort !Sign
-  | -- | @long@
+  | -- | C @long@
     PrimLong !Sign
-  | -- | @long long@
+  | -- | C @long long@
     PrimLongLong !Sign
-  | -- | @\_BitInt(N)@
+  | -- | C @\_BitInt(N)@
     PrimBitInt !Sign !Word16
   | -- | floating point types
     PrimFloat !Complex !FloatCategory

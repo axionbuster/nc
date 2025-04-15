@@ -192,6 +192,7 @@ import FlatParse.Stateful
 import GHC.Int (Int (..))
 import GHC.Integer.Logarithms (integerLog2#)
 import NC.Parser.Def
+import NC.Type.Def
 import NC.Type.Prim
 import Prelude
 
