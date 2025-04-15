@@ -104,8 +104,9 @@ type BitSize = Word16
 --       Bits 0-4: Encode float category
 --       Bit 2 (0x0004): Complex flag (1 = Complex, 0 = Real)
 
--- | Primitive, non-derived types. To extract information, use the isomorphism
--- provided by 'pr_info'. Example:
+-- | Primitive, non-derived types. This type uses a compact bitwise
+-- representation. To extract information, use the isomorphism provided by
+-- 'pr_info'. Example:
 --
 -- @
 -- p :: Prim

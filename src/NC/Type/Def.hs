@@ -166,7 +166,7 @@ module NC.Type.Def (
   StmtBody (..),
   BlockItem (..),
   Label (..),
-  lab_attr,
+  lab_attrs,
   lab_sym,
   ForInit (..),
   Jump (..),
@@ -183,6 +183,7 @@ module NC.Type.Def (
   IntegerLiteral (..),
   CharacterLiteral (..),
   StringLiteral (..),
+  lit_prim,
 ) where
 
 import Control.Lens
@@ -771,8 +772,14 @@ data CharacterLiteral
 --  - UTF-16 for two-byte-character strings
 --  - UTF-32 for four-byte-character strings
 data StringLiteral
-  = -- | Interpreted value, type of each element.
-    StringLiteral LazyByteString Prim
+  = StringLiteral
+  { -- | We use a 'LazyByteString' to minimize overhead of
+    -- manipulating them while being able to show and determine
+    -- equality with them easily.
+    _strlit_buf :: LazyByteString,
+    -- | Character type.
+    _strlit_chartype :: Prim
+  }
   deriving (Show, Eq)
 
 -- | It will merely say @\<symbol\>@.
@@ -799,7 +806,7 @@ makeLenses ''DeclInit
 makeLenses ''InitItem
 makeLenses ''StaticAssertion
 
--- | Qualifier bases
+-- | A qualifier basis
 _qu_none, _qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
 _qu_none = mempty
 _qu_const = Qual 1
@@ -827,13 +834,13 @@ qu_any, qu_none :: Getter Qual Bool
 -- | Has any qualifier been set?
 qu_any = to (/= mempty)
 
--- | Is it equal to '\_qu\_none'?
+-- | Is it equal to '_qu_none'?
 qu_none = to (== mempty)
 
 -- * Some extra lenses
 
-lab_attr :: Lens' Label [Attribute]
-lab_attr = lens getter setter
+lab_attrs :: Lens' Label [Attribute]
+lab_attrs = lens getter setter
  where
   getter = \case
     LabelNamed as _ -> as
@@ -855,3 +862,21 @@ lab_sym = lens getter setter
     LabelNamed as _ -> LabelNamed as
     LabelCase as _ c -> \b -> LabelCase as b c
     LabelDefault as _ -> LabelDefault as
+
+-- | Find the 'Prim' type for an element. For 'StringLiteral's,
+-- the returned type is the character type that corresponds to it.
+lit_prim :: Lens' Lit Prim
+lit_prim = lens getter setter
+ where
+  getter = \case
+    LitInteger (IntegerLiteral _ p) -> p
+    LitChar (CharacterLiteral _ p) -> p
+    LitChar (IntCharacterLiteral _ p) -> p
+    LitString (StringLiteral _ p) -> p
+  setter = \case
+    LitInteger (IntegerLiteral a _) -> LitInteger . IntegerLiteral a
+    LitChar cl ->
+      LitChar . case cl of
+        CharacterLiteral a _ -> CharacterLiteral a
+        IntCharacterLiteral a _ -> IntCharacterLiteral a
+    LitString (StringLiteral a _) -> LitString . StringLiteral a
