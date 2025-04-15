@@ -110,6 +110,7 @@ module NC.Type.Def (
   pattern ExprSequence,
   pattern ExprCall,
   pattern ExprMember,
+  pattern ExprMemberPtr,
   pattern ExprCompoundLiteral,
   pattern ExprSizeof,
   pattern ExprAlignof,
@@ -354,7 +355,56 @@ data TypeofQual = TQQual | TQUnqual
 
 -- *** C declarations
 
--- | A C declarator.
+-- | A C declarator transforms a base type into a more complex derived type.
+--
+-- In C declarations, a declarator defines how a base type is modified to create
+-- the final type of an identifier. For example, given a declaration like:
+--
+-- @
+-- static long _Complex double a, *b(void), (*c)[2];
+-- @
+--
+-- The base type is @static long _Complex double@, and there are three
+-- declarators:
+--
+-- - @a@ (simple identifier - no transformation)
+-- - @*b(void)@ (function returning pointer)
+-- - @(*c)[2]@ (pointer to array of 2 elements)
+--
+-- Declarators come in two forms:
+--
+-- 1. Regular declarators introduce an identifier (like @a@, @b@, @c@ above)
+-- 2. Abstract declarators have no identifier (e.g. @(*)(int, long)@)
+--
+-- A declarator is represented as a function that transforms the base type into
+-- the final derived type. For example, to determine the type of @b@ above, we
+-- apply a transformation that turns the base type into a function returning a
+-- pointer to the base type.
+--
+-- == 'Semigroup' and 'Monoid' instances
+--
+-- The 'Semigroup' and 'Monoid' instances for 'Declarator' are designed to
+-- compose type transformations in the reverse order from how they are written
+-- in the source code. This is necessary because C declarators are read from the
+-- inside out. For example:
+--
+-- @
+-- int *(*foo[10])(void)
+-- @
+--
+-- Here, the transformations are applied in reverse of their syntactic
+-- appearance:
+--
+-- 1. @foo@ is an identifier (creates a variable)
+-- 2. @[10]@ makes it an array of 10 elements
+-- 3. @*@ makes each element a pointer
+-- 4. @(void)@ makes that pointer a function (taking no args)
+-- 5. @*@ makes the return value of that function a pointer
+-- 6. @int@ is the base type that this pointer points to
+--
+-- The `Dual (Endo Type)` deriving mechanism ensures that when declarators are
+-- combined, the rightmost transformation is applied first (inside-out), which
+-- matches C's declarator evaluation rules.
 newtype Declarator = Declarator {apdecl :: Type -> Type}
   deriving (Monoid, Semigroup) via (Dual (Endo Type))
 
@@ -425,7 +475,7 @@ pattern ExprAddrOf e = ExprUnary UOAddrOf e
 
 pattern ExprIndex, ExprTimes, ExprDiv :: Expr -> Expr -> Expr
 
--- | @a->b@ gets desugared into @*(a + b)@.
+-- | @a[b]@ gets desugared into @*(a + b)@.
 pattern ExprIndex e f = ExprDeref (ExprPlus e f)
 
 pattern ExprTimes e f = ExprBinary BOTimes e f
@@ -481,8 +531,11 @@ pattern ExprSequence e f = ExprBinary BOSequence e f
 pattern ExprCall :: Expr -> [Expr] -> Expr
 pattern ExprCall e fs = ExprSpecial (SECall e fs)
 
-pattern ExprMember :: Expr -> Symbol -> Expr
+pattern ExprMember, ExprMemberPtr :: Expr -> Symbol -> Expr
 pattern ExprMember e s = ExprSpecial (SEMember e s)
+
+-- | @a->b@ gets desugared into @(*a).b@.
+pattern ExprMemberPtr e s = ExprDeref e `ExprMember` s
 
 pattern ExprCompoundLiteral :: Type -> Initializer -> Expr
 pattern ExprCompoundLiteral t i = ExprSpecial (SECompoundLiteral t i)
@@ -493,6 +546,7 @@ pattern ExprSizeof et = ExprSpecial (SESizeof et)
 pattern ExprAlignof :: (Either ConstIntExpr Type) -> Expr
 pattern ExprAlignof et = ExprSpecial (SEAlignof et)
 
+-- | @a ? b : c@
 pattern ExprITE :: Expr -> Expr -> Expr -> Expr
 pattern ExprITE e f g = ExprSpecial (SEITE e f g)
 
@@ -521,7 +575,7 @@ data UnaryOp
   | UODeref
   | UOAddrOf
 
--- | Generic binary opration ('Expr' &times; 'Expr')
+-- | Generic binary opration ('Expr' × 'Expr')
 data BinOp
   = BOTimes
   | BODiv
