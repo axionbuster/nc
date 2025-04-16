@@ -110,6 +110,8 @@ module NC.Type.Def (
   GenAssoc (..),
   ConstIntExpr (..),
   mkconstintexpr,
+  collectexpr,
+  findvarrefs,
 
   -- ** Expression Pattern Synonyms
   pattern ExprPostInc,
@@ -874,9 +876,104 @@ instance Show ConstIntExpr where
 instance Eq ConstIntExpr where
   (==) = (==) `on` _ci_expr
 
--- | A qualifier basis
-_qu_none, _qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
+-- | The 'Plated' instance for 'Expr' allows for generic traversals over
+-- the recursive structure of expressions.
+instance Plated Expr where
+  plate f = \case
+    -- Recurse into unary expressions
+    Expr1 o e -> Expr1 o <$> f e
+    -- Recurse into binary expressions
+    Expr2 o e1 e2 -> Expr2 o <$> f e1 <*> f e2
+    -- For special expressions, handle each constructor separately
+    ExprSpecial special ->
+      ExprSpecial <$> case special of
+        SECall func args -> SECall <$> f func <*> traverse f args
+        SEMember e sym -> SEMember <$> f e <*> pure sym
+        SECompoundLiteral ty i -> pure $ SECompoundLiteral ty i
+        SESizeof (Left e) -> SESizeof . Left <$> f e
+        SESizeof (Right t) -> pure $ SESizeof (Right t)
+        SEITE cond tr fa -> SEITE <$> f cond <*> f tr <*> f fa
+        -- ConstIntExpr is not recursed into
+        SEAlignof (Left cie) -> pure $ SEAlignof (Left cie)
+        SEAlignof (Right t) -> pure $ SEAlignof (Right t)
+    -- Base expressions don't contain sub-expressions except
+    -- PrimParen and PrimGeneric
+    Expr x ->
+      Expr <$> case x of
+        PrimParen e -> PrimParen <$> f e
+        PrimGeneric e assocs ->
+          PrimGeneric
+            <$> f e
+            <*> traverse
+              (\ga -> GenAssoc (_ga_type ga) <$> f (_ga_expr ga))
+              assocs
+        _ -> pure x
+
+-- | The 'Plated' instance for 'Statement' allows for generic traversals over
+-- the recursive structure of statements.
+instance Plated Statement where
+  plate f = \case
+    StmtExpr attrs mexpr ->
+      StmtExpr attrs <$> traverse (plexpr f) mexpr
+    StmtCompound items ->
+      StmtCompound <$> traverse (plblockitem f) items
+    StmtIf cond then_ melse_ ->
+      StmtIf <$> plexpr f cond <*> f then_ <*> traverse f melse_
+    StmtSwitch expr stmt ->
+      StmtSwitch <$> plexpr f expr <*> f stmt
+    StmtWhile expr stmt ->
+      StmtWhile <$> plexpr f expr <*> f stmt
+    StmtDoWhile stmt expr ->
+      StmtDoWhile <$> f stmt <*> plexpr f expr
+    StmtFor forinit mexpr1 mexpr2 stmt ->
+      StmtFor
+        <$> plforinit f forinit
+        <*> traverse (plexpr f) mexpr1
+        <*> traverse (plexpr f) mexpr2
+        <*> f stmt
+    StmtJump jump ->
+      StmtJump <$> pljump f jump
+    StmtLabeled label mstmt ->
+      StmtLabeled label <$> traverse f mstmt
+   where
+    -- We don't traverse into expressions from statements ... for now!
+    plexpr :: (Applicative g) => (Statement -> g Statement) -> Expr -> g Expr
+    plexpr _ = pure
+    pljump :: (Applicative g) => (Statement -> g Statement) -> Jump -> g Jump
+    pljump _ = pure -- Jumps don't contain statements
+    plblockitem ::
+      (Applicative g) => (Statement -> g Statement) -> BlockItem -> g BlockItem
+    plblockitem ff = \case
+      BIDecl decl -> pure (BIDecl decl) -- We don't traverse into declarations
+      BIStmt stmt -> BIStmt <$> ff stmt
+    plforinit ::
+      (Applicative g) => (Statement -> g Statement) -> ForInit -> g ForInit
+    plforinit _ = \case
+      FIDecl decl -> pure (FIDecl decl) -- We don't traverse into declarations
+      FIExpr mexpr -> pure (FIExpr mexpr) -- We don't traverse into expressions
+
+-- | Collect all subexpressions matching a predicate
+collectexpr :: (Expr -> Bool) -> Expr -> [Expr]
+collectexpr p = toListOf (cosmos . filtered p)
+
+-- | Find all variable references (identifiers) in an expression
+findvarrefs :: Expr -> [Name]
+findvarrefs = toListOf (cosmos . filtered isvarref . to getname)
+ where
+  -- apparently this is generally considered the fastest way, though other
+  -- more "elegant" approaches exist that does not rely on partial functions.
+  -- the filtering is what makes this safe.
+  isvarref (Expr (PrimId _)) = True
+  isvarref _ = False
+  getname (Expr (PrimId name)) = name
+  getname _ = error "not a variable reference"
+
+-- | The empty 'Qual'ifier
+_qu_none :: Qual
 _qu_none = mempty
+
+-- | A qualifier basis
+_qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
 _qu_const = Qual 1
 _qu_restrict = Qual 2
 _qu_volatile = Qual 4
