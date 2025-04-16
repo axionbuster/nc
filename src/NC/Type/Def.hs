@@ -227,7 +227,7 @@ data Type
   = Type
   { _ty_base :: UQType,
     _ty_qual :: Qual,
-    _ty_align :: Alignment
+    _ty_align :: Maybe Alignment
   }
   deriving (Show, Eq)
 
@@ -258,8 +258,7 @@ newtype Qual = Qual Word16
 
 -- | A C alignment specification
 data Alignment
-  = AlignNone
-  | AlignAs ConstIntExpr
+  = AlignAs ConstIntExpr
   | AlignAsType Type
   deriving (Show, Eq)
 
