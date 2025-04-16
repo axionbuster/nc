@@ -37,4 +37,13 @@
 		],
 		"description": "Create three bidirectional patterns together"
 	},
+
+	"Undefined untyped function stub": {
+		"scope": "haskell",
+		"prefix": "ustub",
+		"body": [
+			"$1 = undefined"
+		],
+		"description": "Create an undefined function stub",
+	}
 }
