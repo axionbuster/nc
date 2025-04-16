@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE StrictData #-}
 
 -- |
@@ -108,6 +109,7 @@ module NC.Type.Def (
   SpecialExpr (..),
   GenAssoc (..),
   ConstIntExpr (..),
+  mkconstintexpr,
 
   -- ** Expression Pattern Synonyms
   pattern ExprPostInc,
@@ -187,10 +189,12 @@ module NC.Type.Def (
 ) where
 
 import Control.Lens
+import Control.Monad.IO.Class
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Coerce
+import Data.Function
 import Data.HashTable.IO qualified as H
 import Data.Hashable
 import Data.Semigroup
@@ -198,6 +202,7 @@ import Data.Sequence (Seq)
 import Data.Unique
 import {-# SOURCE #-} NC.Parser.Def
 import NC.Type.Prim
+import UnliftIO.IORef
 import Prelude
 
 -- * Type definitions
@@ -581,6 +586,57 @@ pattern ExprParen p = Expr (PrimParen p)
 pattern ExprGeneric :: Expr -> [GenAssoc] -> Expr
 pattern ExprGeneric e gs = Expr (PrimGeneric e gs)
 
+{-# COMPLETE
+  ExprPostInc,
+  ExprPostDec,
+  ExprPreInc,
+  ExprPreDec,
+  ExprUnaryPlus,
+  ExprUnaryMinus,
+  ExprLogNot,
+  ExprBitNot,
+  ExprDeref,
+  ExprAddrOf,
+  ExprTimes,
+  ExprDiv,
+  ExprMod,
+  ExprPlus,
+  ExprMinus,
+  ExprShiftL,
+  ExprShiftR,
+  ExprLT,
+  ExprGT,
+  ExprLE,
+  ExprGE,
+  ExprEQ,
+  ExprNE,
+  ExprBitAnd,
+  ExprBitXor,
+  ExprBitOr,
+  ExprLogAnd,
+  ExprLogOr,
+  ExprAssign,
+  ExprAssignPlus,
+  ExprAssignMinus,
+  ExprAssignTimes,
+  ExprAssignDiv,
+  ExprAssignShiftL,
+  ExprAssignShiftR,
+  ExprAssignBitAnd,
+  ExprAssignBitOr,
+  ExprSequence,
+  ExprCall,
+  ExprMember,
+  ExprCompoundLiteral,
+  ExprSizeof,
+  ExprAlignof,
+  ExprITE,
+  ExprId,
+  ExprLit,
+  ExprParen,
+  ExprGeneric
+  #-}
+
 -- | Generic unary operation
 data UnaryOp
   = UOPostInc
@@ -658,17 +714,26 @@ data PrimExpr
   | PrimGeneric Expr [GenAssoc]
   deriving (Show, Eq)
 
--- | A generic association, part of a generic selection.
+-- | A generic association, part of a generic selection. If no type given,
+-- then it's the @default@ case.
 data GenAssoc
-  = -- | if no type, then @default@ case.
-    GenAssoc (Maybe Type) Expr
+  = GenAssoc
+  { -- | Type given, or @default@ if 'Nothing'
+    _ga_type :: (Maybe Type),
+    -- | Expression.
+    _ga_expr :: Expr
+  }
   deriving (Show, Eq)
 
--- | A constant integer expression.
+-- | A constant integer expression. Use 'mkconstintexpr' to
+-- construct in 'IO' (or a 'MonadIO' type).
 data ConstIntExpr
-  = CIEResolved Integer
-  | CIEUnresolved Expr
-  deriving (Show, Eq)
+  = ConstIntExpr
+  { -- | The expression
+    _ci_expr :: Expr,
+    -- | Resolved value, if any
+    _ci_refval :: (IORef (Maybe Integer))
+  }
 
 -- *** C Statements
 
@@ -677,16 +742,25 @@ type Statement = StmtBody
 
 -- | A C statement.
 data StmtBody
-  = StmtExpr [Attribute] (Maybe Expr)
-  | StmtCompound (Seq BlockItem)
+  = -- | Any expression statement can be preceded with attributes.
+    StmtExpr [Attribute] (Maybe Expr)
+  | -- | @{ statements and declarations }@.
+    StmtCompound (Seq BlockItem)
   | StmtIf Expr Statement (Maybe Statement)
-  | StmtSwitch Expr Statement
+  | -- | A @switch (expression) statement@ consists of an expression to
+    -- branch and a statement that contains special @case@ and @default@ labels.
+    -- However, formally, any statement can go. Thus, @switch(0)puts("");@ is
+    -- legal, well-defined, and does exactly nothing.
+    StmtSwitch Expr Statement
   | StmtWhile Expr Statement
   | StmtDoWhile Statement Expr
-  | StmtFor ForInit (Maybe Expr) (Maybe Expr) Statement
-  | StmtJump Jump
-  | StmtLabeled Label (Maybe Statement)
-  | StmtAttribute [Attribute]
+  | -- | The first clause of a @for@ loop statement can be either an expression
+    -- or a declaration.
+    StmtFor ForInit (Maybe Expr) (Maybe Expr) Statement
+  | -- | @return@, @continue@, @break@, or @goto@.
+    StmtJump Jump
+  | -- | Since C23, a label can officially be attached to a null statement.
+    StmtLabeled Label (Maybe Statement)
   deriving (Show, Eq)
 
 -- | A 'BlockItem' can either be a declaration, a statement, or a label.
@@ -793,18 +867,13 @@ instance Hashable Symbol where
 instance Show Declarator where
   show _ = "<declarator>"
 
--- Generate lenses for all record types
-makeLenses ''Type
-makeLenses ''Attribute
-makeLenses ''RecInfo
-makeLenses ''ArrayInfo
-makeLenses ''ParamArrayInfo
-makeLenses ''EnumInfo
-makeLenses ''EnumConst
-makeLenses ''FuncInfo
-makeLenses ''DeclInit
-makeLenses ''InitItem
-makeLenses ''StaticAssertion
+instance Show ConstIntExpr where
+  showsPrec d (ConstIntExpr e _) =
+    showParen (d > 10) do
+      ("ConstIntExpr " ++) . showsPrec (d + 1) e
+
+instance Eq ConstIntExpr where
+  (==) = (==) `on` _ci_expr
 
 -- | A qualifier basis
 _qu_none, _qu_const, _qu_restrict, _qu_volatile, _qu_atomic :: Qual
@@ -880,3 +949,20 @@ lit_prim = lens getter setter
         CharacterLiteral a _ -> CharacterLiteral a
         IntCharacterLiteral a _ -> IntCharacterLiteral a
     LitString (StringLiteral a _) -> LitString . StringLiteral a
+
+-- | Construct a new 'ConstIntExpr'.
+mkconstintexpr :: (MonadIO m) => Expr -> m ConstIntExpr
+mkconstintexpr e = ConstIntExpr e <$> newIORef Nothing
+
+-- Generate lenses for all record types
+makeLenses ''Type
+makeLenses ''Attribute
+makeLenses ''RecInfo
+makeLenses ''ArrayInfo
+makeLenses ''ParamArrayInfo
+makeLenses ''EnumInfo
+makeLenses ''EnumConst
+makeLenses ''FuncInfo
+makeLenses ''DeclInit
+makeLenses ''InitItem
+makeLenses ''StaticAssertion
