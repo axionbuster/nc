@@ -38,9 +38,11 @@ function-definition <-
   attribute-specifier* declaration-specifier+ attribute-specifier*
   declarator compound-statement
 
+static_assert-declaration-body <-
+  '(' constant-expression (',' string-literal)? ')' ';'
+
 declaration <-
-  # static_assert-declaration has been inlined because this was its only use.
-  'static_assert' '(' constant-expression (',' string-literal)? ')' ';' /
+  'static_assert' static_assert-declaration-body /
   # attribute-declaration was inlined for similar reasons.
   # optimization note: it'll be beneficial to separate the body of
   # attribute-specifier and the surrounding '[[' ']]' tokens to
@@ -126,8 +128,11 @@ type-specifier <-
   # struct or union specifier. We'll extend the grammar to allow an empty
   # definition.
   (('struct' / 'union') attribute-specifier* identifier?
-    ('{' ((declarator / declarator? ':' constant-expression) `sepBy!` ',')
-     '}')) /
+    ('{' ((
+      specifier-qualifier-list
+      ((declarator / declarator? ':' constant-expression) `sepBy!` comma)
+        `endBy!` ';'
+      ) / 'static_assert' static_assert-declaration-body) '}')?)
   # enum specifier
   ('enum' enum-rest) /
   # typeof specifier

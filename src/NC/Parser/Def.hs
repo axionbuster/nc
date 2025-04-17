@@ -44,6 +44,9 @@ module NC.Parser.Def (
   Lookup (..),
   PNS (..),
   PSym,
+  symnew,
+  symgivetypetag,
+  symgivegeneralname,
 
   -- * Span
   Span64 (..),
@@ -80,6 +83,7 @@ import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.Functor
 import Data.Int
+import Data.Unique
 import Data.Word
 import Debug.Trace qualified as Tr
 import FlatParse.Stateful
@@ -456,3 +460,15 @@ posbwof (view pr_info -> info) = case info ^? pi_si of
       FCDecimal32 -> pure 32
       FCDecimal64 -> pure 64
       FCDecimal128 -> pure 128
+
+-- | Create a fresh unnamed symbol.
+symnew :: (MonadIO m) => m Symbol
+symnew = liftIO (coerce newUnique)
+
+-- | Give the symbol a type tag.
+symgivetypetag :: Name -> Symbol -> P ()
+symgivetypetag = undefined
+
+-- | Give the symbol a general name (e.g., variables, functions, etc.).
+symgivegeneralname :: Name -> Symbol -> P ()
+symgivegeneralname = undefined

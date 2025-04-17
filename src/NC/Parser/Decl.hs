@@ -35,7 +35,7 @@ newtype SQA = SQA Word64
   deriving (Eq, Show, Bits, Num)
   deriving (Monoid, Semigroup) via (Ior SQA)
 
--- | Extra data for 'Tokens'
+-- | Extra data for 'T'
 data Extra
   = -- | @_BitInt@
     ExBI !BitSize
@@ -53,30 +53,30 @@ data Extra
     ExTypeof !Typeof !TypeofQual
 
 -- | Token list for commutative tokens parsing.
-data Tokens = Tokens
+data T = T
   { -- | Final specifier or qualifier.
-    _rt_sqa :: {-# UNPACK #-} !SQA,
+    _t_sqa :: {-# UNPACK #-} !SQA,
     -- | This specifier or qualifier was repeated too often.
-    _rt_dups :: {-# UNPACK #-} !SQA,
+    _t_dups :: {-# UNPACK #-} !SQA,
     -- | Any explicit @alignof@ directive.
-    _rt_align :: !(Maybe Alignment),
+    _t_align :: !(Maybe Alignment),
     -- | Extra data.
-    _rt_extra :: !(Maybe Extra),
+    _t_extra :: !(Maybe Extra),
     -- | Optional attributes can go at the end of a @specifier-qualifier-list@.
-    _rt_attrs :: ![Attribute],
+    _t_attrs :: ![Attribute],
     -- | Other messages collected
-    _rt_msgs :: ![Message]
+    _t_msgs :: ![Message]
   }
 
--- | Initial value for 'Tokens'
-_rt_0 :: Tokens
-_rt_0 = Tokens 0 0 Nothing Nothing [] []
+-- | Initial value for 'T'
+_t_0 :: T
+_t_0 = T 0 0 Nothing Nothing [] []
 
--- | A transformation on 'Tokens'.
-newtype TRT = TRT {aptrt :: Tokens -> Tokens}
-  deriving (Monoid, Semigroup) via (Endo Tokens)
+-- | A transformation on 'T'.
+newtype TT = TT {aptt :: T -> T}
+  deriving (Monoid, Semigroup) via (Endo T)
 
-makeLenses ''Tokens
+makeLenses ''T
 
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool
@@ -151,9 +151,14 @@ sqa_typeof_unqual = __bool 0x10_0000_0000
 sqa_atomicnewtype = __bool 0x20_0000_0000
 sqa_typedefname = __bool 0x40_0000_0000
 
+-- | Collect \'specifier-qualifier-list\' into a 'Type'. This
+-- involves applying 'specqualalign' many times.
+specqualaligns :: P Type
+specqualaligns = undefined
+
 -- | Parse a single type-specifier, type-qualifier, or alignment-specifier.
 -- (All these rules are merged to share bulk reading).
-specqualalign :: P TRT
+specqualalign :: P TT
 specqualalign =
   $( switch_ws1
        [|
@@ -187,18 +192,18 @@ specqualalign =
          |]
    )
  where
-  push (tok :: Lens' SQA Bool) = pure $ TRT \tokens ->
+  push (tok :: Lens' SQA Bool) = pure $ TT \tokens ->
     -- test: been set already? generally duplicate tokens are bad.
-    if tokens ^. rt_sqa . tok
+    if tokens ^. t_sqa . tok
       then -- duplicate, check for one exception (long long).
         if ((mempty & tok .~ True) == (mempty & sqa_long .~ True))
-          && not (tokens ^. rt_sqa . sqa_longlong)
+          && not (tokens ^. t_sqa . sqa_longlong)
           then -- oh, this is an exception.
-            tokens & rt_sqa . sqa_longlong .~ True
+            tokens & t_sqa . sqa_longlong .~ True
           else -- most likely case. log error.
-            tokens & rt_dups . tok .~ True
+            tokens & t_dups . tok .~ True
       else -- no problem, not been set before.
-        tokens & rt_sqa . tok .~ True
+        tokens & t_sqa . tok .~ True
   bitint = do
     -- FIXME: we need to admit a constant-expression, but we require
     -- a _BitInt type to only use an actual 14-bit integer. I think
@@ -213,8 +218,8 @@ specqualalign =
           if (litnum <= 0)
             || (litnum > fromIntegral (maxBound :: Word16))
             || isNothing (bitintwidth_ok ln2)
-            then TRT \tokens -> tokens & rt_msgs %~ cons badbitsize
-            else TRT \tokens -> tokens & rt_extra .~ Just (ExBI ln2)
+            then TT \tokens -> tokens & t_msgs %~ cons badbitsize
+            else TT \tokens -> tokens & t_extra .~ Just (ExBI ln2)
       <* (rpar `pcut_expect` ")")
   atomic = do
     -- it's either a "newtype" specifier if followed by an opening paren
@@ -222,10 +227,10 @@ specqualalign =
     branch_inpar atonew atoqua
    where
     atonew = do
-      tn <- typename
+      tn <- typename `pcut_expect` "type name"
       pure
-        $ TRT (rt_extra .~ Just (ExAtomic tn))
-        <> TRT (rt_sqa . sqa_atomicnewtype .~ True)
+        $ TT (t_extra .~ Just (ExAtomic tn))
+        <> TT (t_sqa . sqa_atomicnewtype .~ True)
     atoqua = push sqa_atomic
   struct = (<>) <$> push sqa_struct <*> parserecord RecStruct
   union = (<>) <$> push sqa_union <*> parserecord RecUnion
@@ -235,8 +240,10 @@ specqualalign =
   alignas =
     (<>) <$> push sqa_alignas <*> do
       lpar `pcut_expect` "(" >> do
-        t <- (AlignAsType <$> typename) <|> (AlignAs <$> constexpr)
-        pure (TRT (rt_align .~ Just t)) <* rpar `pcut_expect` ")"
+        t <-
+          ((AlignAsType <$> typename) <|> (AlignAs <$> constexpr))
+            `pcut_expect` "a type name or a constant expression"
+        pure (TT (t_align .~ Just t)) <* rpar `pcut_expect` ")"
   typedefname = (<>) <$> push sqa_typedefname <*> undefined identifier
   typeof2 qualification =
     let lens2use :: Lens' SQA Bool
@@ -247,13 +254,97 @@ specqualalign =
           <$> push lens2use
           <*> do
             t <- (TypeofType <$> typename) <|> (TypeofExpr <$> expr)
-            pure $ TRT (rt_extra .~ Just (ExTypeof t qualification))
+            pure $ TT (t_extra .~ Just (ExTypeof t qualification))
 
-parserecord :: RecType -> P TRT
-parserecord = undefined
+-- | Parse a record type and then return a type transformer (TT).
+parserecord :: RecType -> P TT
+parserecord = doparse >=> change
+ where
+  change :: RecInfo -> P TT
+  change ty = pure $ TT (t_extra .~ Just (ExRec ty))
+  doparse :: RecType -> P RecInfo
+  doparse rt = do
+    sym <- symnew
+    withOption identifier_def (`symgivetypetag` sym) (pure ())
+    RecInfo rt sym <$> attrspecs0 <*> do
+      optional do
+        concat
+          <$> flip endBy semicolon do
+            -- we allow an empty struct/union declaration, which is a deviation
+            -- from the standard C23 grammar.
+            branch static_assert' (pure . RMStaticAssertion <$> parsesabody) do
+              sym <- symnew
+              conrec <- RMField <$> attrspecs0 <*> pure sym
+              basetype <- specqualaligns
+              flip sepBy comma do
+                dclr <- optional $ declarator sym
+                bitwidth <- optional $ colon >> constexpr
+                case bitwidth of
+                  Nothing -> case dclr of
+                    Just de -> pure $ conrec (apdecl de basetype) Nothing
+                    Nothing -> pthrow (MsgExpect "expected member type") ""
+                  Just bw -> do
+                    -- a field that specifies a bit width does not need
+                    -- to specify a declarator.
+                    let de = fromMaybe mempty dclr
+                    let type2 = apdecl de basetype
+                    pure $ conrec type2 (Just bw)
 
-parseenum :: P TRT
+parsesabody :: P StaticAssertion
+parsesabody = undefined
+
+parseenum :: P TT
 parseenum = undefined
+
+-- | Parse a single attribute specifier (@[[ ... ]]@). Here, a single specifier
+-- can actually introduce many attributes.
+attrspec :: P [Attribute]
+attrspec = ldbsqb >> attr `sepBy1` comma <* rdbsqb
+ where
+  attr = do
+    i <- identifier
+    withOption
+      (dbcolon >> identifier `pcut_expect` "identifier")
+      (pure . Attribute (Just i))
+      (pure $ Attribute Nothing i)
+      <*> do
+        fmap (view (from span64)) <$> optional do
+          spanOf do
+            inpar do
+              let stuff =
+                    $( switch
+                         [|
+                           case _ of
+                             "(" -> pure ()
+                             "[" -> pure ()
+                             "<:" -> pure ()
+                             "{" -> pure ()
+                             ")" -> pure ()
+                             "]" -> pure ()
+                             ":>" -> pure ()
+                             "}" -> pure ()
+                           |]
+                     )
+              $( switch_ws0
+                   [|
+                     case _ of
+                       "(" -> skipMany stuff <* rpar `pcut_expect` ")"
+                       "[" -> skipMany stuff <* rsqb `pcut_expect` "]"
+                       "<:" -> skipMany stuff <* rsqb `pcut_expect` "]"
+                       "{" -> skipMany stuff <* rpar `pcut_expect` "}"
+                       _ -> skipMany stuff
+                     |]
+               )
+
+attrspecs0, attrspecs1 :: P [Attribute]
+
+-- | Parse 0 or more attribute specifiers.
+attrspecs0 = chainr (<>) attrspec (pure mempty)
+
+-- | Parse 1 or more attribute specifiers.
+attrspecs1 = do
+  l <- attrspecs0
+  guard (not . null $ l) $> l
 
 -- * Exported
 
@@ -271,6 +362,9 @@ declspec = undefined
 
 declaration = undefined
 
+-- | Create a declarator, which introduces an identifier. Associate the
+-- identifier with the symbol.
+declarator :: Symbol -> P Declarator
 declarator = undefined
 
 absdeclarator = undefined

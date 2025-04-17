@@ -14,7 +14,7 @@
 module NC.Type.Def (
   -- * Symbols and names
   Name,
-  Symbol,
+  Symbol (..),
   Table,
 
   -- * Types and Symbols
@@ -284,7 +284,7 @@ data RecType = RecStruct | RecUnion
 -- | A C record member may be a field, which can be a bitfield, or
 -- it may be a @static\_assert@.
 data RecMember
-  = RMField [Attribute] Type Symbol (Maybe ConstIntExpr)
+  = RMField [Attribute] Symbol Type (Maybe ConstIntExpr)
   | RMStaticAssertion StaticAssertion
   deriving (Show, Eq)
 
