@@ -1,8 +1,41 @@
+# C Language Grammar Specification & Optimization
+#
+# PURPOSE: This document presents a human-readable PEG grammar for the C 
+# language with optimized rewriting rules to minimize backtracking and 
+# redundant parsing.
+#
+# AUDIENCE: Human readers with knowledge of parsing techniques and C language 
+# syntax. This is NOT intended to be machine-parsed directly but serves as a 
+# formal specification that can be manually implemented in parser code.
+#
+# TABLE OF CONTENTS:
+# 1. Top-level Rules (external-declaration, function-definition, declaration)
+# 2. Type Specifiers and Qualifiers
+# 3. Declarators and Abstract Declarators
+# 4. Initializers
+# 5. Attributes
+# 6. Optimized Parser Combinators
+# 7. Rewriting Rules for Critical Grammar Components
+# 8. External Definitions and Exports
+#
+# NOTATION:
+# - Rules follow standard PEG notation: a / b (choice), a b (sequence)
+# - Extended operations include: cut!, sepBy!, fails!, sepEndBy!
+# - Rewriting rules are marked with rewrite:rule_name and represent optimized 
+#   implementations
+# - All optimized parser combinators are described with type signatures and 
+#   examples
+#
+# IMPLEMENTATION NOTE:
+# The grammar should be easy to read for humans while maintaining precision 
+# about the language constructs. Rewriting rules focus on performance 
+# optimizations without changing semantics.
+
 external-declaration <-
   function-definition / declaration
 
 function-definition <-
-  attribute-specifier* declaration-specifiers+ attribute-specifier*
+  attribute-specifier* declaration-specifier+ attribute-specifier*
   declarator compound-statement
 
 declaration <-
@@ -19,11 +52,52 @@ declaration <-
     # init-declarator-list was inlined.
     (init-declarator `sepBy!` ',') /
 
+#! begin overlapping definition "external-declaration"
+
+# Combinators used for optimizing parsing:
+
+# branchmany! a b c ... reads 0 or more 'a's, then tries to match 'b'. if
+# 'b' matches, then 'a' is completely optional. otherwise, it tries to match
+# 'c' condition to at least one 'a' existing.
+branchmany! :: Parser a -> Parser b -> Parser c -> Parser (Either b c)
+
+# predictive! parses the prefix, and then looks at lookaheads in order.
+# if none of the lookaheads match, the default parser runs. if a lookahead
+# does match, then it commits to the associated parser. if the associated
+# parser fails, the entire rule fails.
+predictive! :: Parser a -> [(Parser b, Parser c)] -> Parser d -> Parser c
+
+#! rewriting rule for external-declaration
+# This optimized version reduces backtracking by parsing the common prefix once
+# and using predictive lookahead to determine which path to follow
+rewrite:external-declaration <-
+  predictive! attribute-specifier* 
+    [
+      # Function definition pattern
+      (keyword! "inline" <|> keyword! "_Noreturn" <|> 
+       lookahead! (declaration-specifier+ attribute-specifier* declarator '{'),
+       declaration-specifier+ attribute-specifier* declarator
+        compound-statement),
+       
+      # Static assertion pattern
+      (keyword! "static_assert",
+       'static_assert' '(' constant-expression (',' string-literal)? ')' ';'),
+       
+      # Attribute-only declaration 
+      (lookahead! attribute-specifier+ ';',
+       attribute-specifier+ ';')
+    ]
+    # Default: regular declaration
+    (declaration-specifier+ attribute-specifier* 
+      (init-declarator `sepBy!` ',') ';')
+
+#! end rewriting rule
+
 init-declarator <- declarator ('=' (cut! initializer))?
 
 # initializer
 
-initializer <- braced-initialization / assignment-expression
+initializer <- braced-initializer / assignment-expression
 
 # braced-initializer is used in a different place; don't inline.
 braced-initializer <- '{' (cut! (
@@ -80,6 +154,35 @@ enum-rest <-
   # allow an empty enum definition.
   body! form1 ('{' enumerator `sepEndBy!` ',' '}') / body! form2
 
+#! rewriting rule for enum-rest
+# This complex rule with multiple conditionals can be optimized to avoid 
+# backtracking
+rewrite:enum-rest <-
+  # First parse all attribute specifiers and the optional identifier
+  discriminate! 
+    (do attrs <- attribute-specifier*
+        idOpt <- optional! identifier
+        pure (attrs, idOpt))
+    [
+      # Case 1: Has attributes, has identifier - full enum definition
+      (\(attrs, idOpt) -> not (null attrs) && isJust idOpt,
+       \_ -> (':' specifier-qualifier-list)? 
+             '{' enumerator `sepEndBy!` ',' '}'),
+       
+      # Case 2: Has attributes, no identifier - full enum definition
+      (\(attrs, idOpt) -> not (null attrs) && isNothing idOpt,
+       \_ -> (':' specifier-qualifier-list)? 
+             '{' enumerator `sepEndBy!` ',' '}'),
+       
+      # Case 3: No attributes, has identifier - both complete and forward 
+      # declaration allowed
+      (\(attrs, idOpt) -> null attrs && isJust idOpt,
+       \_ -> ((':' specifier-qualifier-list)? 
+              '{' enumerator `sepEndBy!` ',' '}')?)
+    ]
+
+#! end rewriting rule
+
 # enumeration-constant = identifier, inlined.
 # enumerator is only used in enum-rest.
 enumerator <- identifier attribute-specifier*
@@ -127,11 +230,129 @@ declaration-specifier <-
 storage-class-specifier <- 'auto' / 'constexpr' / 'extern' / 'register' /
   'static' / 'thread_local' / 'typedef'
 
+#! begin optimized parser combinators
+
+# Optimized Parser Combinators for C Grammar
+#
+# The following combinators are designed to minimize backtracking, reduce 
+# redundant parsing, and optimize grammar rules that share common patterns.
+# These combinators allow rewriting complex grammar rules in a more
+# efficient way without changing their semantics.
+#
+# Implementation notes:
+# 1. These combinators should be implemented at a low level in the FlatParse 
+#    library to directly manipulate parser state.
+# 2. They preserve error information for better diagnostics.
+# 3. They enable sharing of parsing work between similar rules.
+# 4. They eliminate backtracking where possible by making intelligent decisions.
+
+# parseWith! is a low-level primitive that applies a custom parsing function
+# to the input state. It can be used to implement more specialized combinators.
+# 
+# Example: Custom parser for handling left-recursion
+# parseWith! \state -> do
+#   (base, rest) <- runRecursiveParser state
+#   return (buildAst base rest)
+#
+# Signature: parseWith! :: (State -> Result a) -> Parser a
+parseWith! :: (state -> Result)
+
+# discriminate! parses a prefix and then chooses between alternatives based on 
+# the parsed result. It's more efficient than backtracking because it only
+# parses the prefix once.
+#
+# Example: For enum declarations with different attribute and identifier 
+# requirements
+# discriminate! (attrs, idOpt) <- (attribute-specifier*, identifier?)
+#   [(hasAttrs && hasId,     compoundEnumBody),
+#    (hasAttrs && !hasId,    compoundEnumBody),
+#    (!hasAttrs && hasId,    forwardOrBodyEnumDecl)]
+#
+# Signature: discriminate! :: Parser a -> [(a -> Bool, a -> Parser b)] -> 
+# Parser b
+discriminate! prefix [(predicate1, suffix1), (predicate2, suffix2), ...]
+
+# mergedPattern! combines two similar parsing patterns with custom handling
+# logic. It's useful for rules that share structure but differ in details.
+#
+# Ex: Share logic between declarator & abstract-declarator types
+# mergedPattern! (ptr?)             -- Parse optional pointer
+#   \p -> case p of                 -- Handle both variants
+#     Just x  -> pure x <|>         -- Return ptr or
+#                (x >> decl True)   -- Continue w/abstract
+#     Nothing -> decl True          -- No ptr case
+#
+# Sig: mergedPattern! :: Parser a -> (a -> Parser b) -> Parser b
+mergedPattern! baseParser continuation
+
+# tokenStream!: Capture optional tokens, validate w/o backtrack
+#
+# Ex: Array index w/static & qualifiers
+# tokenStream! ['static', (tq*), 'static']  -- Capture tokens
+#   \toks -> case toks of
+#     [Just s1,q,Just s2] -> False  -- No 2x static
+#     [Just _,_,_] -> True          -- OK: static first
+#     [_,q,Just _] -> has q         -- OK: static last w/quals
+#     _ -> True                     -- OK: other
+#   assignExpr
+#
+# Sig: tokenStream! :: [Parser a] -> ([Maybe a] -> Bool) -> Parser b -> Parser b
+tokenStream! parsers validator continuation
+
+# bracketParse!: Smart bracket matching w/o backtrack
+#
+# Ex: Array declarators w/proper errors
+# bracketParse! '[' arrayIdx ']'    -- Match [...] safely
+
+# parseUntilFixedPoint handles left-recursive rules by repeatedly applying a
+# transformation function until no more progress can be made.
+#
+# Example: For parsing recursive declarator structures
+# parseUntilFixedPoint 
+#   identifier                                   -- Base case
+#   \base -> base '[' array-index ']' <|> base   -- Recursive step
+#
+# Signature: parseUntilFixedPoint :: Parser a -> (a -> Parser a) -> Parser a
+parseUntilFixedPoint baseCase recursionStep
+
+# optional! wraps a parser to make it return Maybe a instead of failing.
+# This avoids the overhead of backtracking when something is genuinely optional.
+#
+# Example: For parsing optional type qualifiers
+# optional! type-qualifier  -- Returns Just qual or Nothing
+#
+# Signature: optional! :: Parser a -> Parser (Maybe a)
+optional! parser
+
+# lookahead! tries a parser but doesn't consume any input.
+# Much more efficient than try + fail because it never alters the parser state.
+#
+# Example: To detect a function definition vs declaration
+# lookahead! (declarator '{')  -- True if looking at a function definition
+#
+# Signature: lookahead! :: Parser a -> Parser Bool
+lookahead! parser
+
+#! end optimized parser combinators
+
 # abstract declarator.
 
 abstract-declarator <- pointer / pointer? direct-abstract-declarator
 
-# note: recursive
+#! rewriting rule for abstract-declarator
+# This optimizes the parsing of abstract declarators by sharing logic with 
+# regular declarators
+rewrite:abstract-declarator <-
+  mergedPattern! 
+    pointer?
+    \ptrOpt -> case ptrOpt of
+      Just ptr -> ptr direct-abstract-declarator
+      Nothing -> direct-abstract-declarator
+
+#! end rewriting rule
+
+#! begin rewriting rules for abstract-declarator
+
 # note: almost the same as direct-declarator
 direct-abstract-declarator <-
   '(' abstract-declarator ')' /
@@ -143,11 +364,41 @@ direct-abstract-declarator <-
     )
   ) attribute-specifier*
 
+#! rewriting rule for direct-abstract-declarator
+# This optimizes the left-recursive form using a specialized fixed-point parser
+rewrite:direct-abstract-declarator <-
+  parseWith! \state ->
+    let baseForm = ('(' abstract-declarator ')')?
+        recursiveForm base = 
+          (base (bracketParse! '[' array-index2 ']') <|>
+           base (bracketParse! '(' (parameter-list `sepBy!` ',') '...'? ')'))
+          attribute-specifier*
+    in parseUntilFixedPoint baseForm recursiveForm state
+
+#! end rewriting rule
+
 array-index2 <-
-  ('static' type-qualifier* / type-qualifier+ 'static') assignment-expression /
-  # unlike in array-index, the '*' cannot be followed by type-qualifier's.
-  # that's literally the only difference.
+  # Use tokenStream! to avoid backtracking when parsing static and type 
+  # qualifiers
   type-qualifier* assignment-expression? / '*'
+
+#! rewriting rule for array-index2
+# The original rule suffers from backtracking. This optimized version captures 
+# tokens without committing and then validates patterns separately.
+rewrite:array-index2 <-
+  tokenStream! ['static', (type-qualifier*), 'static'] 
+    \tokens -> case tokens of
+      [Just _, _, Just _] -> False -- Can't have static twice
+      [Just _, _, _] -> True      -- First static is fine
+      [_, quals, Just _] -> not (null quals) -- Second static needs qualifiers
+      _ -> True                   -- Other cases are fine
+    assignment-expression 
+  /
+  tokenStream! [(type-qualifier*)]
+    \[quals] -> True -- Always accept qualifiers
+    (assignment-expression? / '*')
+
+#! end rewriting rule
 
 # attributes
 
