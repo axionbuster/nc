@@ -472,9 +472,9 @@ symnew :: (MonadIO m) => m Symbol
 symnew = liftIO (coerce newUnique)
 
 -- | Give the symbol a type tag.
-symgivetypetag :: Name -> Symbol -> P ()
+symgivetypetag :: Symbol -> Name -> P ()
 symgivetypetag = undefined
 
 -- | Give the symbol a general name (e.g., variables, functions, etc.).
-symgivegeneralname :: Name -> Symbol -> P ()
+symgivegeneralname :: Symbol -> Name -> P ()
 symgivegeneralname = undefined

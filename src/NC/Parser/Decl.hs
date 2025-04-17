@@ -212,7 +212,7 @@ specqualalign =
     -- a _BitInt type to only use an actual 14-bit integer. I think
     -- we'll need to redesign the primitive type system. For now,
     -- I'll use an integer literal, instead.
-    (lpar `pcut_expect` "(")
+    cutlpar
       >> pcut' (MsgExpect "integer literal") do
         IntegerLiteral litnum _ <- integer_constant_val
         let ln2 = fromIntegral litnum
@@ -221,9 +221,9 @@ specqualalign =
           if (litnum <= 0)
             || (litnum > fromIntegral (maxBound :: Word16))
             || isNothing (bitintwidth_ok ln2)
-            then TT \tokens -> tokens & t_msgs %~ cons badbitsize
-            else TT \tokens -> tokens & t_extra .~ Just (ExBI ln2)
-      <* (rpar `pcut_expect` ")")
+            then TT (t_msgs %~ cons badbitsize)
+            else TT (t_extra .~ Just (ExBI ln2))
+      <* cutrpar
   atomic = do
     -- it's either a "newtype" specifier if followed by an opening paren
     -- but otherwise it's just a qualifier.
@@ -242,11 +242,11 @@ specqualalign =
   typeof_unqual = typeof2 TQUnqual
   alignas =
     (<>) <$> push sqa_alignas <*> do
-      lpar `pcut_expect` "(" >> do
+      cutlpar >> do
         t <-
           ((AlignAsType <$> typename) <|> (AlignAs <$> constexpr))
             `pcut_expect` "a type name or a constant expression"
-        pure (TT (t_align .~ Just t)) <* rpar `pcut_expect` ")"
+        pure (TT (t_align .~ Just t)) <* cutrpar
   typedefname = (<>) <$> push sqa_typedefname <*> undefined identifier
   typeof2 qualification =
     let lens2use :: Lens' SQA Bool
@@ -268,7 +268,7 @@ parserecord = doparse >=> change
   doparse :: RecType -> P RecInfo
   doparse rt = do
     sym <- symnew
-    withOption identifier_def (`symgivetypetag` sym) (pure ())
+    withOption identifier_def (symgivetypetag sym) (pure ())
     RecInfo rt sym <$> attrspecs0 <*> do
       optional do
         concat
@@ -299,7 +299,7 @@ parserecord = doparse >=> change
 -- | Parse the body that follows a @static_assert@ token. This includes
 -- the semicolon at the end.
 parsesabody :: P StaticAssertion
-parsesabody = inpar body <* semicolon `pcut_expect` ";"
+parsesabody = inpar body <* cutsemicolon
  where
   body = StaticAssertion <$> constexpr <*> optional msg
   msg = comma >> string_literal_val
@@ -326,9 +326,9 @@ parseenum = doparse >>= change
             . Just
             <$> flip sepEndBy comma do
               sym <- symnew
-              identifier_def >>= (`symgivegeneralname` sym)
+              identifier_def >>= (symgivegeneralname sym)
               EnumConst sym <$> attrspecs0 <*> optional do
-                equal >> constexpr
+                cutequal >> constexpr
         incomplete = do
           -- an incomplete enum declaration has some restrictions.
           -- TODO: throw multiple errors at once.
@@ -369,13 +369,13 @@ attrspecs1 = attrspecs0 >>= \l -> guard (not . null $ l) $> l
 -- | Parse a single attribute specifier (@[[ ... ]]@). Here, a single specifier
 -- can actually introduce many attributes.
 attrspec :: P [Attribute]
-attrspec = ldbsqb >> attr `sepBy1` comma <* rdbsqb
+attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
  where
   attr = do
     i <- identifier
-    withOption
-      (dbcolon >> identifier `pcut_expect` "identifier")
-      (pure . Attribute (Just i))
+    branch
+      dbcolon
+      (Attribute (Just i) <$> identifier `pcut_expect` "identifier")
       (pure $ Attribute Nothing i)
       <*> do
         fmap (view (from span64)) <$> optional do
@@ -398,10 +398,10 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* rdbsqb
               $( switch_ws0
                    [|
                      case _ of
-                       "(" -> skipMany stuff <* rpar `pcut_expect` ")"
-                       "[" -> skipMany stuff <* rsqb `pcut_expect` "]"
-                       "<:" -> skipMany stuff <* rsqb `pcut_expect` "]"
-                       "{" -> skipMany stuff <* rpar `pcut_expect` "}"
+                       "(" -> skipMany stuff <* cutrpar
+                       "[" -> skipMany stuff <* cutrsqb
+                       "<:" -> skipMany stuff <* cutrsqb
+                       "{" -> skipMany stuff <* cutrcur
                        _ -> skipMany stuff
                      |]
                )

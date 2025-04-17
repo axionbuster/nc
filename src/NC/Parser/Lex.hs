@@ -26,6 +26,15 @@ module NC.Parser.Lex (
   cutrcur,
   cutrdbsqb,
   cutrsqb,
+  cutlpar,
+  cutlcur,
+  cutlsqb,
+  cutldbsqb,
+  cutcomma,
+  cutsemicolon,
+  cutcolon,
+  cutperiod,
+  cutequal,
   ldbsqb,
   rdbsqb,
   lsqb,
@@ -289,13 +298,32 @@ _rsq = lx0 $(switch [|case _ of "]" -> pure (); ":>" -> pure ()|])
   closing = $(switch [|case _ of "}" -> pure (); "%>" -> pure ()|])
 
 -- some cut versions of closing tokens
-cutrpar = rpar `pcut_expect` "expected )"
+cutrpar = rpar `pcut_expect` ")"
 
-cutrcur = rcur `pcut_expect` "expected }"
+cutrcur = rcur `pcut_expect` "}"
 
-cutrsqb = rsqb `pcut_expect` "expected ]"
+cutrsqb = rsqb `pcut_expect` "]"
 
-cutrdbsqb = rdbsqb `pcut_expect` "expcted ]]"
+cutrdbsqb = rdbsqb `pcut_expect` "]]"
+
+-- some cut versions of basic parsers prefixed with 'cut'
+cutlpar = lpar `pcut_expect` "("
+
+cutlcur = lcur `pcut_expect` "{"
+
+cutlsqb = lsqb `pcut_expect` "["
+
+cutldbsqb = ldbsqb `pcut_expect` "[["
+
+cutcomma = comma `pcut_expect` ","
+
+cutsemicolon = semicolon `pcut_expect` ";"
+
+cutcolon = colon `pcut_expect` ":"
+
+cutperiod = period `pcut_expect` "."
+
+cutequal = equal `pcut_expect` "="
 
 -- | Parse o. If ok, parse p and then parse c and return what p returns.
 -- If o doesn't parse, then parse q. Usage: @branch_between o c p q@
