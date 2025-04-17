@@ -291,8 +291,13 @@ parserecord = doparse >=> change
                     let type2 = apdecl de basetype
                     pure $ conrec type2 (Just bw)
 
+-- | Parse the body that follows a @static_assert@ token. This includes
+-- the semicolon at the end.
 parsesabody :: P StaticAssertion
-parsesabody = undefined
+parsesabody = inpar body <* semicolon
+ where
+  body = StaticAssertion <$> constexpr <*> optional msg
+  msg = comma >> string_literal_val
 
 parseenum :: P TT
 parseenum = undefined
