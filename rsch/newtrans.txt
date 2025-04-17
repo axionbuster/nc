@@ -74,13 +74,13 @@ rewrite:external-declaration <-
   predictive! attribute-specifier* 
     [
       # Function definition pattern
-      (keyword! "inline" <|> keyword! "_Noreturn" <|> 
+      ("inline" / "_Noreturn" / 
        lookahead! (declaration-specifier+ attribute-specifier* declarator '{'),
        declaration-specifier+ attribute-specifier* declarator
         compound-statement),
        
       # Static assertion pattern
-      (keyword! "static_assert",
+      ("static_assert",
        'static_assert' '(' constant-expression (',' string-literal)? ')' ';'),
        
       # Attribute-only declaration 
@@ -310,7 +310,7 @@ tokenStream! parsers validator continuation
 # Example: For parsing recursive declarator structures
 # parseUntilFixedPoint 
 #   identifier                                   -- Base case
-#   \base -> base '[' array-index ']' <|> base   -- Recursive step
+#   \base -> base '[' array-index ']' / base   -- Recursive step
 #
 # Signature: parseUntilFixedPoint :: Parser a -> (a -> Parser a) -> Parser a
 parseUntilFixedPoint baseCase recursionStep
@@ -370,7 +370,7 @@ rewrite:direct-abstract-declarator <-
   parseWith! \state ->
     let baseForm = ('(' abstract-declarator ')')?
         recursiveForm base = 
-          (base (bracketParse! '[' array-index2 ']') <|>
+          (base (bracketParse! '[' array-index2 ']') /
            base (bracketParse! '(' (parameter-list `sepBy!` ',') '...'? ')'))
           attribute-specifier*
     in parseUntilFixedPoint baseForm recursiveForm state

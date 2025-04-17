@@ -11,6 +11,7 @@ module NC.Parser.Expr (
 import NC.Internal.Prelude1 hiding (assign)
 
 -- | Most general expression parser
+expr :: P Expr
 expr = undefined
 
 -- | The rule @assignment-expression@ is used
@@ -23,4 +24,5 @@ condexpr = undefined
 
 -- | This is a specialized version of 'condexpr' that simplifies parsing
 -- by wrapping the parsed expression in a 'ConstIntExpr'.
+constexpr :: P ConstIntExpr
 constexpr = ConstIntExpr <$> condexpr <*> pure Nothing
