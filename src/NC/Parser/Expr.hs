@@ -4,10 +4,23 @@
 module NC.Parser.Expr (
   expr,
   assignexpr,
+  condexpr,
+  constexpr,
 ) where
 
 import NC.Internal.Prelude1 hiding (assign)
 
+-- | Most general expression parser
 expr = undefined
 
+-- | The rule @assignment-expression@ is used
+-- on its own in a few different places.
 assignexpr = undefined
+
+-- | The rule @conditional-expression@ also doubles as @constant-expression@.
+condexpr :: P a
+condexpr = undefined
+
+-- | This is a specialized version of 'condexpr' that simplifies parsing
+-- by wrapping the parsed expression in a 'ConstIntExpr'.
+constexpr = ConstIntExpr <$> condexpr <*> pure Nothing

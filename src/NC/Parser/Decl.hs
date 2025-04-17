@@ -32,7 +32,7 @@ newtype SQA = SQA Word64
   deriving (Eq, Show, Bits, Num)
   deriving (Monoid, Semigroup) via (Ior SQA)
 
--- | Extra data for 'RawType'
+-- | Extra data for 'SpecQuals'
 data Extra
   = -- | @_BitInt@
     ExBI !BitSize
@@ -49,8 +49,8 @@ data Extra
   | -- | @typeof@ and @typeof_unqual@
     ExTypeof !Typeof !TypeofQual
 
--- | Types
-data RawType = RawType
+-- | @specifier-qualifier-list@ information.
+data SpecQuals = SpecQuals
   { -- | Final specifier or qualifier.
     _rt_saq :: {-# UNPACK #-} !SQA,
     -- | This specifier or qualifier was repeated too often.
@@ -58,18 +58,20 @@ data RawType = RawType
     -- | Any explicit @alignof@ directive.
     _rt_align :: !(Maybe Alignment),
     -- | Extra data.
-    _rt_extra :: !(Maybe Extra)
+    _rt_extra :: !(Maybe Extra),
+    -- | Optional attributes can go at the end of a @specifier-qualifier-list@.
+    _rt_attrs :: ![Attribute]
   }
 
--- | Initial value for 'RawType'
-_rt_0 :: RawType
-_rt_0 = RawType 0 0 Nothing Nothing
+-- | Initial value for 'SpecQuals'
+_rt_0 :: SpecQuals
+_rt_0 = SpecQuals 0 0 Nothing Nothing []
 
--- | A transformation on 'RawType'.
-newtype TRT = TRT {aptrt :: RawType -> RawType}
-  deriving (Monoid, Semigroup) via (Endo RawType)
+-- | A transformation on 'SpecQuals'.
+newtype TRT = TRT {aptrt :: SpecQuals -> SpecQuals}
+  deriving (Monoid, Semigroup) via (Endo SpecQuals)
 
-makeLenses ''RawType
+makeLenses ''SpecQuals
 
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool

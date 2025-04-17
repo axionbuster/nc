@@ -1,0 +1,181 @@
+external-declaration <-
+  function-definition / declaration
+
+function-definition <-
+  attribute-specifier* declaration-specifiers+ attribute-specifier*
+  declarator compound-statement
+
+declaration <-
+  # static_assert-declaration has been inlined because this was its only use.
+  'static_assert' '(' constant-expression (',' string-literal)? ')' ';' /
+  # attribute-declaration was inlined for similar reasons.
+  # optimization note: it'll be beneficial to separate the body of
+  # attribute-specifier and the surrounding '[[' ']]' tokens to
+  # squeeze out the last bit of performance... maybe!
+  attribute-specifier+
+    (declaration-specifier+ attribute-specifier*)
+    (init-declarator `sepBy1!` ',') ';' /
+  (declaration-specifier+ attribute-specifier*)
+    # init-declarator-list was inlined.
+    (init-declarator `sepBy!` ',') /
+
+init-declarator <- declarator ('=' (cut! initializer))?
+
+# initializer
+
+initializer <- braced-initialization / assignment-expression
+
+# braced-initializer is used in a different place; don't inline.
+braced-initializer <- '{' (cut! (
+    (designator+ '=')? initializer `sepEndBy!` ','
+  )) '}'
+
+designator <-
+  '[' (cut! constant-expression) ']' /
+  '.' (cut! identifier)
+
+type-name <- specifier-qualifier-list abstract-declarator?
+
+specifier-qualifier-list <-
+  type-specifier-qualifier* attribute-specifier*
+
+type-specifier-qualifier <- type-specifier / type-qualifier
+
+# inlines 'alignment-specifier' for performance
+type-specifier <-
+  # primitives
+  'void' / 'char' / 'short' / 'int' / 'long' / 'float' / 'double' /
+  'signed' / 'unsigned' / '_BitInt' '(' constant-expression ')' /
+  'bool' / '_Complex' / '_Decimal32' / '_Decimal64' / '_Decimal128' /
+  # _Atomic as a qualifier goes to type-qualifier
+  '_Atomic' '(' type-name ')' /
+  # struct or union specifier. We'll extend the grammar to allow an empty
+  # definition.
+  (('struct' / 'union') attribute-specifier* identifier?
+    ('{' ((declarator / declarator? ':' constant-expression) `sepBy!` ',')
+     '}')) /
+  # enum specifier
+  ('enum' enum-rest) /
+  # typeof specifier
+  (('typeof' / 'typeof_unqual') '(' (type-name / expression) ')') /
+  # alignment-specifier isn't used anywhere else so it was inlined.
+  'alignas' '(' (type-name / constant-expression) ')'
+  # typedef-name is just an identifier
+  # this requires a lookup to determine.
+  identifier
+
+# used on its own, inline less.
+type-qualifier <- 'const' / 'restrict' / 'volatile' / '_Atomic'
+
+# enum-rest is only used in type-specifier, but it's too big so it wasn't
+# inlined. this matches the part past the 'enum' keyword for performance;
+# so that the bulk matcher can match as many keywords at once as possible.
+enum-rest <-
+  let form1! = attribute-specifier* identifier? in
+  let form2! = (fails! attribute-specifier+) identifier in
+  let body! f = f (':' specifier-qualifier-list)? in
+  # essentially, an incomplete enum declaration may not be given attributes.
+  # i estimate that a handwritten parser can excel here because it can check
+  # at the end instead of backtracking hard. we also extend the grammar to
+  # allow an empty enum definition.
+  body! form1 ('{' enumerator `sepEndBy!` ',' '}') / body! form2
+
+# enumeration-constant = identifier, inlined.
+# enumerator is only used in enum-rest.
+enumerator <- identifier attribute-specifier*
+              ('=' constant-expression)?
+
+# the declarator, which is one of two types of declarators.
+# the other type is an abstract declarator. the former (here) introduces
+# an identifier, but the latter does not.
+# a handwritten parser can save work by using one common parser.
+
+declarator <- pointer? direct-declarator
+
+pointer <- '*' attribute-specifier* type-qualifier* pointer?
+
+# note: recursive
+# note: almost the same as direct-abstract-declarator
+direct-declarator <-
+  '(' declarator ')' /
+  (
+    # merged array and function declarators
+    direct-declarator (
+      '[' array-index ']' /
+      '(' (parameter-list `sepBy!` ',') '...'? ')'
+      ) /
+    # introduces a name
+    identifier
+  ) attribute-specifier*
+
+array-index <-
+  # believe it or not, matches four cases.
+  ('static' type-qualifier* / type-qualifier+ 'static') assignment-expression /
+  type-qualifier* (assignment-expression / '*')
+
+parameter-list <- flip! sepBy! ','
+  ( # it seems like attributes can go before and after the "types"
+    attribute-specifier* declaration-specifier+
+    attribute-specifier* ( declarator / abstract-declarator )
+  )
+
+declaration-specifier <-
+  # function-specifier has been inlined because this was its only use.
+  'inline' / '_Noreturn' / storage-class-specifier / type-specifier-qualifier
+
+# this rule is used in different places; inline less.
+storage-class-specifier <- 'auto' / 'constexpr' / 'extern' / 'register' /
+  'static' / 'thread_local' / 'typedef'
+
+# abstract declarator.
+
+abstract-declarator <- pointer / pointer? direct-abstract-declarator
+
+# note: recursive
+# note: almost the same as direct-declarator
+direct-abstract-declarator <-
+  '(' abstract-declarator ')' /
+  (
+    # merged array and function declarators
+    direct-abstract-declarator (
+      '[' array-index2 ']' /
+      '(' (parameter-list `sepBy!` ',') '...'? ')'
+    )
+  ) attribute-specifier*
+
+array-index2 <-
+  ('static' type-qualifier* / type-qualifier+ 'static') assignment-expression /
+  # unlike in array-index, the '*' cannot be followed by type-qualifier's.
+  # that's literally the only difference.
+  type-qualifier* assignment-expression? / '*'
+
+# attributes
+
+attribute-specifier <- '[ '[' (attribute `sepBy!` ',') ']' ']'
+
+attribute <- identifier ('::' (cut! identifier))?
+  ('(' balanced-token* ')')?
+
+balanced-token <-
+  '(' balanced-token* ')' /
+  '[' balanced-token* ']' /
+  '{' balanced-token* '}' /
+  ((( any other token other than a parenthesis, a bracket, or a brace )))
+
+# external definitions
+
+external:
+  identifier
+  expression
+  assignment-expression
+  constant-expression # is the same as conditional-expression
+  compound-statement # is only used in function-definition
+
+# exports
+
+exports:
+  declaration
+  type-name
+  storage-class-specifier
+  braced-initializer
+  attribute-specifier
