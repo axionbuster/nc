@@ -11,7 +11,9 @@ module NC.Parser.Decl (
   typename,
 
   -- * Attributes
-  attributes,
+  attrspecs0,
+  attrspecs1,
+  attrspec,
 
   -- * Declarations
   declspec,
@@ -342,6 +344,28 @@ parseenum = doparse >>= change
                     Nothing
     branch_incur members incomplete
 
+-- | Parse the pointer past the star (@*@).
+pointerbody :: P Declarator
+pointerbody = undefined
+
+-- * Exported
+
+-- ** Types
+
+-- | Parse the @type-name@ rule, producing a 'Type'.
+typename :: P Type
+typename = specqualaligns <**> (apdecl <$> absdeclarator)
+
+-- ** Attributes
+
+attrspecs0, attrspecs1 :: P [Attribute]
+
+-- | Parse 0 or more attribute specifiers.
+attrspecs0 = chainr (<>) attrspec (pure mempty)
+
+-- | Parse 1 or more attribute specifiers.
+attrspecs1 = attrspecs0 >>= \l -> guard (not . null $ l) $> l
+
 -- | Parse a single attribute specifier (@[[ ... ]]@). Here, a single specifier
 -- can actually introduce many attributes.
 attrspec :: P [Attribute]
@@ -382,24 +406,6 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* rdbsqb
                      |]
                )
 
-attrspecs0, attrspecs1 :: P [Attribute]
-
--- | Parse 0 or more attribute specifiers.
-attrspecs0 = chainr (<>) attrspec (pure mempty)
-
--- | Parse 1 or more attribute specifiers.
-attrspecs1 = attrspecs0 >>= \l -> guard (not . null $ l) $> l
-
--- * Exported
-
--- ** Types
-
-typename = undefined
-
--- ** Attributes
-
-attributes = undefined
-
 -- ** Declarations
 
 declspec = undefined
@@ -411,6 +417,9 @@ declaration = undefined
 declarator :: Symbol -> P Declarator
 declarator = undefined
 
+-- | This is a variant of 'declarator' that does not introduce an
+-- identifier into scope, meaning no symbol needs to be provided.
+absdeclarator :: P Declarator
 absdeclarator = undefined
 
 anydeclarator = undefined

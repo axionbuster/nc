@@ -356,8 +356,6 @@ rewrite:abstract-declarator <-
 
 #! end rewriting rule
 
-#! begin rewriting rules for abstract-declarator
-
 # note: almost the same as direct-declarator
 direct-abstract-declarator <-
   '(' abstract-declarator ')' /
@@ -369,6 +367,7 @@ direct-abstract-declarator <-
     )
   ) attribute-specifier*
 
+#! begin rewriting rules
 #! rewriting rule for direct-abstract-declarator
 # This optimizes the left-recursive form using a specialized fixed-point parser
 rewrite:direct-abstract-declarator <-
@@ -379,13 +378,13 @@ rewrite:direct-abstract-declarator <-
            base (bracketParse! '(' (parameter-list `sepBy!` ',') '...'? ')'))
           attribute-specifier*
     in parseUntilFixedPoint baseForm recursiveForm state
-
 #! end rewriting rule
 
 array-index2 <-
-  # Use tokenStream! to avoid backtracking when parsing static and type 
-  # qualifiers
-  type-qualifier* assignment-expression? / '*'
+  # believe it or not, matches four cases.
+  # star does not go with an assignment-expression. very subtle difference!
+  ('static' type-qualifier* / type-qualifier+ 'static') assignment-expression /
+  (type-qualifier* assignment-expression) / '*'
 
 #! rewriting rule for array-index2
 # The original rule suffers from backtracking. This optimized version captures 
