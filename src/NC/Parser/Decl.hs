@@ -185,6 +185,7 @@ specqualalign =
            "typeof" -> typeof
            "typeof_unqual" -> typeof_unqual
            "alignas" -> alignas
+           "_Alignas" -> alignas
            "const" -> push sqa_const
            "restrict" -> push sqa_restrict
            "volatile" -> push sqa_volatile
