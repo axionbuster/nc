@@ -70,6 +70,7 @@ module NC.Parser.Def (
   psync,
   ponexception,
   pfinally,
+  pexpect,
 
   -- * Debugging.
   _dbg_dumpmsgs,
@@ -322,6 +323,11 @@ ptry p = do
 -- | Cut with 'MsgExpect'.
 pcut_expect :: P a -> String -> P a
 pcut_expect p = pcut p . MsgExpect
+
+-- | Emit a message saying that something is expected without
+-- sender attribution.
+pexpect :: String -> P a
+pexpect m = pthrow (MsgExpect m) ""
 
 -- | If @p@ throws an error, log it. Then, continue until @q@ fails. Resume
 -- with @r@ from then on.

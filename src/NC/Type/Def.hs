@@ -24,6 +24,7 @@ module NC.Type.Def (
   ty_base,
   ty_qual,
   ty_align,
+  pr2type,
   UQType (..),
   Qual,
   _qu_none,
@@ -1151,6 +1152,10 @@ lit_prim = lens getter setter
 -- | Construct a new 'ConstIntExpr'.
 mkconstintexpr :: Expr -> ConstIntExpr
 mkconstintexpr e = ConstIntExpr e Nothing
+
+-- | Convert a primitive type to a 'Type'.
+pr2type :: Prim -> Type
+pr2type p = Type (UQPrim p) mempty Nothing
 
 -- Generate lenses for all record types
 makeLenses ''Type

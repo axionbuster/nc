@@ -279,11 +279,14 @@ parserecord = doparse >=> change
               basetype <- specqualaligns
               flip sepBy comma do
                 dclr <- optional $ declarator sym
-                bitwidth <- optional $ colon >> constexpr
+                bitwidth <-
+                  optional
+                    $ colon
+                    >> (constexpr `pcut_expect` "a constant expression")
                 case bitwidth of
                   Nothing -> case dclr of
                     Just de -> pure $ conrec (apdecl de basetype) Nothing
-                    Nothing -> pthrow (MsgExpect "expected member type") ""
+                    Nothing -> pexpect "expected member type"
                   Just bw -> do
                     -- a field that specifies a bit width does not need
                     -- to specify a declarator.
@@ -299,8 +302,45 @@ parsesabody = inpar body <* semicolon `pcut_expect` ";"
   body = StaticAssertion <$> constexpr <*> optional msg
   msg = comma >> string_literal_val
 
+-- | Parse an @enum@ body.
 parseenum :: P TT
-parseenum = undefined
+parseenum = doparse >>= change
+ where
+  change ty = pure $ TT (t_extra .~ Just (ExEnum ty))
+  doparse = do
+    sym <- symnew
+    attrs <- attrspecs0
+    name <- optional identifier
+    membertype <-
+      option
+        (pr2type pr_int)
+        ( colon
+            >> specqualaligns
+            `pcut_expect` "type specifiers and qualifiers \
+                          \and alignment specifiers"
+        )
+    let members =
+          EnumInfo sym attrs membertype
+            . Just
+            <$> flip sepEndBy comma do
+              sym <- symnew
+              identifier_def >>= (`symgivegeneralname` sym)
+              EnumConst sym <$> attrspecs0 <*> optional do
+                equal >> constexpr
+        incomplete = do
+          -- an incomplete enum declaration has some restrictions.
+          -- TODO: throw multiple errors at once.
+          if
+            | not (null attrs) -> pexpect "no attributes"
+            | isNothing name -> pexpect "a tag"
+            | otherwise ->
+                pure
+                  $ EnumInfo
+                    sym
+                    attrs
+                    membertype
+                    Nothing
+    branch_incur members incomplete
 
 -- | Parse a single attribute specifier (@[[ ... ]]@). Here, a single specifier
 -- can actually introduce many attributes.
@@ -348,9 +388,7 @@ attrspecs0, attrspecs1 :: P [Attribute]
 attrspecs0 = chainr (<>) attrspec (pure mempty)
 
 -- | Parse 1 or more attribute specifiers.
-attrspecs1 = do
-  l <- attrspecs0
-  guard (not . null $ l) $> l
+attrspecs1 = attrspecs0 >>= \l -> guard (not . null $ l) $> l
 
 -- * Exported
 
