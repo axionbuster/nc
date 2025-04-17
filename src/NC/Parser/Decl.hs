@@ -294,7 +294,7 @@ parserecord = doparse >=> change
 -- | Parse the body that follows a @static_assert@ token. This includes
 -- the semicolon at the end.
 parsesabody :: P StaticAssertion
-parsesabody = inpar body <* semicolon
+parsesabody = inpar body <* semicolon `pcut_expect` ";"
  where
   body = StaticAssertion <$> constexpr <*> optional msg
   msg = comma >> string_literal_val
