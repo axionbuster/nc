@@ -112,6 +112,9 @@ module NC.Type.Def (
   mkconstintexpr,
   collectexpr,
   findvarrefs,
+  findarraysizeexprs,
+  findexprsintype,
+  findcieintype,
 
   -- ** Expression Pattern Synonyms
   pattern ExprPostInc,
@@ -191,7 +194,6 @@ module NC.Type.Def (
 ) where
 
 import Control.Lens
-import Control.Monad.IO.Class
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
@@ -199,12 +201,12 @@ import Data.Coerce
 import Data.Function
 import Data.HashTable.IO qualified as H
 import Data.Hashable
+import Data.Maybe (maybeToList)
 import Data.Semigroup
 import Data.Sequence (Seq)
 import Data.Unique
 import {-# SOURCE #-} NC.Parser.Def
 import NC.Type.Prim
-import UnliftIO.IORef
 import Prelude
 
 -- * Type definitions
@@ -727,14 +729,15 @@ data GenAssoc
   deriving (Show, Eq)
 
 -- | A constant integer expression. Use 'mkconstintexpr' to
--- construct in 'IO' (or a 'MonadIO' type).
+-- construct a new one or modify an existing one.
 data ConstIntExpr
   = ConstIntExpr
   { -- | The expression
     _ci_expr :: Expr,
     -- | Resolved value, if any
-    _ci_refval :: (IORef (Maybe Integer))
+    _ci_value :: Maybe Integer
   }
+  deriving (Show, Eq)
 
 -- *** C Statements
 
@@ -868,14 +871,6 @@ instance Hashable Symbol where
 instance Show Declarator where
   show _ = "<declarator>"
 
-instance Show ConstIntExpr where
-  showsPrec d (ConstIntExpr e _) =
-    showParen (d > 10) do
-      ("ConstIntExpr " ++) . showsPrec (d + 1) e
-
-instance Eq ConstIntExpr where
-  (==) = (==) `on` _ci_expr
-
 -- | The 'Plated' instance for 'Expr' allows for generic traversals over
 -- the recursive structure of expressions.
 instance Plated Expr where
@@ -893,8 +888,10 @@ instance Plated Expr where
         SESizeof (Left e) -> SESizeof . Left <$> f e
         SESizeof (Right t) -> pure $ SESizeof (Right t)
         SEITE cond tr fa -> SEITE <$> f cond <*> f tr <*> f fa
-        -- ConstIntExpr is not recursed into
-        SEAlignof (Left cie) -> pure $ SEAlignof (Left cie)
+        SEAlignof (Left cie) ->
+          SEAlignof . Left
+            <$> pure
+              (ConstIntExpr cie._ci_expr cie._ci_value)
         SEAlignof (Right t) -> pure $ SEAlignof (Right t)
     -- Base expressions don't contain sub-expressions except
     -- PrimParen and PrimGeneric
@@ -905,7 +902,7 @@ instance Plated Expr where
           PrimGeneric
             <$> f e
             <*> traverse
-              (\ga -> GenAssoc (_ga_type ga) <$> f (_ga_expr ga))
+              (\ga -> GenAssoc ga._ga_type <$> f ga._ga_expr)
               assocs
         _ -> pure x
 
@@ -937,20 +934,125 @@ instance Plated Statement where
       StmtLabeled label <$> traverse f mstmt
    where
     -- We don't traverse into expressions from statements ... for now!
-    plexpr :: (Applicative g) => (Statement -> g Statement) -> Expr -> g Expr
+    plexpr :: Traversal' Expr Statement
     plexpr _ = pure
-    pljump :: (Applicative g) => (Statement -> g Statement) -> Jump -> g Jump
+    pljump :: Traversal' Jump Statement
     pljump _ = pure -- Jumps don't contain statements
-    plblockitem ::
-      (Applicative g) => (Statement -> g Statement) -> BlockItem -> g BlockItem
+    plblockitem :: Traversal' BlockItem Statement
     plblockitem ff = \case
       BIDecl decl -> pure (BIDecl decl) -- We don't traverse into declarations
       BIStmt stmt -> BIStmt <$> ff stmt
-    plforinit ::
-      (Applicative g) => (Statement -> g Statement) -> ForInit -> g ForInit
+    plforinit :: Traversal' ForInit Statement
     plforinit _ = \case
       FIDecl decl -> pure (FIDecl decl) -- We don't traverse into declarations
       FIExpr mexpr -> pure (FIExpr mexpr) -- We don't traverse into expressions
+
+-- | The 'Plated' instance for 'ConstIntExpr' allows traversing into the
+-- underlying expression.
+instance Plated ConstIntExpr where
+  plate f (ConstIntExpr expr val) =
+    -- Note: we don't want to invalidate the cached value unless the expression
+    -- actually changes. The invariant is that this traversal cannot alter
+    -- the already determined value. This invariant isn't checked.
+    ConstIntExpr <$> plexpr f expr <*> pure val
+   where
+    -- Needed to avoid a type error.
+    plexpr :: Traversal' Expr ConstIntExpr
+    plexpr ff = \case
+      ExprAlignof (Left cie) -> ExprAlignof . Left <$> ff cie
+      a -> pure a
+
+-- | The 'Plated' instance for 'Type' allows for traversing the recursive
+-- structure of types, including expressions contained within types
+-- (like array sizes and alignments).
+instance Plated Type where
+  plate f (Type base qual align) =
+    Type <$> pluqtype f base <*> pure qual <*> plalignment f align
+   where
+    plalignment :: Traversal' (Maybe Alignment) Type
+    plalignment _ Nothing = pure Nothing
+    plalignment ft (Just al) =
+      Just <$> case al of
+        AlignAs cie -> AlignAs <$> traversecie cie
+        AlignAsType t -> AlignAsType <$> ft t
+    -- Helper to traverse into expressions within types
+    -- We don't transform expressions directly, but we need to
+    -- maintain a connection point for composed traversals
+    traversecie :: (Applicative g) => ConstIntExpr -> g ConstIntExpr
+    traversecie (ConstIntExpr e v) = pure (ConstIntExpr e v)
+    pluqtype :: Traversal' UQType Type
+    pluqtype ft = \case
+      UQPrim p -> pure (UQPrim p)
+      UQFunc fi -> UQFunc <$> plfuncinfo ft fi
+      UQPointer t -> UQPointer <$> ft t
+      UQArray ai -> UQArray <$> plarrayinfo ft ai
+      UQRecord ri -> UQRecord <$> plrecinfo ft ri
+      UQEnum ei -> UQEnum <$> plenuminfo ft ei
+      UQAtomic uqt -> UQAtomic <$> pluqtype ft uqt
+      UQTypeof tq ty -> UQTypeof tq <$> pltypeof ft ty
+    plarrayinfo :: Traversal' ArrayInfo Type
+    plarrayinfo ft (ArrayInfo size typ parr) =
+      -- Note: we don't traverse into the size expression directly
+      ArrayInfo size <$> ft typ <*> pure parr
+    plfuncinfo :: Traversal' FuncInfo Type
+    plfuncinfo ft (FuncInfo rettype pars var) =
+      FuncInfo <$> ft rettype <*> traverse (plparam ft) pars <*> pure var
+    plparam :: Traversal' Param Type
+    plparam ft (Param t ms) = Param <$> ft t <*> pure ms
+    plrecinfo :: Traversal' RecInfo Type
+    plrecinfo ft (RecInfo rt sym attrs mdef) =
+      RecInfo rt sym attrs <$> traverse (traverse (plrecmember ft)) mdef
+    plrecmember :: Traversal' RecMember Type
+    plrecmember ft = \case
+      RMField attrs t sym mcie ->
+        RMField attrs <$> ft t <*> pure sym <*> pure mcie
+      RMStaticAssertion sa -> pure (RMStaticAssertion sa)
+    plenuminfo :: Traversal' EnumInfo Type
+    plenuminfo ft (EnumInfo sym attrs mt mmembers) =
+      EnumInfo sym attrs <$> ft mt <*> pure mmembers
+    pltypeof :: Traversal' Typeof Type
+    pltypeof ft = \case
+      TypeofType t -> TypeofType <$> ft t
+      TypeofExpr e -> pure (TypeofExpr e)
+
+-- | Find all VLA size expressions in a type
+findarraysizeexprs :: Type -> [Expr]
+findarraysizeexprs = toListOf (cosmos . to extractarraysize . _Just)
+ where
+  extractarraysize :: Type -> Maybe Expr
+  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = Just size
+  extractarraysize _ = Nothing
+
+-- | Find expressions in types (array sizes, alignment expressions, etc.)
+findexprsintype :: Type -> [Expr]
+findexprsintype = toListOf (cosmos . to extractexprsfromtype . traverse)
+ where
+  extractexprsfromtype :: Type -> [Expr]
+  extractexprsfromtype t@(Type base _ align) =
+    maybeToList (extractarraysize t)
+      ++ extractalignexpr align
+      ++ extracttypeofexpr base
+  extractarraysize :: Type -> Maybe Expr
+  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = Just size
+  extractarraysize _ = Nothing
+  extractalignexpr :: Maybe Alignment -> [Expr]
+  extractalignexpr Nothing = []
+  extractalignexpr (Just (AlignAs cie)) = [_ci_expr cie]
+  extractalignexpr (Just (AlignAsType _)) = []
+  extracttypeofexpr :: UQType -> [Expr]
+  extracttypeofexpr (UQTypeof _ (TypeofExpr e)) = [e]
+  extracttypeofexpr _ = []
+
+-- | Find all 'ConstIntExpr' values in a type
+findcieintype :: Type -> [ConstIntExpr]
+findcieintype = toListOf (cosmos . to extractcies . traverse)
+ where
+  extractcies :: Type -> [ConstIntExpr]
+  extractcies (Type _ _ align) = extractaligncie align
+  extractaligncie :: Maybe Alignment -> [ConstIntExpr]
+  extractaligncie Nothing = []
+  extractaligncie (Just (AlignAs cie)) = [cie]
+  extractaligncie (Just (AlignAsType _)) = []
 
 -- | Collect all subexpressions matching a predicate
 collectexpr :: (Expr -> Bool) -> Expr -> [Expr]
@@ -1047,8 +1149,8 @@ lit_prim = lens getter setter
     LitString (StringLiteral a _) -> LitString . StringLiteral a
 
 -- | Construct a new 'ConstIntExpr'.
-mkconstintexpr :: (MonadIO m) => Expr -> m ConstIntExpr
-mkconstintexpr e = ConstIntExpr e <$> newIORef Nothing
+mkconstintexpr :: Expr -> ConstIntExpr
+mkconstintexpr e = ConstIntExpr e Nothing
 
 -- Generate lenses for all record types
 makeLenses ''Type
