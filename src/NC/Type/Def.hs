@@ -1005,7 +1005,7 @@ instance Plated Type where
     plrecmember :: Traversal' RecMember Type
     plrecmember ft = \case
       RMField attrs t sym mcie ->
-        RMField attrs <$> ft t <*> pure sym <*> pure mcie
+        RMField attrs <$> pure t <*> ft sym <*> pure mcie
       RMStaticAssertion sa -> pure (RMStaticAssertion sa)
     plenuminfo :: Traversal' EnumInfo Type
     plenuminfo ft (EnumInfo sym attrs mt mmembers) =
