@@ -375,7 +375,7 @@ _dbg_dumpmsgs orig = do
     -- Get line/column information
     let positions = [fst position, snd position]
         -- FlatParse line/col are zero-based, so we add 1 to make them 1-based
-        strposes = posLineCols orig positions <&> bimap succ succ
+        strposes = posLineCols orig positions <&> bimap (+ 1) (+ 1)
         ((sl, sc), (el, ec)) = case strposes of
           [start, end] -> (start, end)
           _ -> ((0, 0), (0, 0)) -- fallback

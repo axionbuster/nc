@@ -1,6 +1,3 @@
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE StrictData #-}
-
 -- |
 -- Module      : NC.Type.Def
 -- Description : Core type definitions for the C language

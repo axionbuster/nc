@@ -23,7 +23,7 @@ common lang
                             ExtendedLiterals, PatternSynonyms,
                             OverloadedRecordDot, MultiWayIf, RecordWildCards,
                             DerivingStrategies, DerivingVia,
-                            MultilineStrings
+                            MultilineStrings, StrictData
     default-language:       GHC2024
 
 common optim
