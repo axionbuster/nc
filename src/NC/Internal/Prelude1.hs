@@ -25,6 +25,7 @@ module NC.Internal.Prelude1 (
   module NC.Parser.Def,
   module NC.Parser.Lex,
   module NC.Type,
+  module System.IO.Unsafe,
   module Text.Printf,
   module UnliftIO.IORef,
   module Unsafe.Coerce,
@@ -67,6 +68,7 @@ import GHC.Generics (Generic, Generically)
 import NC.Parser.Def
 import NC.Parser.Lex
 import NC.Type
+import System.IO.Unsafe
 import Text.Printf
 import UnliftIO.IORef
 import Unsafe.Coerce

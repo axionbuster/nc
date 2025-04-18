@@ -16,11 +16,9 @@ module NC.Parser.Decl (
   attrspec,
 
   -- * Declarations
-  declspec,
   declaration,
   declarator,
   absdeclarator,
-  anydeclarator,
   bracedinitializer,
   initializer,
 ) where
@@ -209,9 +207,13 @@ specqualalign =
         tokens & t_sqa . tok .~ True
   bitint = do
     -- FIXME: we need to admit a constant-expression, but we require
-    -- a _BitInt type to only use an actual 14-bit integer. I think
+    -- a _BitInt type to only use an actual 16-bit integer. I think
     -- we'll need to redesign the primitive type system. For now,
-    -- I'll use an integer literal, instead.
+    -- I'll use an integer literal, instead. UPDATE: There's no need to
+    -- update the primitive type itself. converting it to an expression
+    -- that's potentially unevaluated is more trouble than its worth.
+    -- rather, it's probably a better idea to enable evaluation here.
+    -- i'll touch on this issue later.
     cutlpar
       >> pcut' (MsgExpect "integer literal") do
         IntegerLiteral litnum _ <- integer_constant_val
@@ -394,7 +396,7 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
                              "}" -> pure ()
                            |]
                      )
-              $( switch_ws0
+              $( switch
                    [|
                      case _ of
                        "(" -> skipMany stuff <* cutrpar
@@ -407,9 +409,27 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
 
 -- ** Declarations
 
+-- | This is an expanded form of 'typespecquals' that also accepts
+-- storage class specifiers and function specifiers (i.e., there are two:
+-- @inline@ and @_Noreturn@).
+declspec :: P TT
 declspec = undefined
 
+declspecs :: P T
+declspecs = undefined
+
+-- | Parse a full C declaration. A single declaration can bring into scope
+-- many identifiers, so beware of that. A declaration consists of one
+-- or more declarators, and a base type (the declarators modify the base
+-- type). Here, each declarator introduces an identifier.
+declaration :: P Declaration
 declaration = undefined
+
+-- | A shared symbol is allocated here to avoid having to call it
+-- when parsing an abstract declarator.
+__shared_dummy_sym :: Symbol
+__shared_dummy_sym = unsafePerformIO symnew
+{-# NOINLINE __shared_dummy_sym #-}
 
 -- | Create a declarator, which introduces an identifier. Associate the
 -- identifier with the symbol.
@@ -421,8 +441,19 @@ declarator = undefined
 absdeclarator :: P Declarator
 absdeclarator = undefined
 
+-- | This will be an environment for 'anydeclarator'. This will have
+-- functions that modulate its behavior. A direct declarator also requires
+-- a symbol. For an abstract declarator, this can be a dummy symbol.
+data AD
+
+-- | This needs to be a very general routine.
+anydeclarator :: AD -> P Declarator
 anydeclarator = undefined
 
+-- | Braced initializer @{...}@.
+bracedinitializer :: P Initializer
 bracedinitializer = undefined
 
+-- | An initializer, which is either an @assignment-expression@.
+initializer :: P Initializer
 initializer = undefined

@@ -206,10 +206,10 @@ import Data.Maybe (maybeToList)
 import Data.Semigroup
 import Data.Sequence (Seq)
 import Data.Unique
+import Data.Word
 import {-# SOURCE #-} NC.Parser.Def
 import NC.Type.Prim
 import Prelude
-import Data.Word
 
 -- * Type definitions
 
