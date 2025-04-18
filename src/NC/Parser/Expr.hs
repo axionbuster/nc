@@ -16,10 +16,11 @@ expr = undefined
 
 -- | The rule @assignment-expression@ is used
 -- on its own in a few different places.
+assignexpr :: P Expr
 assignexpr = undefined
 
 -- | The rule @conditional-expression@ also doubles as @constant-expression@.
-condexpr :: P a
+condexpr :: P Expr
 condexpr = undefined
 
 -- | This is a specialized version of 'condexpr' that simplifies parsing

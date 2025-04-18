@@ -84,7 +84,7 @@ makeLenses ''T
 __bool :: (Bits a) => a -> Lens' a Bool
 __bool mask = lens g s
  where
-  g = (/= (mask .^. mask)) . (.&. mask)
+  g = (== mask) . (.&. mask)
   s x = \case True -> x .|. mask; _ -> x .&. complement mask
 
 sqa_const, sqa_restrict, sqa_volatile, sqa_atomic :: Lens' SQA Bool

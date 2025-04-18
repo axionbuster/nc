@@ -361,7 +361,7 @@ pfinally p q = do a <- p `ponexception` q; q $> a
 _dbg_dumpmsgs :: ByteString -> P ()
 _dbg_dumpmsgs orig = do
   env <- ask
-  msgs <- liftIO $ readIORef (env._penv_messages)
+  msgs <- readIORef env._penv_messages
   traceIO $ printf "_dbg_dumpmsgs"
 
   forM_ msgs \amsg -> do
