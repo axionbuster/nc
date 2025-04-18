@@ -209,6 +209,7 @@ import Data.Unique
 import {-# SOURCE #-} NC.Parser.Def
 import NC.Type.Prim
 import Prelude
+import Data.Word
 
 -- * Type definitions
 

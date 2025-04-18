@@ -220,7 +220,6 @@ specqualalign =
         pure
           if (litnum <= 0)
             || (litnum > fromIntegral (maxBound :: Word16))
-            || isNothing (bitintwidth_ok ln2)
             then TT (t_msgs %~ cons badbitsize)
             else TT (t_extra .~ Just (ExBI ln2))
       <* cutrpar
