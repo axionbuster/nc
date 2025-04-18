@@ -1,0 +1,16 @@
+# Config for STAN Haskell static analyzer
+# Very informative + very naggy
+
+# Disable warnings about using '_' in a sum type pattern match.
+[[check]]
+type = "Exclude"
+id = "STAN-0213"
+scope = "all"
+
+# In Lex.hs, disable warnings about large tuples.
+# FIXME: file scope not working right now, and disables the entire thing.
+# It looks like it causes an exception, which is handled quietly.
+[[check]]
+type = "Exclude"
+id = "STAN-0302"
+scope = "all"

@@ -29,8 +29,12 @@ common lang
 common optim
     -- ghc-options:            -O2 -fllvm
 
+common emit-hie
+    ghc-options:            -fwrite-ide-info
+                            -hiedir=.hie
+
 library
-    import:             warnings, lang, optim
+    import:             warnings, lang, optim, emit-hie
     exposed-modules:    NC.Type, NC.Type.Def, NC.Type.Prim,
                         NC.Parser, NC.Parser.Def, NC.Parser.Lex,
                         NC.Parser.Decl, NC.Parser.Expr
