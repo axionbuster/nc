@@ -203,8 +203,8 @@ specqualaligns = undefined
 -- this portion is shared between different parsers. We want an efficient
 -- trie search which favors the case where every possibility is combined
 -- and tested at once.
-specqualalign_real :: SQA -> P TT
-specqualalign_real = \case
+declspec_real :: SQA -> P TT
+declspec_real = \case
   SqaVoid -> push SqaVoid
   SqaChar -> push SqaChar
   SqaShort -> push SqaShort
@@ -329,6 +329,7 @@ specqualalign =
            "enum" -> r SqaEnum
            "typeof" -> r SqaTypeof
            "typeof_unqual" -> r SqaTypeofUnqual
+           "alignas" -> r SqaAlignas
            "_Alignas" -> r SqaAlignas
            "const" -> r SqaConst
            "restrict" -> r SqaRestrict
@@ -337,7 +338,7 @@ specqualalign =
          |]
    )
  where
-  r = specqualalign_real
+  r = declspec_real
 
 -- | Parse a record type and then return a type transformer (TT).
 parserecord :: RecType -> P TT
@@ -492,10 +493,60 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
 -- storage class specifiers and function specifiers (i.e., there are two:
 -- @inline@ and @_Noreturn@).
 declspec :: P TT
-declspec = undefined
+declspec =
+  $( switch_ws1
+       [|
+         case _ of
+           -- * type specifiers and qualifiers and alignment specifiers
+           -- (shared with specqualalign)
+           "void" -> r SqaVoid
+           "char" -> r SqaChar
+           "short" -> r SqaShort
+           "int" -> r SqaInt
+           "long" -> r SqaLong
+           "float" -> r SqaFloat
+           "double" -> r SqaDouble
+           "signed" -> r SqaSigned
+           "unsigned" -> r SqaUnsigned
+           "_BitInt" -> r SqaBitInt
+           "_Bool" -> r SqaBool
+           "_Complex" -> r SqaComplex
+           "_Decimal32" -> r SqaD32
+           "_Decimal64" -> r SqaD64
+           "_Decimal128" -> r SqaD128
+           "_Atomic" -> r SqaAtomic
+           "struct" -> r SqaStruct
+           "union" -> r SqaUnion
+           "enum" -> r SqaEnum
+           "typeof" -> r SqaTypeof
+           "typeof_unqual" -> r SqaTypeofUnqual
+           "alignas" -> r SqaAlignas
+           "_Alignas" -> r SqaAlignas
+           "const" -> r SqaConst
+           "restrict" -> r SqaRestrict
+           "volatile" -> r SqaVolatile
+           -- * function specifiers
+           "inline" -> r SqaInline
+           "_Noreturn" -> r SqaNoreturn
+           -- * storage class specifiers
+           "auto" -> r SqaAuto
+           "constexpr" -> r SqaConstexpr
+           "extern" -> r SqaExtern
+           "register" -> r SqaRegister
+           "static" -> r SqaStatic
+           "thread_local" -> r SqaThreadLocal
+           "_Thread_local" -> r SqaThreadLocal
+           "typedef" -> r SqaTypedef
+           _ -> r SqaOther
+         |]
+   )
+ where
+  r = declspec_real
 
+-- | Parse a list of declaration specifiers. Will be followed by a declarator
+-- which transforms the base type returned by 'declspecs'.
 declspecs :: P T
-declspecs = undefined
+declspecs = fmap aptt (chainl (<>) (pure mempty) declspec) <*> pure _t_0
 
 -- | Parse a full C declaration. A single declaration can bring into scope
 -- many identifiers, so beware of that. A declaration consists of one
