@@ -8,6 +8,7 @@ module NC.Internal.Prelude1 (
   module Control.Monad.Fix,
   module Control.Monad.IO.Class,
   module Data.Bits,
+  module Data.Bool,
   module Data.ByteString,
   module Data.ByteString.Lazy,
   module Data.Coerce,
@@ -50,6 +51,7 @@ import Control.Monad.Combinators hiding (
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Bits
+import Data.Bool
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Coerce

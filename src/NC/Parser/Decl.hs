@@ -497,7 +497,7 @@ declspec =
   $( switch_ws1
        [|
          case _ of
-           -- * type specifiers and qualifiers and alignment specifiers
+           -- \* type specifiers and qualifiers and alignment specifiers
            -- (shared with specqualalign)
            "void" -> r SqaVoid
            "char" -> r SqaChar
@@ -525,10 +525,10 @@ declspec =
            "const" -> r SqaConst
            "restrict" -> r SqaRestrict
            "volatile" -> r SqaVolatile
-           -- * function specifiers
+           -- \* function specifiers
            "inline" -> r SqaInline
            "_Noreturn" -> r SqaNoreturn
-           -- * storage class specifiers
+           -- \* storage class specifiers
            "auto" -> r SqaAuto
            "constexpr" -> r SqaConstexpr
            "extern" -> r SqaExtern
@@ -555,12 +555,6 @@ declspecs = fmap aptt (chainl (<>) (pure mempty) declspec) <*> pure _t_0
 declaration :: P Declaration
 declaration = undefined
 
--- | A shared symbol is allocated here to avoid having to call it
--- when parsing an abstract declarator.
-__shared_dummy_sym :: Symbol
-__shared_dummy_sym = unsafePerformIO symnew
-{-# NOINLINE __shared_dummy_sym #-}
-
 -- | Create a declarator, which introduces an identifier. Associate the
 -- identifier with the symbol.
 declarator :: Symbol -> P Declarator
@@ -571,14 +565,119 @@ declarator = undefined
 absdeclarator :: P Declarator
 absdeclarator = undefined
 
--- | This will be an environment for 'anydeclarator'. This will have
--- functions that modulate its behavior. A direct declarator also requires
--- a symbol. For an abstract declarator, this can be a dummy symbol.
+-- | 'anydeclarator' configuration.
 data AD
+  = -- | A direct declarator, which introduces an identifier.
+    ADDirect
+  | -- | An abstract declarator, which does not introduce an identifier.
+    ADAbstract
+  deriving (Eq)
 
--- | This needs to be a very general routine.
-anydeclarator :: AD -> P Declarator
-anydeclarator = undefined
+-- | Parse a declarator, using the identifier policy given.
+anydeclarator :: AD -> Symbol -> P Declarator
+anydeclarator pol sym = do
+  ptr <- chainr (<>) pointer (pure mempty)
+  bas <- basedecl
+  arf <- branch_insqb array $ branch_inpar function $ pure mempty
+  -- case pol of
+  --   ADDirect ->
+  --     identifier_def >>= \i ->
+  --       symnew >>= \s ->
+  --         symgivegeneralname s i
+  --   ADAbstract -> pure ()
+  pure $ ptr <> arf <> bas
+ where
+  pointer :: P Declarator
+  pointer =
+    star >> flip pcut_expect "pointer" do
+      attrs <- attrspecs0
+      quals <- qualifiers
+      -- wrap the type in a pointer
+      pure $ Declarator \ty ->
+        Type' (UQPointer attrs ty) quals
+  qualifiers :: P Qual
+  qualifiers = undefined
+  qualifiers1 :: P Qual
+  qualifiers1 = undefined
+  basedecl :: P Declarator
+  basedecl = do
+    -- identifier depending on the mode, and then qualifiers.
+    when (pol == ADDirect) do
+      i <- identifier_def
+      s <- symnew
+      symgivegeneralname s i
+    quals <- qualifiers
+    pure $ Declarator $ over ty_qual (<> quals)
+  -- body of an array. thus, inside [].
+  -- after a body or a function can go attribute specifiers,
+  -- though not handled here.
+  array :: P Declarator
+  array = do
+    -- static_position:
+    --  0 . . . does not occur
+    --  1 . . . head (before qualifiers)
+    --  2 . . . after qualifiers
+    (static_position :: Word8, quals) <- do
+      branch static' ((1,) <$> qualifiers) do
+        withOption
+          qualifiers
+          ( \qs -> do
+              s <- isJust <$> optional static'
+              pure (bool 0 2 s, qs)
+          )
+          (pure (0, mempty))
+    -- len:
+    --    Nothing Nothing . . . no expression.
+    --    Just Nothing    . . . given the VLA star (*).
+    --    Just (Just _)   . . . an expression giving array size
+    len <- optional $ (Just <$> expr) <|> (Nothing <$ star)
+    let
+      -- arrays used in function prototypes will carry
+      -- this information. we will include it regardless
+      -- of whether it's really in a function prototype.
+      paraminfo
+        | static_position == 0 && quals == mempty = Nothing
+        | otherwise =
+            Just
+              $ ParamArrayInfo
+                (bool ASNoStatic ASStatic (static_position /= 0))
+                quals
+      finish = pure $ Declarator \ty ->
+        Type' (UQArray $ ArrayInfo (join len) ty paraminfo) mempty
+    -- allowed combinations:
+    --  static_position = 0:
+    --    if direct,
+    --      optional qualifiers.
+    --      optional expression or the VLA star.
+    --    if abstract,
+    --      if VLA star (*) parses instead of an expression,
+    --        no qualifiers.
+    --        the vla star.
+    --      else,
+    --        optional qualifiers.
+    --        optional expression.
+    --  static_position = 1:
+    --    optional qualifiers.
+    --    expression.
+    --  static_position = 2:
+    --    at least qualifier in a list.
+    --    ("static").
+    --    expression.
+    --  (no other combinations).
+    case static_position of
+      0 -> case pol of
+        ADDirect -> finish
+        ADAbstract -> case len of
+          Just Nothing | quals == mempty -> finish
+          Just Nothing -> adhoc' "qualifiers unexpected"
+          _ -> finish
+      1 -> finish
+      2 | quals == mempty -> pexpect "qualifiers"
+      2 -> finish
+      _ -> error "this is impossible"
+  -- body of a function prototype. thus, inside ().
+  function :: P Declarator
+  function = undefined
 
 -- | Braced initializer @{...}@.
 bracedinitializer :: P Initializer

@@ -61,6 +61,7 @@ module NC.Parser.Def (
   AMessage (..),
   oops,
   adhoc,
+  adhoc',
   pthrow,
   pcutfull,
   pcut,
@@ -286,6 +287,10 @@ oops = pthrow . MsgOops
 -- | Throw an ad hoc error. Message then sender identification.
 adhoc :: String -> String -> P a
 adhoc = pthrow . MsgAdHoc
+
+-- | Throw an ad hoc error without sender information.
+adhoc' :: String -> P a
+adhoc' = (`adhoc` "")
 
 -- | Annotate and then throw a 'Message'. One must clarify \'who\' is sending
 -- the message.

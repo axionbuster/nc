@@ -206,14 +206,13 @@ pointer <- '*' attribute-specifier* type-qualifier* pointer?
 # note: almost the same as direct-abstract-declarator
 direct-declarator <-
   '(' declarator ')' /
-  (
+  ( # introduces a name
+    identifier /
     # merged array and function declarators
     direct-declarator (
       '[' array-index ']' /
       '(' (parameter-list `sepBy!` ',') '...'? ')'
-      ) /
-    # introduces a name
-    identifier
+      )
   ) attribute-specifier*
 
 array-index <-

@@ -18,10 +18,12 @@ module NC.Type.Def (
 
   -- ** C Type System
   Type (..),
+  pattern Type',
   ty_base,
   ty_qual,
   ty_align,
   pr2type,
+  uq2type,
   UQType (..),
   Qual,
   _qu_none,
@@ -234,11 +236,18 @@ data Type
   }
   deriving (Show, Eq)
 
+-- | Match a type without concern for alignment. When the type is constructed,
+-- the alignment field is set to 'Nothing'.
+pattern Type' :: UQType -> Qual -> Type
+pattern Type' b q <- Type b q _
+  where
+    Type' b q = Type b q Nothing
+
 -- | Unqualified type
 data UQType
   = UQPrim Prim
   | UQFunc FuncInfo
-  | UQPointer Type
+  | UQPointer [Attribute] Type
   | UQArray ArrayInfo
   | UQRecord RecInfo
   | UQEnum EnumInfo
@@ -291,8 +300,10 @@ data RecMember
 
 -- | A C array
 data ArrayInfo = ArrayInfo
-  { -- | A C array size may be a VLA or given by a constant length.
-    _arr_size :: Expr,
+  { -- | A C array size may be a VLA or given by a constant length. Sometimes
+    -- no explicit expression is given. TODO: I will consider using \'These\'
+    -- from \'Data.These\' (package \'these\') for this.
+    _arr_size :: Maybe Expr,
     -- | Element type.
     _arr_type :: Type,
     -- | If this array derivation is the outermost derivation of an array
@@ -983,7 +994,7 @@ instance Plated Type where
     pluqtype ft = \case
       UQPrim p -> pure (UQPrim p)
       UQFunc fi -> UQFunc <$> plfuncinfo ft fi
-      UQPointer t -> UQPointer <$> ft t
+      UQPointer a t -> UQPointer a <$> ft t
       UQArray ai -> UQArray <$> plarrayinfo ft ai
       UQRecord ri -> UQRecord <$> plrecinfo ft ri
       UQEnum ei -> UQEnum <$> plenuminfo ft ei
@@ -1019,7 +1030,7 @@ findarraysizeexprs :: Type -> [Expr]
 findarraysizeexprs = toListOf (cosmos . to extractarraysize . _Just)
  where
   extractarraysize :: Type -> Maybe Expr
-  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = Just size
+  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = size
   extractarraysize _ = Nothing
 
 -- | Find expressions in types (array sizes, alignment expressions, etc.)
@@ -1032,7 +1043,7 @@ findexprsintype = toListOf (cosmos . to extractexprsfromtype . traverse)
       ++ extractalignexpr align
       ++ extracttypeofexpr base
   extractarraysize :: Type -> Maybe Expr
-  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = Just size
+  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = size
   extractarraysize _ = Nothing
   extractalignexpr :: Maybe Alignment -> [Expr]
   extractalignexpr Nothing = []
@@ -1154,6 +1165,10 @@ mkconstintexpr e = ConstIntExpr e Nothing
 -- | Convert a primitive type to a 'Type'.
 pr2type :: Prim -> Type
 pr2type p = Type (UQPrim p) mempty Nothing
+
+-- | Convert an unqualifier type to a 'Type'.
+uq2type :: UQType -> Type
+uq2type t = Type t mempty Nothing
 
 -- Generate lenses for all record types
 makeLenses ''Type
