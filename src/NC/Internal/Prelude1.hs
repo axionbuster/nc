@@ -12,6 +12,7 @@ module NC.Internal.Prelude1 (
   module Data.ByteString,
   module Data.ByteString.Lazy,
   module Data.Coerce,
+  module Data.Foldable,
   module Data.Function,
   module Data.Functor,
   module Data.Hashable,
@@ -55,6 +56,7 @@ import Data.Bool
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Coerce
+import Data.Foldable
 import Data.Function
 import Data.Functor
 import Data.Hashable

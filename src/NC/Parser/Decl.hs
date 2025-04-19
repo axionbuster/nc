@@ -78,6 +78,25 @@ newtype TT = TT {aptt :: T -> T}
 
 makeLenses ''T
 
+-- | Throw on duplicate keywords.
+_t_ensure_nodup :: T -> P ()
+_t_ensure_nodup t
+  | t ^. t_dups /= mempty = adhoc' "duplicate found"
+  | otherwise = pure ()
+
+-- | Get the 'Qual' out of a 'T'.
+_t2qual :: T -> Qual
+_t2qual (_t_sqa -> t) =
+  foldMap'
+    f
+    [ (_qu_atomic, SqaAtomic),
+      (_qu_const, SqaConst),
+      (_qu_restrict, SqaRestrict),
+      (_qu_volatile, SqaVolatile)
+    ]
+ where
+  f (l, m) = bool mempty l (t .&. m /= 0)
+
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool
 __bool mask = lens g s
@@ -595,10 +614,27 @@ anydeclarator pol sym = do
       -- wrap the type in a pointer
       pure $ Declarator \ty ->
         Type' (UQPointer attrs ty) quals
-  qualifiers :: P Qual
-  qualifiers = undefined
   qualifiers1 :: P Qual
-  qualifiers1 = undefined
+  qualifiers1 = do
+    a <- qualifiers
+    guard (a /= mempty) $> a
+  qualifiers :: P Qual
+  qualifiers = do
+    f <- chainl (<>) (pure mempty) qualifier
+    let g = aptt f _t_0
+    _t_ensure_nodup g $> _t2qual g
+   where
+    qualifier =
+      $( switch_ws1
+           [|
+             case _ of
+               "const" -> r SqaConst
+               "restrict" -> r SqaRestrict
+               "volatile" -> r SqaVolatile
+               "atomic" -> r SqaAtomic
+             |]
+       )
+    r = declspec_real
   basedecl :: P Declarator
   basedecl = do
     -- identifier depending on the mode, and then qualifiers.
@@ -629,7 +665,7 @@ anydeclarator pol sym = do
     -- len:
     --    Nothing Nothing . . . no expression.
     --    Just Nothing    . . . given the VLA star (*).
-    --    Just (Just _)   . . . an expression giving array size
+    --    Just (Just _)   . . . an expression giving array size.
     len <- optional $ (Just <$> expr) <|> (Nothing <$ star)
     let
       -- arrays used in function prototypes will carry
@@ -660,7 +696,7 @@ anydeclarator pol sym = do
     --    optional qualifiers.
     --    expression.
     --  static_position = 2:
-    --    at least qualifier in a list.
+    --    at least one qualifier in a list.
     --    ("static").
     --    expression.
     --  (no other combinations).
@@ -672,7 +708,7 @@ anydeclarator pol sym = do
           Just Nothing -> adhoc' "qualifiers unexpected"
           _ -> finish
       1 -> finish
-      2 | quals == mempty -> pexpect "qualifiers"
+      2 | quals == mempty -> pexpect "at least one qualifier"
       2 -> finish
       _ -> error "this is impossible"
   -- body of a function prototype. thus, inside ().
