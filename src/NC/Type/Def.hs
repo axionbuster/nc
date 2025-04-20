@@ -53,6 +53,7 @@ module NC.Type.Def (
   arr_size,
   arr_type,
   arr_paraminfo,
+  arr_attrs,
   ParamArrayInfo (..),
   parr_static,
   parr_qual,
@@ -74,6 +75,7 @@ module NC.Type.Def (
   fun_rettype,
   fun_pars,
   fun_variadic,
+  fun_attrs,
   Param (..),
   Variadic (..),
 
@@ -264,7 +266,7 @@ data Attribute = Attribute
   deriving (Show, Eq)
 
 -- | A C qualification
-newtype Qual = Qual Word16
+newtype Qual = Qual Word8
   deriving (Show, Eq, Bits)
   deriving (Semigroup, Monoid) via (Ior Qual)
 
@@ -309,7 +311,9 @@ data ArrayInfo = ArrayInfo
     -- | If this array derivation is the outermost derivation of an array
     -- that is a function parameter, this information may exist. Otherwise,
     -- it's illegal for this to exist.
-    _arr_paraminfo :: Maybe ParamArrayInfo
+    _arr_paraminfo :: Maybe ParamArrayInfo,
+    -- | Optional attributes
+    _arr_attrs :: [Attribute]
   }
   deriving (Show, Eq)
 
@@ -357,13 +361,14 @@ data EnumConst = EnumConst
 data FuncInfo = FuncInfo
   { _fun_rettype :: Type,
     _fun_pars :: [Param],
-    _fun_variadic :: Variadic
+    _fun_variadic :: Variadic,
+    _fun_attrs :: [Attribute]
   }
   deriving (Show, Eq)
 
 -- | A function parameter that optionally introduces an identifier into
 -- scope.
-data Param = Param Type (Maybe Symbol)
+data Param = Param [Attribute] Type Symbol
   deriving (Show, Eq)
 
 -- | Is a function variadic?
@@ -1001,14 +1006,18 @@ instance Plated Type where
       UQAtomic uqt -> UQAtomic <$> pluqtype ft uqt
       UQTypeof tq ty -> UQTypeof tq <$> pltypeof ft ty
     plarrayinfo :: Traversal' ArrayInfo Type
-    plarrayinfo ft (ArrayInfo size typ parr) =
+    plarrayinfo ft (ArrayInfo size typ parr as) =
       -- Note: we don't traverse into the size expression directly
-      ArrayInfo size <$> ft typ <*> pure parr
+      ArrayInfo size <$> ft typ <*> pure parr <*> pure as
     plfuncinfo :: Traversal' FuncInfo Type
-    plfuncinfo ft (FuncInfo rettype pars var) =
-      FuncInfo <$> ft rettype <*> traverse (plparam ft) pars <*> pure var
+    plfuncinfo ft (FuncInfo rettype pars var as) =
+      FuncInfo
+        <$> ft rettype
+        <*> traverse (plparam ft) pars
+        <*> pure var
+        <*> pure as
     plparam :: Traversal' Param Type
-    plparam ft (Param t ms) = Param <$> ft t <*> pure ms
+    plparam ft (Param a t ms) = Param a <$> ft t <*> pure ms
     plrecinfo :: Traversal' RecInfo Type
     plrecinfo ft (RecInfo rt sym attrs mdef) =
       RecInfo rt sym attrs <$> traverse (traverse (plrecmember ft)) mdef
@@ -1030,7 +1039,7 @@ findarraysizeexprs :: Type -> [Expr]
 findarraysizeexprs = toListOf (cosmos . to extractarraysize . _Just)
  where
   extractarraysize :: Type -> Maybe Expr
-  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = size
+  extractarraysize (Type (UQArray (ArrayInfo size _ _ _)) _ _) = size
   extractarraysize _ = Nothing
 
 -- | Find expressions in types (array sizes, alignment expressions, etc.)
@@ -1043,7 +1052,7 @@ findexprsintype = toListOf (cosmos . to extractexprsfromtype . traverse)
       ++ extractalignexpr align
       ++ extracttypeofexpr base
   extractarraysize :: Type -> Maybe Expr
-  extractarraysize (Type (UQArray (ArrayInfo size _ _)) _ _) = size
+  extractarraysize (Type (UQArray (ArrayInfo size _ _ _)) _ _) = size
   extractarraysize _ = Nothing
   extractalignexpr :: Maybe Alignment -> [Expr]
   extractalignexpr Nothing = []

@@ -97,6 +97,9 @@ _t2qual (_t_sqa -> t) =
  where
   f (l, m) = bool mempty l (t .&. m /= 0)
 
+_t2type :: T -> Type
+_t2type = undefined
+
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool
 __bool mask = lens g s
@@ -563,7 +566,8 @@ declspec =
   r = declspec_real
 
 -- | Parse a list of declaration specifiers. Will be followed by a declarator
--- which transforms the base type returned by 'declspecs'.
+-- which transforms the base type returned by 'declspecs'. FIXME: this should
+-- also parse optional attribute specifiers that follow them.
 declspecs :: P T
 declspecs = fmap aptt (chainl (<>) (pure mempty) declspec) <*> pure _t_0
 
@@ -590,21 +594,20 @@ data AD
     ADDirect
   | -- | An abstract declarator, which does not introduce an identifier.
     ADAbstract
+  | -- | This declarator may or may not introduce an identifier.
+    ADAny
   deriving (Eq)
 
--- | Parse a declarator, using the identifier policy given.
+-- | Parse a declarator, using the identifier policy given. It uses 'pureLazy'
+-- to avoid redundant evaluation when combining multiple declarator components,
+-- since C declarator syntax is right-associative and can involve deeply nested
+-- type constructions.
 anydeclarator :: AD -> Symbol -> P Declarator
 anydeclarator pol sym = do
-  ptr <- chainr (<>) pointer (pure mempty)
+  ptr <- chainr (<>) pointer (pureLazy mempty)
   bas <- basedecl
-  arf <- branch_insqb array $ branch_inpar function $ pure mempty
-  -- case pol of
-  --   ADDirect ->
-  --     identifier_def >>= \i ->
-  --       symnew >>= \s ->
-  --         symgivegeneralname s i
-  --   ADAbstract -> pure ()
-  pure $ ptr <> arf <> bas
+  arf <- branch lsqb array $ branch lpar function $ pureLazy mempty
+  pureLazy $ ptr <> arf <> bas
  where
   pointer :: P Declarator
   pointer =
@@ -612,12 +615,8 @@ anydeclarator pol sym = do
       attrs <- attrspecs0
       quals <- qualifiers
       -- wrap the type in a pointer
-      pure $ Declarator \ty ->
+      pureLazy $ Declarator \ty ->
         Type' (UQPointer attrs ty) quals
-  qualifiers1 :: P Qual
-  qualifiers1 = do
-    a <- qualifiers
-    guard (a /= mempty) $> a
   qualifiers :: P Qual
   qualifiers = do
     f <- chainl (<>) (pure mempty) qualifier
@@ -639,16 +638,19 @@ anydeclarator pol sym = do
   basedecl = do
     -- identifier depending on the mode, and then qualifiers.
     when (pol == ADDirect) do
+      -- direct declarator: identifier required.
       i <- identifier_def
-      s <- symnew
-      symgivegeneralname s i
+      symgivegeneralname sym i
+    when (pol == ADAny) do
+      -- only give identifier if it can be parsed.
+      withOption identifier_def (symgivegeneralname sym) (pure ())
+    -- (abstract declarator: identifier must not be present.)
     quals <- qualifiers
-    pure $ Declarator $ over ty_qual (<> quals)
-  -- body of an array. thus, inside [].
-  -- after a body or a function can go attribute specifiers,
-  -- though not handled here.
+    pureLazy $ Declarator $ over ty_qual (<> quals)
+  -- body of an array. thus, past [. we manually close ] because we need
+  -- to handle optional attributes that go after it.
   array :: P Declarator
-  array = do
+  array = flip pcut_illegal "array declarator" do
     -- static_position:
     --  0 . . . does not occur
     --  1 . . . head (before qualifiers)
@@ -667,6 +669,7 @@ anydeclarator pol sym = do
     --    Just Nothing    . . . given the VLA star (*).
     --    Just (Just _)   . . . an expression giving array size.
     len <- optional $ (Just <$> expr) <|> (Nothing <$ star)
+    attrs <- rsqb >> attrspecs0
     let
       -- arrays used in function prototypes will carry
       -- this information. we will include it regardless
@@ -678,8 +681,8 @@ anydeclarator pol sym = do
               $ ParamArrayInfo
                 (bool ASNoStatic ASStatic (static_position /= 0))
                 quals
-      finish = pure $ Declarator \ty ->
-        Type' (UQArray $ ArrayInfo (join len) ty paraminfo) mempty
+      finish = pureLazy $ Declarator \ty ->
+        Type' (UQArray $ ArrayInfo (join len) ty paraminfo attrs) mempty
     -- allowed combinations:
     --  static_position = 0:
     --    if direct,
@@ -702,18 +705,37 @@ anydeclarator pol sym = do
     --  (no other combinations).
     case static_position of
       0 -> case pol of
-        ADDirect -> finish
         ADAbstract -> case len of
           Just Nothing | quals == mempty -> finish
           Just Nothing -> adhoc' "qualifiers unexpected"
           _ -> finish
+        _ -> finish
       1 -> finish
       2 | quals == mempty -> pexpect "at least one qualifier"
       2 -> finish
       _ -> error "this is impossible"
-  -- body of a function prototype. thus, inside ().
+  -- body of a function prototype. thus, past (. we manually close the )
+  -- to parse the optional attribute specifiers that may come after it.
   function :: P Declarator
-  function = undefined
+  function = flip pcut_illegal "function declarator" do
+    params <- flip sepBy comma param
+    var <-
+      isJust <$> optional do
+        unless (null params) comma
+        tripledot
+    attrs <- rpar >> attrspecs0
+    pureLazy $ Declarator \ty ->
+      uq2type
+        $ UQFunc
+        $ FuncInfo ty params (bool Variadic NotVariadic var) attrs
+   where
+    param = do
+      attrs <- attrspecs0
+      base <- _t2type <$> declspecs
+      sym <- symnew
+      decl <- option mempty (anydeclarator ADAny sym)
+      let ty = apdecl decl base
+      pure $ Param attrs ty sym
 
 -- | Braced initializer @{...}@.
 bracedinitializer :: P Initializer

@@ -62,12 +62,15 @@ module NC.Parser.Def (
   oops,
   adhoc,
   adhoc',
+  illegal,
   pthrow,
   pcutfull,
   pcut,
   pcut',
   ptry,
   pcut_expect,
+  pcut_adhoc,
+  pcut_illegal,
   psync,
   ponexception,
   pfinally,
@@ -221,8 +224,11 @@ data Message
     MsgAdHoc String
   | -- | an internal error message
     MsgOops String
-  | -- | @expected ...@
+  | -- | @expected ...@ (must exist but was missing)
     MsgExpect String
+  | -- | @illegal ...@ (must exist, and some tokens are consumed,
+    -- but not understood.)
+    MsgIllegal String
   deriving (Eq)
 
 instance Show Message where
@@ -250,6 +256,7 @@ prettymsg d =
     MsgAdHoc s -> (s ++)
     MsgOops s -> ("internal error: " ++) . showsPrec 11 s
     MsgExpect s -> ("expected " ++) . showsPrec 11 s
+    MsgIllegal s -> ("illegal " ++) . showsPrec 11 s
 
 makeLenses ''PEnv
 
@@ -291,6 +298,18 @@ adhoc = pthrow . MsgAdHoc
 -- | Throw an ad hoc error without sender information.
 adhoc' :: String -> P a
 adhoc' = (`adhoc` "")
+
+-- | Throw an illegal syntax message.
+illegal :: String -> P a
+illegal = (`pthrow` "") . MsgIllegal
+
+-- | Cut with an ad hoc message.
+pcut_adhoc :: P a -> String -> P a
+pcut_adhoc p = pcut p . MsgAdHoc
+
+-- | Cut with an illegal syntax message.
+pcut_illegal :: P a -> String -> P a
+pcut_illegal p = pcut p . MsgIllegal
 
 -- | Annotate and then throw a 'Message'. One must clarify \'who\' is sending
 -- the message.

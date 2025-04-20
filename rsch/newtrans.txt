@@ -223,7 +223,7 @@ array-index <-
 parameter-list <- flip! sepBy! ','
   ( # it seems like attributes can go before and after the "types"
     attribute-specifier* declaration-specifier+
-    attribute-specifier* ( declarator / abstract-declarator )
+    attribute-specifier* ( declarator / abstract-declarator? )
   )
 
 declaration-specifier <-

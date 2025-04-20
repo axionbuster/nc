@@ -23,6 +23,7 @@ module NC.Internal.Prelude1 (
   module Data.Sequence,
   module Data.Word,
   module FlatParse.Stateful,
+  module FlatParse.Stateful.Parser,
   module GHC.Generics,
   module NC.Parser.Def,
   module NC.Parser.Lex,
@@ -68,6 +69,7 @@ import Data.Sequence (Seq ((:<|), (:|>)))
 import Data.Word
 import Debug.Trace qualified as Trace
 import FlatParse.Stateful
+import FlatParse.Stateful.Parser (pureLazy)
 import GHC.Generics (Generic, Generically)
 import NC.Parser.Def
 import NC.Parser.Lex
