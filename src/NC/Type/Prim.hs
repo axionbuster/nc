@@ -22,7 +22,18 @@ module NC.Type.Prim (
   -- * Types
   Prim,
   BitSize,
-  PrimInfo (..),
+  -- Pattern synonyms that replace PrimInfo
+  pattern PrimInt,
+  pattern PrimBool,
+  pattern PrimSUChar,
+  pattern PrimNSChar,
+  pattern PrimShort,
+  pattern PrimLong,
+  pattern PrimLongLong,
+  pattern PrimBitInt,
+  pattern PrimFloat,
+  pattern PrimVoid,
+  pattern PrimNullptr,
   PrimSignedInteger (..),
   SIntegerCategory (..),
   Sign (..),
@@ -30,7 +41,6 @@ module NC.Type.Prim (
   FloatCategory (..),
 
   -- * Lenses
-  pr_info,
   pi_si,
 
   -- * Common primitive type constants
@@ -72,19 +82,7 @@ import Prelude
 type BitSize = Word16
 
 -- | Primitive, non-derived types. This is implemented as a simple enum
--- for maintainability. Use the isomorphism provided by 'pr_info' to
--- extract information. Example:
---
--- @
--- p :: Prim
---
--- q :: PrimInfo
--- q = p '^.' pr_info
--- -- q = view pr_info p -- alternative definition
---
--- r :: Prim
--- r = view (from pr_info) q
--- @
+-- for maintainability.
 data Prim
   = PInt !Sign
   | PBool
@@ -98,36 +96,6 @@ data Prim
   | PVoid
   | PNullptr
   deriving (Eq, Show)
-
--- | Go back and forth between the internal 'Prim' representation
--- and the information stored.
-pr_info :: Iso' Prim PrimInfo
-pr_info = iso getter setter
- where
-  getter = \case
-    PInt s -> PrimInt s
-    PBool -> PrimBool
-    PSUChar s -> PrimSUChar s
-    PNSChar -> PrimNSChar
-    PShort s -> PrimShort s
-    PLong s -> PrimLong s
-    PLongLong s -> PrimLongLong s
-    PBitInt s w -> PrimBitInt s w
-    PFloat c fc -> PrimFloat c fc
-    PVoid -> PrimVoid
-    PNullptr -> PrimNullptr
-  setter = \case
-    PrimInt s -> PInt s
-    PrimBool -> PBool
-    PrimSUChar s -> PSUChar s
-    PrimNSChar -> PNSChar
-    PrimShort s -> PShort s
-    PrimLong s -> PLong s
-    PrimLongLong s -> PLongLong s
-    PrimBitInt s w -> PBitInt s w
-    PrimFloat c fc -> PFloat c fc
-    PrimVoid -> PVoid
-    PrimNullptr -> PNullptr
 
 -- | Is an integer type signed?
 data Sign = Signed | Unsigned
@@ -147,32 +115,51 @@ data FloatCategory
   | FCDecimal128
   deriving (Eq, Show)
 
--- | Normally you would derive a 'PrimInfo' from a 'Prim' first
--- to extract useful information.
-data PrimInfo
-  = -- | C @int@
-    PrimInt !Sign
-  | -- | C @\_Bool@
-    PrimBool
-  | -- | @signed char@ or @unsigned char@, but not regular @char@.
-    PrimSUChar !Sign
-  | -- | no-sign @char@ (regular @char@)
-    PrimNSChar
-  | -- | C @short@
-    PrimShort !Sign
-  | -- | C @long@
-    PrimLong !Sign
-  | -- | C @long long@
-    PrimLongLong !Sign
-  | -- | C @\_BitInt(N)@
-    PrimBitInt !Sign !BitSize
-  | -- | floating point types
-    PrimFloat !Complex !FloatCategory
-  | -- | @void@, sort of corresponds to 'Data.Void.Void'
-    PrimVoid
-  | -- | @nullptr\_t@, sort of corresponds to @()@
-    PrimNullptr
-  deriving (Eq, Show)
+-- | Pattern synonyms that replace the PrimInfo constructors
+
+-- | C @int@
+pattern PrimInt :: Sign -> Prim
+pattern PrimInt s = PInt s
+
+-- | C @\_Bool@
+pattern PrimBool :: Prim
+pattern PrimBool = PBool
+
+-- | @signed char@ or @unsigned char@, but not regular @char@.
+pattern PrimSUChar :: Sign -> Prim
+pattern PrimSUChar s = PSUChar s
+
+-- | no-sign @char@ (regular @char@)
+pattern PrimNSChar :: Prim
+pattern PrimNSChar = PNSChar
+
+-- | C @short@
+pattern PrimShort :: Sign -> Prim
+pattern PrimShort s = PShort s
+
+-- | C @long@
+pattern PrimLong :: Sign -> Prim
+pattern PrimLong s = PLong s
+
+-- | C @long long@
+pattern PrimLongLong :: Sign -> Prim
+pattern PrimLongLong s = PLongLong s
+
+-- | C @\_BitInt(N)@
+pattern PrimBitInt :: Sign -> BitSize -> Prim
+pattern PrimBitInt s w = PBitInt s w
+
+-- | floating point types
+pattern PrimFloat :: Complex -> FloatCategory -> Prim
+pattern PrimFloat c fc = PFloat c fc
+
+-- | @void@, sort of corresponds to 'Data.Void.Void'
+pattern PrimVoid :: Prim
+pattern PrimVoid = PVoid
+
+-- | @nullptr\_t@, sort of corresponds to @()@
+pattern PrimNullptr :: Prim
+pattern PrimNullptr = PNullptr
 
 -- | Signed integer type tags
 data SIntegerCategory
@@ -214,23 +201,23 @@ instance Show PrimSignedInteger where
 
 -- | For a signed or unsigned integer type, get the sign information.
 -- For @\_BitInt(...)@ types, also get the bit int width.
-pi_si :: Prism' PrimInfo PrimSignedInteger
+pi_si :: Prism' Prim PrimSignedInteger
 pi_si = prism' make destroy
  where
   make = \case
-    PSI SICInt s ~_ -> PrimInt s
-    PSI SICChar s ~_ -> PrimSUChar s
-    PSI SICShort s ~_ -> PrimShort s
-    PSI SICLong s ~_ -> PrimLong s
-    PSI SICLongLong s ~_ -> PrimLongLong s
-    PSI SICBitInt s w -> PrimBitInt s w
+    PSI SICInt s ~_ -> PInt s
+    PSI SICChar s ~_ -> PSUChar s
+    PSI SICShort s ~_ -> PShort s
+    PSI SICLong s ~_ -> PLong s
+    PSI SICLongLong s ~_ -> PLongLong s
+    PSI SICBitInt s w -> PBitInt s w
   destroy = \case
-    PrimInt s -> Just $ PSI0 SICInt s
-    PrimSUChar s -> Just $ PSI0 SICChar s
-    PrimShort s -> Just $ PSI0 SICShort s
-    PrimLong s -> Just $ PSI0 SICLong s
-    PrimLongLong s -> Just $ PSI0 SICLongLong s
-    PrimBitInt s w -> Just $ PSI SICBitInt s w
+    PInt s -> Just $ PSI0 SICInt s
+    PSUChar s -> Just $ PSI0 SICChar s
+    PShort s -> Just $ PSI0 SICShort s
+    PLong s -> Just $ PSI0 SICLong s
+    PLongLong s -> Just $ PSI0 SICLongLong s
+    PBitInt s w -> Just $ PSI SICBitInt s w
     ~_ -> Nothing
 
 -- * Common primitive type constants for easier use
