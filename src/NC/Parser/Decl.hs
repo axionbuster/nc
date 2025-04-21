@@ -212,8 +212,24 @@ _t2type t = go
   dotypeof = genericdo pre_typeof (uncurry UQTypeof) do
     "the referent of the typeof(_unqual)"
 
-_t2declspec :: T -> DeclSpec
-_t2declspec = undefined
+-- | Convert from 'T' to a 'DeclSpec'.
+_t2declspec :: T -> P DeclSpec
+_t2declspec t = do
+  ty <- optional $ _t2type t
+  pure
+    $ DeclSpec
+      { _ds_attrs = t ^. t_attrs,
+        _ds_stor = _t2storclass t,
+        _ds_type = ty,
+        _ds_func = _t2funcspec t
+      }
+ where
+  -- Extract function specifiers from T
+  _t2funcspec :: T -> FuncSpec
+  _t2funcspec (_t_sqa -> sqa) =
+    let inline = bool _fs_inline mempty $ sqa .&. SqaInline /= 0
+        noreturn = bool _fs_noreturn mempty $ sqa .&. SqaNoreturn /= 0
+     in inline <> noreturn
 
 _t2storclass :: T -> Maybe StorageClass
 _t2storclass (_t_sqa -> sqa) = case sqa .&. mask of
@@ -727,7 +743,7 @@ declaration :: P Declaration
 declaration = branch static_assert' sadecl do
   attrs <- attrspecs0
   dss <- declspecs
-  let dsall = _t2declspec dss & ds_attrs %~ (<> attrs)
+  dsall <- _t2declspec dss <&> ds_attrs %~ (<> attrs)
   ids <- initdecl dsall `sepBy` comma
   -- attrs  dss*  ids   (type)
   -- yes    yes   yes   (ListDecl)
