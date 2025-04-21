@@ -914,7 +914,7 @@ anydeclarator pol sym = do
   -- to parse the optional attribute specifiers that may come after it.
   function :: P Declarator
   function = flip pcut_illegal "function declarator" do
-    params <- flip sepBy comma param
+    params <- param `sepBy` comma
     isvar <-
       isJust <$> optional do
         unless (null params) comma
