@@ -58,6 +58,7 @@ module NC.Type.Def (
   parr_static,
   parr_qual,
   ArrayStatic (..),
+  isarraystatic,
 
   -- ** Enum Types
   EnumInfo (..),
@@ -78,6 +79,7 @@ module NC.Type.Def (
   fun_attrs,
   Param (..),
   Variadic (..),
+  isvariadic,
 
   -- ** Metaprogramming Types
   Typeof (..),
@@ -100,6 +102,18 @@ module NC.Type.Def (
   sa_expr,
   sa_mesg,
   StorageClass (..),
+  DeclSpec (..),
+  ds_attrs,
+  ds_stor,
+  ds_type,
+  ds_func,
+  FuncSpec,
+  _fs_none,
+  _fs_inline,
+  _fs_noreturn,
+  _fs_inline_noreturn,
+  fs_inline,
+  fs_noreturn,
 
   -- * C Expressions
 
@@ -197,6 +211,7 @@ module NC.Type.Def (
 
 import Control.Lens
 import Data.Bits
+import Data.Bool
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Coerce
@@ -446,9 +461,9 @@ newtype Declarator = Declarator {apdecl :: Type -> Type}
 data Declaration
   = -- | The most normal type of declaration. It introduces a series
     -- of declarators.
-    ListDecl StorageClass [DeclInit]
+    ListDecl DeclSpec [DeclInit]
   | -- | A C function definition.
-    FuncDef StorageClass FuncInfo Statement
+    FuncDef DeclSpec FuncInfo Statement
   | -- | A C @static\_assertion@.
     StaticAssertDecl StaticAssertion
   | -- | A standalone attribute declaration.
@@ -467,6 +482,25 @@ data DeclInit
       _decl_init :: Maybe Initializer
     }
   deriving (Show, Eq)
+
+-- | Declaration specifiers.
+data DeclSpec = DeclSpec
+  { -- | Optional attributes
+    _ds_attrs :: [Attribute],
+    -- | Storage class specifier, if given.
+    _ds_stor :: Maybe StorageClass,
+    -- | Type specifier, if given. Since C23, types may be inferred in
+    -- certain situations.
+    _ds_type :: Maybe Type,
+    -- | Function specifier.
+    _ds_func :: FuncSpec
+  }
+  deriving (Show, Eq)
+
+-- | Function specifiers. @inline@, @_Noreturn@, both, or neither.
+newtype FuncSpec = FuncSpec Word8
+  deriving (Show, Eq, Bits) via Word8
+  deriving (Monoid, Semigroup) via (Ior FuncSpec)
 
 -- | A @static\_assertion@.
 data StaticAssertion
@@ -1179,6 +1213,26 @@ pr2type p = Type (UQPrim p) mempty Nothing
 uq2type :: UQType -> Type
 uq2type t = Type t mempty Nothing
 
+-- | Isomorphism between 'Variadic' and 'Bool'
+isvariadic :: Iso' Variadic Bool
+isvariadic = iso (== Variadic) (bool Variadic NotVariadic)
+
+-- | Isomorphism between 'ArrayStatic' and 'Bool'
+isarraystatic :: Iso' ArrayStatic Bool
+isarraystatic = iso (== ASStatic) (bool ASStatic ASNoStatic)
+
+-- | A valid 'FuncSpec' combination.
+_fs_none, _fs_inline, _fs_noreturn, _fs_inline_noreturn :: FuncSpec
+_fs_none = FuncSpec 0
+_fs_inline = FuncSpec 1
+_fs_noreturn = FuncSpec 2
+_fs_inline_noreturn = FuncSpec 3
+
+-- | Lens for a 'FuncSpec' property.
+fs_inline, fs_noreturn :: Lens' FuncSpec Bool
+fs_inline = __bool _fs_inline
+fs_noreturn = __bool _fs_noreturn
+
 -- Generate lenses for all record types
 makeLenses ''Type
 makeLenses ''Attribute
@@ -1191,3 +1245,4 @@ makeLenses ''FuncInfo
 makeLenses ''DeclInit
 makeLenses ''InitItem
 makeLenses ''StaticAssertion
+makeLenses ''DeclSpec

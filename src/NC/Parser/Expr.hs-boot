@@ -4,4 +4,6 @@ import NC.Internal.Prelude1
 
 expr :: P Expr
 
+assignexpr :: P Expr
+
 constexpr :: P ConstIntExpr

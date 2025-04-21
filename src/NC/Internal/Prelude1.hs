@@ -34,8 +34,9 @@ module NC.Internal.Prelude1 (
   module Unsafe.Coerce,
   module Prelude,
 
-  -- * Some redefined functions
+  -- * Some redefinitions
   traceIO,
+  pattern SeqEmpty,
 ) where
 
 import Control.Applicative hiding (many, optional, some, (<|>))
@@ -66,6 +67,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Semigroup hiding (First (..), Last (..))
 import Data.Sequence (Seq ((:<|), (:|>)))
+import Data.Sequence qualified as Seq
 import Data.Word
 import Debug.Trace qualified as Trace
 import FlatParse.Stateful
@@ -83,3 +85,9 @@ import Prelude hiding (take, unzip)
 -- | Lifted 'Trace.traceIO'.
 traceIO :: (MonadIO m) => String -> m ()
 traceIO = liftIO . Trace.traceIO
+
+-- | A pattern synonym for the empty 'Seq'uence.
+pattern SeqEmpty :: Seq a
+pattern SeqEmpty = Seq.Empty
+
+{-# COMPLETE SeqEmpty, (:<|), (:|>) #-}

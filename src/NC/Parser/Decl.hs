@@ -28,7 +28,8 @@ import {-# SOURCE #-} NC.Parser.Expr
 
 -- * Internal
 
--- | Type specifiers and qualifiers and alignment specifiers.
+-- | Type specifiers and qualifiers, alignment specifiers, and storage
+-- class specifiers.
 newtype SQA = SQA Word64
   -- Num instance allows integer literals to be used, but it is
   -- otherwise nonsense.
@@ -72,6 +73,11 @@ data T = T
 _t_0 :: T
 _t_0 = T 0 0 Nothing Nothing [] []
 
+-- | Is it the same as nothing?
+_t_isempty :: T -> Bool
+_t_isempty (T a b c d e f) =
+  a == 0 && b == 0 && isNothing c && isNothing d && null e && null f
+
 -- | A transformation on 'T'.
 newtype TT = TT {aptt :: T -> T}
   deriving (Monoid, Semigroup) via (Endo T)
@@ -99,6 +105,9 @@ _t2qual (_t_sqa -> t) =
 
 _t2type :: T -> Type
 _t2type = undefined
+
+_t2declspec :: T -> DeclSpec
+_t2declspec = undefined
 
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool
@@ -447,10 +456,6 @@ parseenum = doparse >>= change
                     Nothing
     branch_incur members incomplete
 
--- | Parse the pointer past the star (@*@).
-pointerbody :: P Declarator
-pointerbody = undefined
-
 -- * Exported
 
 -- ** Types
@@ -485,7 +490,7 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
           spanOf do
             inpar do
               let stuff =
-                    $( switch
+                    $( switch_ws0
                          [|
                            case _ of
                              "(" -> pure ()
@@ -498,7 +503,7 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
                              "}" -> pure ()
                            |]
                      )
-              $( switch
+              $( switch_ws0
                    [|
                      case _ of
                        "(" -> skipMany stuff <* cutrpar
@@ -569,24 +574,59 @@ declspec =
 -- which transforms the base type returned by 'declspecs'. FIXME: this should
 -- also parse optional attribute specifiers that follow them.
 declspecs :: P T
-declspecs = fmap aptt (chainl (<>) (pure mempty) declspec) <*> pure _t_0
+declspecs = fmap aptt (chainl (<>) declspec (pure mempty)) <*> pure _t_0
 
 -- | Parse a full C declaration. A single declaration can bring into scope
 -- many identifiers, so beware of that. A declaration consists of one
 -- or more declarators, and a base type (the declarators modify the base
 -- type). Here, each declarator introduces an identifier.
+--
+-- Note: 'declaration' cannot be used to define a function.
 declaration :: P Declaration
-declaration = undefined
+declaration = branch static_assert' sadecl do
+  attrs <- attrspecs0
+  dss <- declspecs
+  let dsall = _t2declspec dss & ds_attrs %~ (<> attrs)
+  ids <- initdecl dsall `sepBy` comma
+  -- attrs  dss*  ids   (type)
+  -- yes    yes   yes   (ListDecl)
+  -- yes    no    no    (AttrDecl)
+  -- no     yes   opt   (ListDecl)
+  -- \*: key column
+  if _t_isempty dss
+    then do
+      unless (null attrs) do
+        adhoc' "unexpected decleration specifier(s)"
+      unless (null ids) do
+        adhoc' "unexpected init-declarator(s)"
+      AttrDecl attrs <$ semicolon
+    else do
+      when (null attrs) do
+        pexpect "declaration specifier(s)"
+      when (null ids) do
+        pexpect "init-declarator(s)"
+      ListDecl dsall ids <$ semicolon
+ where
+  sadecl = StaticAssertDecl <$> parsesabody
+  initdecl dsall = do
+    s <- symnew
+    d <- declarator s `pcut_expect` "a declarator"
+    i <- optional (equal >> initializer `pcut_expect` "an initializer")
+    case (dsall ^. ds_stor, dsall ^. ds_type) of
+      (Just st, Just ty) -> pure $ DeclInit (apdecl d ty) st i
+      (Just _, _) -> pexpect "type specifier(s)"
+      (_, Just _) -> pexpect "a storage class classifier"
+      (_, _) -> pexpect "a storage class classifier and type specifier(s)"
 
 -- | Create a declarator, which introduces an identifier. Associate the
 -- identifier with the symbol.
 declarator :: Symbol -> P Declarator
-declarator = undefined
+declarator = anydeclarator ADDirect
 
 -- | This is a variant of 'declarator' that does not introduce an
 -- identifier into scope, meaning no symbol needs to be provided.
 absdeclarator :: P Declarator
-absdeclarator = undefined
+absdeclarator = symnew >>= anydeclarator ADAbstract
 
 -- | 'anydeclarator' configuration.
 data AD
@@ -639,8 +679,7 @@ anydeclarator pol sym = do
     -- identifier depending on the mode, and then qualifiers.
     when (pol == ADDirect) do
       -- direct declarator: identifier required.
-      i <- identifier_def
-      symgivegeneralname sym i
+      identifier_def >>= symgivegeneralname sym
     when (pol == ADAny) do
       -- only give identifier if it can be parsed.
       withOption identifier_def (symgivegeneralname sym) (pure ())
@@ -679,7 +718,7 @@ anydeclarator pol sym = do
         | otherwise =
             Just
               $ ParamArrayInfo
-                (bool ASNoStatic ASStatic (static_position /= 0))
+                ((static_position /= 0) ^. from isarraystatic)
                 quals
       finish = pureLazy $ Declarator \ty ->
         Type' (UQArray $ ArrayInfo (join len) ty paraminfo attrs) mempty
@@ -719,7 +758,7 @@ anydeclarator pol sym = do
   function :: P Declarator
   function = flip pcut_illegal "function declarator" do
     params <- flip sepBy comma param
-    var <-
+    isvar <-
       isJust <$> optional do
         unless (null params) comma
         tripledot
@@ -727,7 +766,7 @@ anydeclarator pol sym = do
     pureLazy $ Declarator \ty ->
       uq2type
         $ UQFunc
-        $ FuncInfo ty params (bool Variadic NotVariadic var) attrs
+        $ FuncInfo ty params (isvar ^. from isvariadic) attrs
    where
     param = do
       attrs <- attrspecs0
@@ -737,10 +776,35 @@ anydeclarator pol sym = do
       let ty = apdecl decl base
       pure $ Param attrs ty sym
 
--- | Braced initializer @{...}@.
+-- | A braced initializer @{...}@.
 bracedinitializer :: P Initializer
-bracedinitializer = undefined
+bracedinitializer =
+  incur
+    $ bracedinitializer_body
+    `pcut_expect` "braced initializer"
 
--- | An initializer, which is either an @assignment-expression@.
+-- | The body of a braced initializer @{...}@. May designate an empty braced
+-- initializer.
+bracedinitializer_body :: P Initializer
+bracedinitializer_body = InitBraced <$> clause `sepEndBy` comma
+ where
+  clause = InitItem <$> designators <*> initializer
+  designators = option [] $ some designator <* (equal `pcut_expect` "=")
+  designator =
+    $( switch_ws0
+         [|
+           case _ of
+             "[" -> oncur <* cutrcur
+             "<:" -> oncur <* cutrcur
+             "." -> DesignatorMember <$> identifier
+           |]
+     )
+  oncur = DesignatorIndex <$> constexpr
+
+-- | An initializer, which is either an @assignment-expression@,
+-- or a 'bracedinitializer'.
 initializer :: P Initializer
-initializer = undefined
+initializer =
+  branch_incur bracedinitializer_body
+    $ InitExpr
+    <$> assignexpr
