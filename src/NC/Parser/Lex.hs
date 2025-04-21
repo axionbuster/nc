@@ -818,12 +818,12 @@ lit2large = adhoc "literal too large"
 -- find integral type that fits literal or else throw error.
 isfx_2inttyp wasdecimal = gated_go . integerneededbits
  where
-  i_ = pr_int
-  l_ = pr_long
-  ll_ = pr_longlong
-  u_ = pr_uint
-  ul_ = pr_ulong
-  ull_ = pr_ulonglong
+  i_ = PrimInt
+  l_ = PrimLong
+  ll_ = PrimLongLong
+  u_ = PrimUInt
+  ul_ = PrimULong
+  ull_ = PrimULongLong
   -- find: find first type that can contain the literal
   find bw = go2
    where
@@ -851,8 +851,8 @@ isfx_2inttyp wasdecimal = gated_go . integerneededbits
     | wasdecimal = find bw [ll_]
     | otherwise = find bw [ll_, ull_]
   go bw (ISFX_ 1 2 0) = find bw [ull_]
-  go bw (ISFX_ 0 0 1) = pure $ pr_bitint $ min 2 bw
-  go bw (ISFX_ 1 0 1) = pure $ pr_ubitint bw
+  go bw (ISFX_ 0 0 1) = pure $ PrimBitInt $ min 2 bw
+  go bw (ISFX_ 1 0 1) = pure $ PrimUBitInt bw
   go _ _ = adhoc "invalid suffix" "integer literal"
 
 -- used to compute bitwidth for _BitInt(N) literals.
@@ -964,7 +964,7 @@ char_encpfx =
 --
 -- The range is NOT checked.
 character_constant_val = do
-  typ <- option pr_int char_encpfx
+  typ <- option PrimInt char_encpfx
   -- 'quote' will consume any whitespace that comes after it.
   -- it's undesirable to do that for the left single quote.
   val <- between $(char '\'') quote value
@@ -1008,7 +1008,7 @@ character_constant_val = do
 -- | Parse a string literal.
 string_literal_val = do
   let here = "string literal parsing"
-  typ <- option pr_char do
+  typ <- option PrimChar do
     char_encpfx
       >> oops
         "string literals except regular literals not supported yet"

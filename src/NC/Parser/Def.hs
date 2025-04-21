@@ -469,15 +469,15 @@ posbwof_real = \case
 -- the largest positive number representable in each type.
 -- This normally only makes sense for integral types, though.
 posbwof :: Prim -> P BitSize
-posbwof (view pr_info -> info) = case info ^? pi_si of
+posbwof info = case info ^? pi_si of
   Just psi -> posbwof_real psi
   Nothing -> case info of
-    PrimNSChar -> do
+    PrimChar -> do
       cb <- gg _szs_charbits
       cs <- ask <&> view encset_charissigned . _setg_encoding . _penv_settings
       cb & pure . if cs then subtract 1 else id
-    PrimFloat CxComplex float -> casefloat float <&> subtract 1 . (* 2)
-    PrimFloat _ float -> casefloat float <&> subtract 1
+    PFloat CxComplex float -> casefloat float <&> subtract 1 . (* 2)
+    PFloat _ float -> casefloat float <&> subtract 1
     PrimNullptr -> gg _szs_charptrbits
     PrimBool -> gg _szs_boolbits
     _ -> pure 0

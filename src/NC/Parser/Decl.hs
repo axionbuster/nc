@@ -446,7 +446,7 @@ parseenum = doparse >>= change
     name <- optional identifier
     membertype <-
       option
-        (pr2type pr_int)
+        (pr2type PrimInt)
         ( colon
             >> specqualaligns
             `pcut_expect` "type specifiers and qualifiers \

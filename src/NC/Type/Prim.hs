@@ -20,20 +20,49 @@
 -- which can be used for error reporting and perhaps more.
 module NC.Type.Prim (
   -- * Types
-  Prim,
+  Prim (
+    PInt,
+    PBool,
+    PSUChar,
+    PNSChar,
+    PShort,
+    PLong,
+    PLongLong,
+    PBitInt,
+    PFloat,
+    PVoid,
+    PNullptr,
+    PrimInt,
+    PrimUInt,
+    PrimBool,
+    PrimSChar,
+    PrimUChar,
+    PrimChar,
+    PrimShort,
+    PrimUShort,
+    PrimLong,
+    PrimULong,
+    PrimLongLong,
+    PrimULongLong,
+    PrimBitInt,
+    PrimUBitInt,
+    PrimFloat,
+    PrimDouble,
+    PrimLongDouble,
+    PrimCFloat,
+    PrimCDouble,
+    PrimCLongDouble,
+    PrimVoid,
+    PrimNullptr,
+    PrimD32,
+    PrimD64,
+    PrimD128,
+    PrimCD32,
+    PrimCD64,
+    PrimCD128
+  ),
   BitSize,
   -- Pattern synonyms that replace PrimInfo
-  pattern PrimInt,
-  pattern PrimBool,
-  pattern PrimSUChar,
-  pattern PrimNSChar,
-  pattern PrimShort,
-  pattern PrimLong,
-  pattern PrimLongLong,
-  pattern PrimBitInt,
-  pattern PrimFloat,
-  pattern PrimVoid,
-  pattern PrimNullptr,
   PrimSignedInteger (..),
   SIntegerCategory (..),
   Sign (..),
@@ -42,36 +71,6 @@ module NC.Type.Prim (
 
   -- * Lenses
   pi_si,
-
-  -- * Common primitive type constants
-  pr_int,
-  pr_uint,
-  pr_long,
-  pr_ulong,
-  pr_short,
-  pr_ushort,
-  pr_char,
-  pr_uchar,
-  pr_schar,
-  pr_longlong,
-  pr_ulonglong,
-  pr_bool,
-  pr_void,
-  pr_nullptr,
-  pr_float,
-  pr_double,
-  pr_longdouble,
-  pr_cfloat,
-  pr_cdouble,
-  pr_clongdouble,
-  pr_decimal32,
-  pr_decimal64,
-  pr_decimal128,
-  pr_cdecimal32,
-  pr_cdecimal64,
-  pr_cdecimal128,
-  pr_bitint,
-  pr_ubitint,
 ) where
 
 import Control.Lens
@@ -115,43 +114,84 @@ data FloatCategory
   | FCDecimal128
   deriving (Eq, Show)
 
--- | Pattern synonyms that replace the PrimInfo constructors
+-- | Pattern synonyms that replace the raw 'Prim' constructors for convenience.
+pattern PrimInt, PrimUInt :: Prim
 
 -- | C @int@
-pattern PrimInt :: Sign -> Prim
-pattern PrimInt s = PInt s
+pattern PrimInt = PInt Signed
+
+-- | C @unsigned int@
+pattern PrimUInt = PInt Unsigned
 
 -- | C @\_Bool@
 pattern PrimBool :: Prim
 pattern PrimBool = PBool
 
--- | @signed char@ or @unsigned char@, but not regular @char@.
-pattern PrimSUChar :: Sign -> Prim
-pattern PrimSUChar s = PSUChar s
+pattern PrimSChar, PrimUChar, PrimChar :: Prim
 
--- | no-sign @char@ (regular @char@)
-pattern PrimNSChar :: Prim
-pattern PrimNSChar = PNSChar
+-- | C @signed char@
+pattern PrimSChar = PSUChar Signed
+
+-- | C @unsigned char@
+pattern PrimUChar = PSUChar Unsigned
+
+-- | C @char@
+pattern PrimChar = PNSChar
+
+pattern PrimShort, PrimUShort :: Prim
 
 -- | C @short@
-pattern PrimShort :: Sign -> Prim
-pattern PrimShort s = PShort s
+pattern PrimShort = PShort Signed
+
+-- | C @unsigned short@
+pattern PrimUShort = PShort Unsigned
 
 -- | C @long@
-pattern PrimLong :: Sign -> Prim
-pattern PrimLong s = PLong s
+pattern PrimLong, PrimULong :: Prim
+
+-- | C @long@
+pattern PrimLong = PLong Signed
+
+-- | C @unsigned long@
+pattern PrimULong = PLong Unsigned
+
+pattern PrimLongLong, PrimULongLong :: Prim
 
 -- | C @long long@
-pattern PrimLongLong :: Sign -> Prim
-pattern PrimLongLong s = PLongLong s
+pattern PrimLongLong = PLongLong Signed
+
+-- | C @unsigned long long@
+pattern PrimULongLong = PLongLong Unsigned
+
+pattern PrimBitInt, PrimUBitInt :: BitSize -> Prim
 
 -- | C @\_BitInt(N)@
-pattern PrimBitInt :: Sign -> BitSize -> Prim
-pattern PrimBitInt s w = PBitInt s w
+pattern PrimBitInt w = PBitInt Signed w
 
--- | floating point types
-pattern PrimFloat :: Complex -> FloatCategory -> Prim
-pattern PrimFloat c fc = PFloat c fc
+-- | C @unsigned \_BitInt(N)@
+pattern PrimUBitInt w = PBitInt Unsigned w
+
+pattern PrimFloat, PrimDouble, PrimLongDouble :: Prim
+
+-- | C @float@
+pattern PrimFloat = PFloat CxReal FCFloat
+
+-- | C @double@
+pattern PrimDouble = PFloat CxReal FCDouble
+
+-- | C @long double@
+pattern PrimLongDouble = PFloat CxReal FCLongDouble
+
+pattern PrimCFloat, PrimCDouble, PrimCLongDouble :: Prim
+
+-- | C @_Complex float@
+pattern PrimCFloat = PFloat CxComplex FCFloat
+
+-- | C @_Complex double@
+pattern PrimCDouble = PFloat CxComplex FCDouble
+
+-- | C @_Complex long double@
+pattern PrimCLongDouble = PFloat CxComplex FCLongDouble
 
 -- | @void@, sort of corresponds to 'Data.Void.Void'
 pattern PrimVoid :: Prim
@@ -160,6 +200,58 @@ pattern PrimVoid = PVoid
 -- | @nullptr\_t@, sort of corresponds to @()@
 pattern PrimNullptr :: Prim
 pattern PrimNullptr = PNullptr
+
+pattern PrimD32, PrimD64, PrimD128 :: Prim
+
+-- | C @_Decimal32@
+pattern PrimD32 = PFloat CxReal FCDecimal32
+
+-- | C @_Decimal64@
+pattern PrimD64 = PFloat CxReal FCDecimal64
+
+-- | C @_Decimal128@
+pattern PrimD128 = PFloat CxReal FCDecimal128
+
+pattern PrimCD32, PrimCD64, PrimCD128 :: Prim
+
+-- | C @_Complex _Decimal32@, invalid type.
+pattern PrimCD32 = PFloat CxReal FCDecimal32
+
+-- | C @_Complex _Decimal64@, invalid type.
+pattern PrimCD64 = PFloat CxReal FCDecimal64
+
+-- | C @_Complex _Decimal128@, invalid type.
+pattern PrimCD128 = PFloat CxReal FCDecimal128
+
+{-# COMPLETE
+  PrimInt,
+  PrimUInt,
+  PrimBool,
+  PrimSChar,
+  PrimUChar,
+  PrimChar,
+  PrimShort,
+  PrimUShort,
+  PrimLong,
+  PrimULong,
+  PrimLongLong,
+  PrimULongLong,
+  PrimBitInt,
+  PrimUBitInt,
+  PrimFloat,
+  PrimDouble,
+  PrimLongDouble,
+  PrimCFloat,
+  PrimCDouble,
+  PrimCLongDouble,
+  PrimD32,
+  PrimD64,
+  PrimD128,
+  -- right now i'm not including the invalid types
+  -- PrimCD32, PrimCD64, PrimCD128. but we'll see.
+  PrimVoid,
+  PrimNullptr
+  #-}
 
 -- | Signed integer type tags
 data SIntegerCategory
@@ -219,114 +311,3 @@ pi_si = prism' make destroy
     PLongLong s -> Just $ PSI0 SICLongLong s
     PBitInt s w -> Just $ PSI SICBitInt s w
     ~_ -> Nothing
-
--- * Common primitive type constants for easier use
-
--- | Signed @int@ type in C
-pr_int :: Prim
-pr_int = PInt Signed
-
--- | Unsigned @int@ type in C
-pr_uint :: Prim
-pr_uint = PInt Unsigned
-
--- | Signed @long@ type in C
-pr_long :: Prim
-pr_long = PLong Signed
-
--- | Unsigned @long@ type in C
-pr_ulong :: Prim
-pr_ulong = PLong Unsigned
-
--- | Signed @short@ type in C
-pr_short :: Prim
-pr_short = PShort Signed
-
--- | Unsigned @short@ type in C
-pr_ushort :: Prim
-pr_ushort = PShort Unsigned
-
--- | Regular @char@ type in C (no explicit sign)
-pr_char :: Prim
-pr_char = PNSChar
-
--- | Explicit @signed char@ type in C
-pr_schar :: Prim
-pr_schar = PSUChar Signed
-
--- | Explicit @unsigned char@ type in C
-pr_uchar :: Prim
-pr_uchar = PSUChar Unsigned
-
--- | Signed @long long@ type in C
-pr_longlong :: Prim
-pr_longlong = PLongLong Signed
-
--- | Unsigned @long long@ type in C
-pr_ulonglong :: Prim
-pr_ulonglong = PLongLong Unsigned
-
--- | Boolean type (@_Bool@) in C
-pr_bool :: Prim
-pr_bool = PBool
-
--- | The @void@ type in C
-pr_void :: Prim
-pr_void = PVoid
-
--- | The @nullptr_t@ type in C++
-pr_nullptr :: Prim
-pr_nullptr = PNullptr
-
--- | Real @float@ type in C
-pr_float :: Prim
-pr_float = PFloat CxReal FCFloat
-
--- | Real @double@ type in C
-pr_double :: Prim
-pr_double = PFloat CxReal FCDouble
-
--- | Real @long double@ type in C
-pr_longdouble :: Prim
-pr_longdouble = PFloat CxReal FCLongDouble
-
--- | Complex @float@ type in C
-pr_cfloat :: Prim
-pr_cfloat = PFloat CxComplex FCFloat
-
--- | Complex @double@ type in C
-pr_cdouble :: Prim
-pr_cdouble = PFloat CxComplex FCDouble
-
--- | Complex @long double@ type in C
-pr_clongdouble :: Prim
-pr_clongdouble = PFloat CxComplex FCLongDouble
-
--- | IEEE 754-2008 @_Decimal32@ type
-pr_decimal32 :: Prim
-pr_decimal32 = PFloat CxReal FCDecimal32
-
--- | IEEE 754-2008 @_Decimal64@ type
-pr_decimal64 :: Prim
-pr_decimal64 = PFloat CxReal FCDecimal64
-
--- | IEEE 754-2008 @_Decimal128@ type
-pr_decimal128 :: Prim
-pr_decimal128 = PFloat CxReal FCDecimal128
-
--- | Complex IEEE 754-2008 @_Decimal32@ type
-pr_cdecimal32 :: Prim
-pr_cdecimal32 = PFloat CxComplex FCDecimal32
-
--- | Complex IEEE 754-2008 @_Decimal64@ type
-pr_cdecimal64 :: Prim
-pr_cdecimal64 = PFloat CxComplex FCDecimal64
-
--- | Complex IEEE 754-2008 @_Decimal128@ type
-pr_cdecimal128 :: Prim
-pr_cdecimal128 = PFloat CxComplex FCDecimal128
-
--- | @\_BitInt(...)@ type
-pr_bitint, pr_ubitint :: BitSize -> Prim
-pr_bitint w = PBitInt Signed w
-pr_ubitint w = PBitInt Unsigned w
