@@ -103,11 +103,30 @@ _t2qual (_t_sqa -> t) =
  where
   f (l, m) = bool mempty l (t .&. m /= 0)
 
+-- | Extract the 'Type' from a 'T'.
 _t2type :: T -> Type
 _t2type = undefined
 
 _t2declspec :: T -> DeclSpec
 _t2declspec = undefined
+
+_t2storclass :: T -> Maybe StorageClass
+_t2storclass (_t_sqa -> sqa) = case sqa .&. mask of
+  SqaAuto -> Just SAuto
+  SqaStatic -> Just SStatic
+  SqaTypedef -> Just STypedef
+  SqaRegister -> Just SRegister
+  SqaThreadLocal -> Just SThreadLocal
+  SqaConstexpr -> Just SConstExpr
+  _ -> Nothing
+ where
+  mask =
+    SqaAuto
+      .|. SqaStatic
+      .|. SqaTypedef
+      .|. SqaThreadLocal
+      .|. SqaConstexpr
+      .|. SqaRegister
 
 -- | Create a boolean mask lens.
 __bool :: (Bits a) => a -> Lens' a Bool
