@@ -41,12 +41,16 @@ module NC.Parser.Def (
 
   -- * Symbols and lookups
   Str,
-  Lookup (..),
   PNS (..),
   PSym,
   symnew,
   symgivetypetag,
   symgivegeneralname,
+  symlookuptype,
+  sympushscope,
+  sympopscope,
+  syminscope,
+  symresolvetypetag,
 
   -- * Span
   Span64 (..),
@@ -87,7 +91,9 @@ import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.Coerce
 import Data.Functor
+import Data.HashTable.IO qualified as H
 import Data.Int
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Unique
 import Data.Word
 import Debug.Trace qualified as Tr
@@ -121,20 +127,15 @@ data PEnv = PEnv
   }
 
 -- | Stack of symbol tables.
-type PSym = [PNS]
-
--- | Result of a misc. symbol lookup.
-data Lookup
-  = LFunction
-  | LObject
-  | LTypedef
-  | LEnumConstant
-  deriving (Eq, Show)
+data PSym = PSym
+  { _psym_sym2type :: Table Symbol Type,
+    _psym_stack :: IORef [PNS]
+  }
 
 -- | Parser namespace
 data PNS = PNS
-  { _pns_tags :: Table Str Type,
-    _pns_others :: Table Str Lookup
+  { _pns_tags :: Table Str Symbol,
+    _pns_others :: Table Str Symbol
   }
 
 -- | Our parser type.
@@ -259,6 +260,10 @@ prettymsg d =
     MsgIllegal s -> ("illegal " ++) . showsPrec 11 s
 
 makeLenses ''PEnv
+
+makeLenses ''PSym
+
+makeLenses ''PNS
 
 makeLenses ''SizeSettings
 
@@ -495,10 +500,70 @@ posbwof info = case info ^? pi_si of
 symnew :: (MonadIO m) => m Symbol
 symnew = liftIO (coerce newUnique)
 
--- | Give the symbol a type tag.
+-- | Internal function to get the symbol to type table.
+symtab_type :: P (Table Symbol Type)
+symtab_type = view (penv_psym . psym_sym2type) <$> ask
+
+-- | Retrieve a nonempty stack and identify the top or else error out.
+symstack :: P (NonEmpty PNS)
+symstack = do
+  r <- view (penv_psym . psym_stack) <$> ask
+  a <- readIORef r
+  case a of
+    (x : xs) -> pure $ x :| xs
+    [] -> oops "the stack of scopes is empty!" "symstack"
+
+-- | Give the symbol a type tag. Currently we just overwrite any existing
+-- record, but this will be changed in the future to be configurable. Silent
+-- overwriting mode is good for debugging the compiler, but most users will not
+-- want that enabled by default.
+--
+-- Registering it as a 'Type' is a different matter.
 symgivetypetag :: Symbol -> Name -> P ()
-symgivetypetag = undefined
+symgivetypetag sym tag = do
+  (top :| _) <- symstack
+  liftIO (H.insert (top ^. pns_tags) tag sym)
 
 -- | Give the symbol a general name (e.g., variables, functions, etc.).
 symgivegeneralname :: Symbol -> Name -> P ()
-symgivegeneralname = undefined
+symgivegeneralname sym name = do
+  (top :| _) <- symstack
+  liftIO (H.insert (top ^. pns_others) name sym)
+
+-- | Enter a new scope.
+sympushscope :: P ()
+sympushscope = do
+  r <- view (penv_psym . psym_stack) <$> ask
+  a <- liftIO H.new
+  b <- liftIO H.new
+  modifyIORef' r (PNS a b :)
+
+-- | Leave the current scope and return its representation.
+sympopscope :: P PNS
+sympopscope = do
+  r <- view (penv_psym . psym_stack) <$> ask
+  a <- readIORef r
+  case a of
+    (x : xs) -> writeIORef r xs $> x
+    [] -> oops "the stack of scopes is empty!" "sympopscope"
+
+-- | Do something inside a scope. Safe against 'P' errors, but
+-- not against native exceptions.
+syminscope :: P a -> (a -> PNS -> P b) -> P b
+syminscope p f = do
+  sympushscope
+  a <- p `ponexception` sympopscope
+  s <- sympopscope
+  f a s
+
+-- | Look up a type by symbol or else fail.
+symlookuptype :: Symbol -> P Type
+symlookuptype sym = do
+  tab <- symtab_type
+  liftIO (H.lookup tab sym) >>= maybe failed pure
+
+-- | Look up the type tag's symbol or else fail.
+symresolvetypetag :: Name -> P Symbol
+symresolvetypetag tag = do
+  (top :| _) <- symstack
+  liftIO (H.lookup (top ^. pns_tags) tag) >>= maybe failed pure

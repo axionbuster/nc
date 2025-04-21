@@ -121,7 +121,7 @@ _t2type t = go
                 (recordmask, "struct or union", dorecord),
                 (SqaEnum, "enum", doenum),
                 (SqaAtomicnewtype, "_Atomic(...)", doatomic),
-                (SqaTypedef, "typedef", dotypedef),
+                (SqaTypedefname, "typedef name", dotypedefname),
                 (typeofmask, "typeof or typeof_unqual", dotypeof)
               ]
      in case catMaybes tests of
@@ -202,9 +202,9 @@ _t2type t = go
     Just (ExAtomic y) -> Just y
     _ -> Nothing
   doatomic = genericdo pre_atomic UQAtomic "an _Atomic (...) payload"
-  dotypedef = case t ^. t_extra of
+  dotypedefname = case t ^. t_extra of
     Just (ExTypedef ty) -> pure ty
-    _ -> pexpect "a typedef"
+    _ -> pexpect "a typedef name"
   typeofmask = SqaTypeof .|. SqaTypeofUnqual
   pre_typeof = \case
     Just (ExTypeof a b) -> Just (a, b)
@@ -362,7 +362,10 @@ pattern SqaInComplex sqa <- ((.|. SqaComplex) -> sqa)
 -- | Collect \'specifier-qualifier-list\' into a 'Type'. This
 -- involves applying 'specqualalign' many times.
 specqualaligns :: P Type
-specqualaligns = undefined
+specqualaligns =
+  chainr (<>) specqualalign (pure mempty)
+    <&> (`aptt` _t_0)
+    >>= _t2type
 
 -- | We use a case-of match instead of a direct string match because
 -- this portion is shared between different parsers. We want an efficient
@@ -403,8 +406,8 @@ declspec_real = \case
   push sqa = pure $ coerce \rt -> do
     let rts = rt ^. t_sqa
     if sqa .&. rts == sqa
-      then -- duplicate, unless long and no long long
-        if sqa == SqaLong && sqa .&. SqaLongLong == SqaLongLong
+      then -- duplicate, if not long long
+        if sqa == SqaLong && rts .&. SqaLongLong /= SqaLongLong
           then -- oh, it's fine
             rt & t_sqa %&~ sqa
           else -- oops, bad
@@ -455,7 +458,11 @@ declspec_real = \case
           ((AlignAsType <$> typename) <|> (AlignAs <$> constexpr))
             `pcut_expect` "a type name or a constant expression"
         pure (TT (t_align .~ Just t)) <* cutrpar
-  typedefname = (<>) <$> push SqaTypedefname <*> undefined identifier
+  typedefname = do
+    r <- push SqaTypedefname
+    s <- identifier >>= symresolvetypetag >>= symlookuptype
+    let t = coerce $ set t_extra (Just (ExTypedef s))
+    pure $ r <> t
   typeof2 qualification =
     let field2use
           | TQQual <- qualification = SqaTypeof
