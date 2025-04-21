@@ -17,6 +17,7 @@ module NC.Internal.Prelude1 (
   module Data.Functor,
   module Data.Hashable,
   module Data.Int,
+  module Data.List,
   module Data.Maybe,
   module Data.Monoid,
   module Data.Semigroup,
@@ -63,6 +64,7 @@ import Data.Function
 import Data.Functor
 import Data.Hashable
 import Data.Int
+import Data.List (intercalate, intersperse)
 import Data.Maybe
 import Data.Monoid
 import Data.Semigroup hiding (First (..), Last (..))

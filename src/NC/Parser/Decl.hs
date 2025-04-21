@@ -1,3 +1,4 @@
+{-# LANGUAGE NoMonoLocalBinds #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 -- |
@@ -45,13 +46,13 @@ data Extra
   | -- | @enum@
     ExEnum !EnumInfo
   | -- | @_Atomic(...)@ newtype
-    ExAtomic !Type
+    ExAtomic !UQType
   | -- | @typedef@ name. A @typedef@ definition is given as
     -- as a formal storage class specifier, instead. This is
     -- for using a @typedef@ name.
     ExTypedef !Type
   | -- | @typeof@ and @typeof_unqual@
-    ExTypeof !Typeof !TypeofQual
+    ExTypeof !TypeofQual !Typeof
 
 -- | Token list for commutative tokens parsing.
 data T = T
@@ -104,8 +105,112 @@ _t2qual (_t_sqa -> t) =
   f (l, m) = bool mempty l (t .&. m /= 0)
 
 -- | Extract the 'Type' from a 'T'.
-_t2type :: T -> Type
-_t2type = undefined
+_t2type :: T -> P Type
+_t2type t = go
+ where
+  go =
+    let sqa = t ^. t_sqa
+        test (ma, me, a)
+          | sqa .&. ma /= mempty = Just (me, a)
+          | otherwise = Nothing
+        tests =
+          map test
+            $ [ -- test against different "categories." only one must
+                -- pass in a valid specification.
+                (primmask, "primitives", doprim),
+                (recordmask, "struct or union", dorecord),
+                (SqaEnum, "enum", doenum),
+                (SqaAtomicnewtype, "_Atomic(...)", doatomic),
+                (SqaTypedef, "typedef", dotypedef),
+                (typeofmask, "typeof or typeof_unqual", dotypeof)
+              ]
+     in case catMaybes tests of
+          [(_, a)] -> a -- the only category.
+          [] -> failed -- nothing found.
+          cats -> do
+            -- must be mutually exclusive, but found not to be.
+            let texts = [showsPrec 10 c | (c, _) <- cats]
+                t_commas = foldr1 (\f g -> f . (", " ++) . g) texts
+                text =
+                  ("the categories " ++)
+                    . t_commas
+                    . (" cannot go together" ++)
+            adhoc' $ text "" -- produce string by prepending to "".
+  sqa = t ^. t_sqa
+  primctormask =
+    SqaInt
+      .|. SqaBool
+      .|. SqaChar
+      .|. SqaShort
+      .|. SqaLong
+      .|. SqaLongLong
+      .|. SqaBitInt
+      .|. SqaFloat
+      .|. SqaDouble
+      .|. SqaComplex
+      .|. SqaImaginary -- <- we can't handle this.
+      .|. SqaD32
+      .|. SqaD64
+      .|. SqaD128
+      .|. SqaVoid
+      .|. SqaNullptr
+  signmask = SqaSigned .|. SqaUnsigned
+  primmask = primctormask .|. signmask
+  dosign = case sqa .&. signmask of
+    SqaSigned -> pure Signed
+    SqaUnsigned -> pure Unsigned
+    s
+      | s == SqaSigned .|. SqaUnsigned ->
+          adhoc' "both signed and unsigned appear"
+    _ -> failed
+  dosign' = option Signed dosign
+  doprim =
+    uq2type . UQPrim <$> case sqa .&. primctormask of
+      SqaInt -> PInt <$> dosign'
+      SqaBool -> pure PBool
+      SqaChar -> withOption dosign (pure . PSUChar) (pure PNSChar)
+      SqaLong -> PLong <$> dosign'
+      SqaFloat -> pure PrimFloat
+      SqaDouble -> pure PrimDouble
+      SqaLongDouble -> pure PrimLongDouble
+      SqaInComplex SqaFloat -> pure PrimCFloat
+      SqaInComplex SqaComplex -> pure PrimCDouble
+      SqaInComplex SqaLongDouble -> pure PrimCLongDouble
+      SqaD32 -> pure PrimD32
+      SqaD64 -> pure PrimD64
+      SqaD128 -> pure PrimD128
+      SqaVoid -> pure PrimVoid
+      SqaNullptr -> pure PrimNullptr
+      SqaBitInt -> case t ^. t_extra of
+        Just (ExBI bsz) -> (`PBitInt` bsz) <$> dosign'
+        _ -> pexpect "bit int width"
+      _ -> withOption dosign (pure . PInt) do
+        pexpect "signed or unsigned"
+  recordmask = SqaStruct .|. SqaUnion
+  genericdo pr con emsg = case pr $ t ^. t_extra of
+    Just y -> pure . uq2type . con $ y
+    _ -> pexpect emsg
+  pre_record = \case
+    Just (ExRec y) -> Just y
+    _ -> Nothing
+  dorecord = genericdo pre_record UQRecord "a struct or enum definition"
+  pre_enum = \case
+    Just (ExEnum y) -> Just y
+    _ -> Nothing
+  doenum = genericdo pre_enum UQEnum "an enum"
+  pre_atomic = \case
+    Just (ExAtomic y) -> Just y
+    _ -> Nothing
+  doatomic = genericdo pre_atomic UQAtomic "an _Atomic (...) payload"
+  dotypedef = case t ^. t_extra of
+    Just (ExTypedef ty) -> pure ty
+    _ -> pexpect "a typedef"
+  typeofmask = SqaTypeof .|. SqaTypeofUnqual
+  pre_typeof = \case
+    Just (ExTypeof a b) -> Just (a, b)
+    _ -> Nothing
+  dotypeof = genericdo pre_typeof (uncurry UQTypeof) do
+    "the referent of the typeof(_unqual)"
 
 _t2declspec :: T -> DeclSpec
 _t2declspec = undefined
@@ -244,6 +349,16 @@ pattern SqaTypedefname = 0x40_0000_0000
 pattern SqaOther :: SQA
 pattern SqaOther = 0xffff_ffff_ffff_ffff
 
+-- | Special one for @long double@.
+pattern SqaLongDouble :: SQA
+pattern SqaLongDouble = 0x4_8000
+
+-- | Wrap it in @_Complex@.
+pattern SqaInComplex :: SQA -> SQA
+pattern SqaInComplex sqa <- ((.|. SqaComplex) -> sqa)
+  where
+    SqaInComplex sqa = sqa .|. SqaComplex
+
 -- | Collect \'specifier-qualifier-list\' into a 'Type'. This
 -- involves applying 'specqualalign' many times.
 specqualaligns :: P Type
@@ -325,7 +440,7 @@ declspec_real = \case
     atonew = do
       tn <- typename `pcut_expect` "type name"
       pure
-        $ TT (t_extra .~ Just (ExAtomic tn))
+        $ TT (t_extra .~ Just (ExAtomic (tn ^. ty_base)))
         <> TT (t_sqa %&~ SqaAtomicnewtype)
     atoqua = push SqaAtomic
   struct = (<>) <$> push SqaStruct <*> parserecord RecStruct
@@ -349,7 +464,7 @@ declspec_real = \case
           <$> push field2use
           <*> do
             t <- (TypeofType <$> typename) <|> (TypeofExpr <$> expr)
-            pure $ TT (t_extra .~ Just (ExTypeof t qualification))
+            pure $ TT (t_extra .~ Just (ExTypeof qualification t))
 
 -- | Parse a single type-specifier, type-qualifier, or alignment-specifier.
 -- (All these rules are merged to share bulk reading).
@@ -789,7 +904,7 @@ anydeclarator pol sym = do
    where
     param = do
       attrs <- attrspecs0
-      base <- _t2type <$> declspecs
+      base <- declspecs >>= _t2type
       sym <- symnew
       decl <- option mempty (anydeclarator ADAny sym)
       let ty = apdecl decl base
