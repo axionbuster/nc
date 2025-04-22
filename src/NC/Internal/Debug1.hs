@@ -6,6 +6,7 @@ module NC.Internal.Debug1 (
   runok,
 ) where
 
+import Data.ByteString qualified as B
 import Data.HashTable.IO qualified as H
 import Data.List.NonEmpty (NonEmpty (..))
 import NC.Internal.Prelude1
@@ -61,6 +62,13 @@ run p s = do
 runok :: P a -> String -> IO a
 runok p s =
   run p s >>= \case
-    OK a _ _ -> pure a
-    Fail -> mzero
+    OK a i r -> do
+      unless (i == 0) do
+        traceIO $ "Int state: " ++ show i
+      unless (B.null r) do
+        traceIO $ "string left over: " ++ show r
+      pure a
+    Fail -> do
+      traceIO "(warning) parser failed without error"
+      mzero
     Err e -> error $ show e
