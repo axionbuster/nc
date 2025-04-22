@@ -38,7 +38,7 @@ library
     exposed-modules:    NC.Type, NC.Type.Def, NC.Type.Prim,
                         NC.Parser, NC.Parser.Def, NC.Parser.Lex,
                         NC.Parser.Decl, NC.Parser.Expr
-    other-modules:      NC.Internal.Prelude1
+    other-modules:      NC.Internal.Prelude1, NC.Internal.Debug1
     default-extensions: NoImplicitPrelude
     build-depends:      base, flatparse, containers, unordered-containers,
                         hashable, data-fix,

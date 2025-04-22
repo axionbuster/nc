@@ -6,6 +6,7 @@
 module NC.Parser.Def (
   -- * Defining the parser
   P,
+  R,
   PEnv (..),
   Settings (..),
   SizeSettings (..),
@@ -42,7 +43,7 @@ module NC.Parser.Def (
   -- * Symbols and lookups
   Str,
   PNS (..),
-  PSym,
+  PSym (..),
   symnew,
   symgivetypetag,
   symgivegeneralname,
@@ -141,9 +142,12 @@ data PNS = PNS
 -- | Our parser type.
 type P = ParserIO PEnv AMessage
 
+-- | Our result type.
+type R = Result AMessage
+
 -- | Determine the sizes of types.
 data SizeSettings
-  = IntegerSettings
+  = SizeSettings
   { _szs_boolbits :: !Word8,
     _szs_charbits :: !Word8,
     _szs_shortbits :: !Word8,
