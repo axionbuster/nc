@@ -7,6 +7,7 @@ module NC.Internal.Debug1 (
 ) where
 
 import Data.HashTable.IO qualified as H
+import Data.List.NonEmpty (NonEmpty (..))
 import NC.Internal.Prelude1
 
 -- | Construct a debugging environment
@@ -37,7 +38,11 @@ mkenv s = do
               _encset_char16type = PrimUShort
             }
   sym2type <- H.new
-  stack <- newIORef []
+  -- Create initial scope for the stack
+  tags0 <- H.new
+  others0 <- H.new
+  let initialScope = PNS tags0 others0
+  stack <- newIORef (initialScope :| [])
   let psym = PSym sym2type stack
   pure $ PEnv msgs settings s psym
 

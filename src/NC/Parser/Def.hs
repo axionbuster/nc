@@ -95,6 +95,7 @@ import Data.Functor
 import Data.HashTable.IO qualified as H
 import Data.Int
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Unique
 import Data.Word
 import Debug.Trace qualified as Tr
@@ -130,7 +131,8 @@ data PEnv = PEnv
 -- | Stack of symbol tables.
 data PSym = PSym
   { _psym_sym2type :: Table Symbol Type,
-    _psym_stack :: IORef [PNS]
+    -- | This list is guaranteed to be non-empty by the type system.
+    _psym_stack :: IORef (NonEmpty PNS)
   }
 
 -- | Parser namespace
@@ -508,14 +510,11 @@ symnew = liftIO (coerce newUnique)
 symtab_type :: P (Table Symbol Type)
 symtab_type = view (penv_psym . psym_sym2type) <$> ask
 
--- | Retrieve a nonempty stack and identify the top or else error out.
+-- | Retrieve the stack of namespaces
 symstack :: P (NonEmpty PNS)
 symstack = do
   r <- view (penv_psym . psym_stack) <$> ask
-  a <- readIORef r
-  case a of
-    (x : xs) -> pure $ x :| xs
-    [] -> oops "the stack of scopes is empty!" "symstack"
+  readIORef r
 
 -- | Give the symbol a type tag. Currently we just overwrite any existing
 -- record, but this will be changed in the future to be configurable. Silent
@@ -540,16 +539,16 @@ sympushscope = do
   r <- view (penv_psym . psym_stack) <$> ask
   a <- liftIO H.new
   b <- liftIO H.new
-  modifyIORef' r (PNS a b :)
+  modifyIORef' r ((PNS a b :|) . NE.toList)
 
 -- | Leave the current scope and return its representation.
 sympopscope :: P PNS
 sympopscope = do
   r <- view (penv_psym . psym_stack) <$> ask
-  a <- readIORef r
-  case a of
-    (x : xs) -> writeIORef r xs $> x
-    [] -> oops "the stack of scopes is empty!" "sympopscope"
+  (x :| xs) <- readIORef r
+  case xs of
+    [] -> oops "attempting to pop the last scope!" "sympopscope"
+    (y : ys) -> writeIORef r (y :| ys) $> x
 
 -- | Do something inside a scope. Safe against 'P' errors, but
 -- not against native exceptions.

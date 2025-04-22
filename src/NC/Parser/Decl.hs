@@ -414,9 +414,7 @@ declspec_real = \case
   SqaConst -> push SqaConst
   SqaRestrict -> push SqaRestrict
   SqaVolatile -> push SqaVolatile
-  _nomatch -> do
-    traceIO "handling typedefname"
-    typedefname
+  _nomatch -> typedefname
  where
   s %&~ b = s %~ (.|. b)
   push sqa = pure $ coerce \rt -> do
