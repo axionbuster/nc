@@ -629,7 +629,7 @@ attrspecs0, attrspecs1 :: P [Attribute]
 attrspecs0 = chainr (<>) attrspec (pure mempty)
 
 -- | Parse 1 or more attribute specifiers.
-attrspecs1 = attrspecs0 >>= \l -> guard (not . null $ l) $> l
+attrspecs1 = (<>) <$> attrspec <*> attrspecs0
 
 -- | Parse a single attribute specifier (@[[ ... ]]@). Here, a single specifier
 -- can actually introduce many attributes.
@@ -643,6 +643,8 @@ attrspec = ldbsqb >> attr `sepBy1` comma <* cutrdbsqb
       (Attribute (Just i) <$> identifier `pcut_expect` "identifier")
       (pure $ Attribute Nothing i)
       <*> do
+        -- match a balanced token sequence and return the span of it.
+        -- we refrain from interpreting it.
         fmap (view (from span64)) <$> optional do
           spanOf do
             inpar do
@@ -728,10 +730,13 @@ declspec =
   r = declspec_real
 
 -- | Parse a list of declaration specifiers. Will be followed by a declarator
--- which transforms the base type returned by 'declspecs'. FIXME: this should
--- also parse optional attribute specifiers that follow them.
+-- which transforms the base type returned by 'declspecs'. The list may
+-- optionally be followed by attribute specifiers.
 declspecs :: P T
-declspecs = fmap aptt (chainl (<>) declspec (pure mempty)) <*> pure _t_0
+declspecs = do
+  t1 <- fmap aptt (chainl (<>) declspec (pure mempty)) <*> pure _t_0
+  attrs <- attrspecs0
+  pure $ t1 & t_attrs %~ (<> attrs)
 
 -- | Parse a full C declaration. A single declaration can bring into scope
 -- many identifiers, so beware of that. A declaration consists of one
